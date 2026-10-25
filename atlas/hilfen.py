@@ -118,3 +118,26 @@ def frei(ziel: Path) -> Path:
     while (ziel.parent / f"{ziel.stem} {n}{ziel.suffix}").exists():
         n += 1
     return ziel.parent / f"{ziel.stem} {n}{ziel.suffix}"
+
+
+# ------------------------------------------------------------------ VS-Kennzeichnungen
+VS_MARKE = re.compile(
+    r"VS\s*[-–]?\s*NUR\s+F(?:Ü|UE|U)R\s+DEN\s+DIENSTGEBRAUCH|\bVS[-\s]?NfD\b|VS\s*[-–]\s*VERTRAULICH|"
+    r"\bSTRENG\s+GEHEIM\b|(?<![A-Za-zÄÖÜäöü])GEHEIM(?![A-Za-zÄÖÜäöü])|\bNATO\s+(?:RESTRICTED|CONFIDENTIAL|SECRET)\b|"
+    r"\bCOSMIC\s+TOP\s+SECRET\b")
+
+
+def vs_kennzeichnung(text: str) -> str:
+    """Eingestufte Inhalte erkennen (Kennzeichnung in Großbuchstaben bzw. als VS-NfD). Rückgabe: Treffer oder ''."""
+    m = VS_MARKE.search(text or "")
+    return m.group(0) if m else ""
+
+
+def vs_schutz(werkzeug: str, ausgabe: str) -> str:
+    """Werkzeugergebnis mit VS-Kennzeichnung nicht an das Modell geben."""
+    t = vs_kennzeichnung(ausgabe)
+    if not t:
+        return ausgabe
+    return (f"[Zurückgehalten: Das Ergebnis von '{werkzeug}' enthält die Kennzeichnung „{t}“. Eingestufte Inhalte "
+            "verarbeitet JARVIS nicht. Dem Nutzer nur sagen, dass ein Eintrag als Verschlusssache gekennzeichnet "
+            "ist und deshalb nicht ausgewertet wird.]")

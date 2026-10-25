@@ -309,7 +309,11 @@ async def _run_tool(ws: WebSocket, call) -> str:
         await ws.send_json({"type": "info", "text": f"✓ {what}"})
     if ok and isinstance(result, dict) and result.get("erstellt"):
         await ws.send_json({"type": "datei", "pfad": result["erstellt"], "art": result.get("art", "")})
-    return out[:MAX_RESULT]
+    from atlas.hilfen import vs_schutz
+    geschuetzt = vs_schutz(call.name, out)
+    if geschuetzt != out:
+        c.audit.log("vs_kennzeichnung", werkzeug=call.name)
+    return geschuetzt[:MAX_RESULT]
 
 
 async def _chat(ws: WebSocket, s: Session, text: str, stimme: bool = False, quelle: str = "",

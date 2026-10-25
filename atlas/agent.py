@@ -107,4 +107,5 @@ def _tool(c, call, confirm, notify, nur_lesen) -> str:
     c.audit.log("werkzeug", werkzeug=call.name, aktion=tool.action, erfolg=ok)
     if ok and lvl == Level.MELDEN and notify:
         notify(f"✓ {what}")
-    return out[:12000]
+    from atlas.hilfen import vs_schutz
+    return vs_schutz(call.name, out)[:12000]
