@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>JARVIS</title>
+<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<link rel="apple-touch-icon" href="/symbol/180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JARVIS">
+<meta name="theme-color" content="#03080d">
+<link rel="stylesheet" href="style.css?v=20261025b">
+</head>
+<body>
+<div class="scan"></div>
+
+<header class="top">
+  <div class="brand">
+    <span class="logo">◢◤</span>
+    <span class="name">JARVIS</span>
+    <span class="sub" id="who">—</span>
+  </div>
+  <div class="chips" id="chips"></div>
+  <button type="button" id="einstbtn" class="fokusbtn" title="Einstellungen und Hilfe (⌘,)">⚙ EINSTELLUNGEN</button>
+  <button type="button" id="stilbtn" class="fokusbtn" title="Stilwelt wechseln">STIL</button>
+  <button type="button" id="klangbtn" class="fokusbtn" title="UI-Klänge ein-/ausschalten">KLANG</button>
+  <button type="button" id="recbtn" class="fokusbtn recbtn" title="Gespräch aufnehmen und als Transkript ablegen">● AUFNAHME</button>
+  <button type="button" id="reinbtn" class="fokusbtn" title="Reduzierte Ansicht: nur der Kern (Taste D)">REDUZIERT</button>
+  <button type="button" id="fokusbtn" class="fokusbtn" aria-pressed="false" title="Seitenleisten ein-/ausblenden">FOKUS</button>
+  <div class="clock">
+    <div id="time">--:--</div>
+    <div id="date" class="muted">—</div>
+  </div>
+</header>
+
+<main class="grid">
+  <!-- LINKS: HEUTE -->
+  <section class="panel left">
+    <h2><span class="tick"></span>WETTER <span id="wort" class="h2sub"></span></h2>
+    <div id="wetter" class="wetter"></div>
+    <h2><span class="tick"></span>HEUTE &amp; MORGEN</h2>
+    <ul id="termine" class="list"></ul>
+    <h2><span class="tick"></span>ERINNERUNGEN
+      <button id="filterbtn" class="minibtn" type="button" title="Listen ein-/ausblenden" aria-expanded="false">FILTER</button></h2>
+    <div id="filter" class="filter" hidden></div>
+    <ul id="erinnerungen" class="list"></ul>
+    <h2><span class="tick"></span>GEBURTSTAGE · 14 TAGE</h2>
+    <ul id="geburtstage" class="list small"></ul>
+  </section>
+
+  <!-- MITTE: KERN + DIALOG -->
+  <section class="center">
+    <div class="stage" id="stage">
+      <canvas id="core"></canvas>
+      <canvas id="core3d"></canvas>
+      <div class="core-state" id="state">BEREIT</div>
+      <button type="button" id="histbtn" class="histbtn" aria-expanded="false" title="Ganzen Gesprächsverlauf zeigen">VERLAUF ▴</button>
+      <div id="chat" class="chat compact" aria-live="polite"></div>
+      <section id="ansicht" class="ansicht" hidden aria-label="Ansicht">
+        <header><h3 id="ansicht-titel"></h3><button type="button" id="ansicht-zu" aria-label="Ansicht schließen">✕</button></header>
+        <div id="ansicht-inhalt" class="ansicht-inhalt"></div>
+        <div id="ansicht-quellen" class="quellen"></div>
+      </section>
+    </div>
+    <div class="timeline" id="timeline" aria-label="Zeitleiste der nächsten 14 Tage"></div>
+    <div class="tl-legend">● TERMIN &nbsp; ▲ FÄLLIG &nbsp; ◆ FRIST &nbsp; ★ GEBURTSTAG</div>
+    <form id="ask" class="ask" autocomplete="off">
+      <div class="bar">
+        <div class="modes" id="modes">
+          <button type="button" data-mode="auto" class="on">AUTO</button>
+          <button type="button" data-mode="lokal">LOKAL</button>
+          <button type="button" data-mode="claude">CLAUDE</button>
+          <button type="button" data-mode="opus">OPUS</button>
+        </div>
+        <div class="voicectl">
+          <button type="button" id="outbtn" title="Antworten vorlesen: AUTO = nur wenn per Sprache gefragt">STIMME: AUTO</button>
+          <button type="button" id="wakebtn" aria-pressed="false" title="Auf das Weckwort hören">WECKWORT: AUS</button>
+          <button type="button" id="gesprbtn" aria-pressed="true" title="Gesprächsmodus: nach jeder gesprochenen Antwort weiter zuhören; Dazwischenreden unterbricht JARVIS">GESPRÄCH: AN</button>
+        </div>
+        <div class="quick" id="quick">
+          <button type="button" data-q="lage">TAGESLAGE</button>
+          <button type="button" data-q="mail">POSTEINGANG</button>
+          <button type="button" data-q="woche">WOCHE PLANEN</button>
+          <button type="button" data-q="fristen">FRISTEN</button>
+          <button type="button" data-q="vergessen">VERGESSEN?</button>
+        </div>
+      </div>
+      <div id="anhaenge" class="anhaenge" hidden></div>
+      <div class="inputline">
+        <button type="button" id="anhbtn" class="anhbtn" title="Dokument anhängen (oder einfach ins Fenster ziehen)" aria-label="Dokument anhängen">＋</button>
+        <input type="file" id="anhdatei" multiple hidden accept=".pdf,.jpg,.jpeg,.png,.heic,.tif,.tiff,.docx,.doc,.rtf,.odt,.xlsx,.xlsm,.pptx,.txt,.md,.csv">
+        <button type="button" id="micbtn" class="mic" title="Gedrückt halten zum Sprechen – oder Leertaste halten" aria-label="Sprechen">◉</button>
+        <textarea id="input" rows="1" placeholder="Wie kann ich helfen?"></textarea>
+        <button type="submit" id="send" title="Senden (Enter)">SENDEN</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- RECHTS: LAGE -->
+  <section class="panel right">
+    <h2><span class="tick"></span>POSTEINGANG</h2>
+    <div id="mail" class="mailbox"></div>
+    <h2><span class="tick"></span>VORGÄNGE</h2>
+    <ul id="vorgaenge" class="list"></ul>
+    <h2><span class="tick"></span>LETZTE AKTIONEN</h2>
+    <ul id="aktionen" class="list small"></ul>
+    <h2><span class="tick"></span>SYSTEM</h2>
+    <div id="index" class="meterbox"></div>
+    <div id="kosten" class="meterbox"></div>
+    <button id="notaus" class="notaus" type="button">NOT-AUS</button>
+  </section>
+</main>
+
+<div id="modal" class="modal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="mtext">
+    <div class="dlg-head">⚠ BESTÄTIGUNG ERFORDERLICH</div>
+    <p id="mtext"></p>
+    <div class="dlg-btns">
+      <button id="mno" type="button">NEIN</button>
+      <button id="myes" type="button" class="primary">JA</button>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+<div id="dropzone" class="dropzone" hidden><div class="dz-rahmen"><div class="dz-icon">⇩</div><div>DOKUMENT HIER ABLEGEN</div>
+  <small>Es wird lokal gelesen. Ob Claude es sehen darf, frage ich dich vorher.</small></div></div>
+<div id="karten" class="karten"></div>
+<div id="rec-banner" class="rec-banner" hidden><i></i><span id="rec-zeit">AUFNAHME 00:00</span></div>
+<div class="rein-hud" id="rein-hud">
+  <div class="rh-brand"><i id="rh-dot"></i>JARVIS</div>
+  <div class="rh-time" id="rh-time">--:--</div>
+  <button type="button" class="rh-btn" id="rh-rec" title="Gespräch aufnehmen und transkribieren">● AUFNAHME</button>
+  <button type="button" class="rh-btn" id="rh-mic" title="Auf „Hey Jarvis“ hören">WECKWORT: AUS</button>
+  <div class="rh-hint" id="rh-hint">LEERTASTE HALTEN · SPRECHEN &nbsp;&nbsp; TIPPEN · SCHREIBEN &nbsp;&nbsp; D · DASHBOARD</div>
+  <button type="button" class="rh-btn" id="rh-einst" title="Einstellungen und Hilfe (⌘,)">⚙</button>
+  <button type="button" class="rh-btn" id="rh-dash" title="Zum Dashboard (Taste D)">DASHBOARD</button>
+</div>
+<div id="tip" class="tip" hidden></div>
+<div id="einst" class="einst" hidden>
+  <div class="einst-box" role="dialog" aria-modal="true" aria-labelledby="einst-titel">
+    <header><h3 id="einst-titel">⚙ EINSTELLUNGEN</h3><button type="button" id="einst-zu" aria-label="Schließen">✕</button></header>
+    <div class="einst-inhalt">
+      <section><h4>VERBINDUNGEN &amp; SCHLÜSSEL</h4><div id="einst-vb" class="vb">…</div></section>
+      <section><h4>STIMME &amp; GESPRÄCH</h4>
+        <div class="einst-zeile"><span>Antworten vorlesen</span><button type="button" data-proxy="outbtn"></button></div>
+        <div class="einst-zeile"><span>Auf „Hey Jarvis“ hören</span><button type="button" data-proxy="wakebtn"></button></div>
+        <div class="einst-zeile"><span>Gesprächsmodus und Unterbrechen</span><button type="button" data-proxy="gesprbtn"></button></div></section>
+      <section><h4>DARSTELLUNG</h4>
+        <div class="einst-zeile"><span>Stilwelt</span><button type="button" data-proxy="stilbtn"></button></div>
+        <div class="einst-zeile"><span>Klänge der Oberfläche</span><button type="button" data-proxy="klangbtn"></button></div>
+        <div class="einst-zeile"><span>Reduzierte Ansicht (Taste D)</span><button type="button" data-proxy="reinbtn"></button></div>
+        <div class="einst-zeile"><span>Startsequenz</span><button type="button" id="einst-boot">ABSPIELEN</button></div></section>
+      <section><h4>HILFE</h4>
+        <div class="einst-zeile"><span>Geführte Einführung (ca. 3 Minuten)</span><button type="button" id="einst-tour" class="primary">EINFÜHRUNG STARTEN</button></div>
+        <div class="einst-zeile"><span>Was JARVIS kann – und was nicht</span><button type="button" id="einst-liste">FUNKTIONSLISTE</button></div></section>
+      <section><h4>IPHONE</h4><div id="einst-iphone" class="einst-iphone">…</div></section>
+      <section><h4>SYSTEM</h4><div id="einst-system" class="einst-system">…</div></section>
+    </div>
+  </div>
+</div>
+<div id="tour" class="tour" hidden>
+  <div class="tour-spot" id="tour-spot"></div>
+  <div class="tour-karte" id="tour-karte" role="dialog" aria-live="polite">
+    <div class="tour-kopf"><span id="tour-nr">1 / 12</span><button type="button" id="tour-zu" title="Einführung beenden (Esc)" aria-label="Beenden">✕</button></div>
+    <h3 id="tour-titel"></h3>
+    <p id="tour-text"></p>
+    <div id="tour-aufgabe" class="tour-aufgabe" hidden></div>
+    <div class="tour-knoepfe">
+      <button type="button" id="tour-zurueck">ZURÜCK</button>
+      <button type="button" id="tour-skip" hidden>ÜBERSPRINGEN</button>
+      <button type="button" id="tour-weiter" class="primary">WEITER</button>
+    </div>
+    <div class="tour-punkte" id="tour-punkte"></div>
+  </div>
+</div>
+
+<script src="app.js?v=20261025b"></script>
+<script type="module" src="core3d.bundle.js?v=20261025b"></script>
+</body>
+</html>

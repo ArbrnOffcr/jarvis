@@ -1,0 +1,14 @@
+# Niemals ins Repository: Daten, Schlüssel, Protokolle
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.log
+.env
+*.key
+*.pem
+token
+data/
+Daten/
+.DS_Store
+*.egg-info/
