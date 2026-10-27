@@ -36,7 +36,7 @@ SIGNALE = [
     (r"termin|kalender|woche|übermorgen|morgen|heute|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|"
      r"wochenende|uhr\b|frei\b|zeit für|verschieb|absag", ["kalender", "erinnerungen"]),
     (r"tageslage|briefing|was steht an|was liegt an|überblick|was gibt.?s", ["kalender", "erinnerungen", "wetter", "fristen", "mail", "stab"]),
-    (r"bereite|vorbereit|kümmer|lage\b|lagevortrag|stab\b|agent|chronos|hermes|adjutant|quaestor|archivar|scout|"
+    (r"woche|bereite|vorbereit|kümmer|lage\b|lagevortrag|stab\b|agent|chronos|hermes|adjutant|quaestor|archivar|scout|"
      r"quartiermeister|kostengrenze|persönlichkeit|persona|humor|tonfall|sprich (förmlicher|lockerer)|sei (lustiger|ernster)",
      ["stab"]),
     (r"erinner|aufgabe|todo|to-do|erledig", ["erinnerungen"]),

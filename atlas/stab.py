@@ -15,7 +15,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import yaml
 
@@ -24,8 +24,45 @@ from atlas.paths import private_dir
 REIHENFOLGE = ["zeit", "kom", "dienst", "fin", "akte", "aufkl", "log"]
 EUR_JE_USD = 0.92
 MAX_TIEFE = 2            # höchstens zwei Weiterleitungen zwischen Agenten
-MAX_SCHRITTE = 6
-FRIST_S = 75
+MAX_SCHRITTE = 5
+FRIST_S = 30             # Arbeitszeit je Agent; danach meldet er, was er hat
+WARTE_S = 38             # so lange wartet JARVIS höchstens auf den Stab
+MELDE_TOKENS = 700
+
+# Lagefragen, bei denen JARVIS den Stab sofort und ohne eigenen Denkschritt einsetzt (Schnellweg)
+LAGE = re.compile(r"bereite\b.{0,30}\b(woche|tag|morgen|heute)|was steht (heute |morgen |diese woche |die woche |in der woche "
+                  r"|demnächst )?an|was liegt (heute |morgen |diese woche )?an|lagevortrag|lagebild|^(wie ist die )?lage\b|"
+                  r"tagesüberblick|wochenüberblick|überblick über (heute|morgen|die woche|meine woche|den tag)|"
+                  r"briefing|tageslage", re.I)
+FIN_SCHNELL = re.compile(r"frist|offen|überblick|woche|heute|morgen|lage|briefing|stand|zahlung|fällig", re.I)
+
+
+def _zeitraum(text: str) -> tuple[date, date]:
+    t, h = (text or "").lower(), date.today()
+    if re.search(r"woche|7 tage|nächsten tage|wochenende", t):
+        return h, h + timedelta(days=6)
+    if "übermorgen" in t:
+        return h + timedelta(days=2), h + timedelta(days=2)
+    if re.search(r"\bmorgen\b", t.replace("guten morgen", "")) and "heute" not in t:
+        return h + timedelta(days=1), h + timedelta(days=1)
+    return h, h
+
+
+# Was jeder Agent sicher braucht, holt der Stab VOR dem ersten Denkschritt parallel ab (spart je Agent einen
+# kompletten Modell-Durchlauf). Gleiche Abfragen mehrerer Agenten laufen nur einmal.
+def _vorabruf(k: str, v: date, b: date) -> list[tuple[str, dict]]:
+    tage = (b - v).days + 1
+    return {
+        "zeit": [("kalender_termine", {"von": v.isoformat(), "bis": b.isoformat()}), ("erinnerungen_offen", {}),
+                 ("geburtstage", {"tage": max(7, tage)})],
+        "dienst": [("kalender_termine", {"von": v.isoformat(), "bis": b.isoformat()}),
+                   ("mail_posteingang", {"anzahl": 15, "nur_ungelesen": True})],
+        "kom": [("mail_posteingang", {"anzahl": 15, "nur_ungelesen": True})],
+        "fin": [("fristen_liste", {"tage": 30}), ("beihilfe_status", {})],
+        "akte": [("post_offen", {})],
+        "aufkl": [("wetter", {"tage": min(7, max(2, tage))})],
+        "log": [("einkaufsliste", {})],
+    }.get(k, [])
 
 # ---------------------------------------------------------------- Persönlichkeit JARVIS
 GRUNDTON = {
@@ -211,12 +248,13 @@ class Stab:
 
     def einstellungen(self) -> dict:
         st = self._lesen_yaml(self.ordner / "stab.yaml", {})
-        return {"aktiv": bool(st.get("aktiv", True)), "kostengrenze_eur": st.get("kostengrenze_eur", 20.0),
-                "hinweis_80": st.get("hinweis_80", "")}
+        aktiv = bool(st.get("aktiv", True)) if getattr(self, "erzwingen", None) is None else self.erzwingen
+        return {"aktiv": aktiv, "kostengrenze_eur": st.get("kostengrenze_eur", 20.0),
+                "hinweis_80": st.get("hinweis_80", ""), "vortrag_modell": st.get("vortrag_modell", "haiku")}
 
     def _einst_setzen(self, **neu) -> dict:
         with self.lock:
-            st = {**self.einstellungen(), **neu}
+            st = {**self._lesen_yaml(self.ordner / "stab.yaml", {}), **neu}
             self._yaml(self.ordner / "stab.yaml", st)
         self.anwenden()
         return st
@@ -364,6 +402,7 @@ class Stab:
                 "es selbst. Die Agenten sprechen nie mit dem Nutzer – nur du.")
 
     def briefing_hinweis(self) -> str:
+        return ""          # das Briefing läuft über den Schnellweg (siehe schnellweg)
         if not self.bereit():
             return ""
         return ("Erstelle das Briefing über den Stab: ein 'stab_einsatz' mit ZEIT (Termine heute, fällige "
@@ -428,7 +467,34 @@ class Stab:
             return lokal, lokal.resolve_model(None), ""
         return None, None, "kein Modell erreichbar"
 
-    def _lauf(self, k: str, auftrag: str, tiefe: int = 0, nur_lesen: bool = False, an: str = "JARVIS") -> dict:
+    def _werkzeug(self, name: str, args: dict) -> str:
+        from atlas import agent
+        from atlas.providers.base import ToolCall
+        return agent._tool(self.c, ToolCall("vorab", name, args), None, None, True)
+
+    def _fin_schnell(self, auftrag: str) -> str | None:
+        """Quaestor ohne Sprachmodell: dieselben lokal ermittelten Zeilen wie im bisherigen Briefing
+        (Zahlungen aus der Beihilfe-Tabelle, Fristen) – schnell und ohne Belegdetails."""
+        if not FIN_SCHNELL.search(auftrag or ""):
+            return None
+        zahl, frist = [], []
+        try:
+            zahl = [z for z in self.c.beihilfe.briefing_zeilen() if z]
+        except Exception:
+            pass
+        try:
+            frist = [z for z in self.c.fristen.briefing_zeilen() if z]
+        except Exception:
+            pass
+        if not zahl and not frist:
+            return "Lage: Keine fälligen Fristen oder offenen Zahlungen.\nDRINGLICHKEIT: 1\nWICHTIGKEIT: 2"
+        t = "Lage: " + ("Fristen und Zahlungen stehen an." if zahl and frist else "Fristen stehen an." if frist
+                        else "Zahlungen stehen an.")
+        t += "".join(f"\n- {z}" for z in [*frist, *zahl][:8])
+        return t + f"\nDRINGLICHKEIT: {4 if frist else 3}\nWICHTIGKEIT: 4"
+
+    def _lauf(self, k: str, auftrag: str, tiefe: int = 0, nur_lesen: bool = False, an: str = "JARVIS",
+              vorab: list | None = None) -> dict:
         from atlas import agent, werkzeugwahl
         c = self.c
         p = self.laden(k)
@@ -436,6 +502,10 @@ class Stab:
         erg = {"agent": p["kuerzel"], "name": p["name"], "version": p["version"], "auftrag": auftrag[:300],
                "werkzeuge": [], "abstimmungen": [], "tokens_in": 0, "tokens_out": 0, "kosten_eur": 0.0,
                "modell": "", "status": "ok", "meldung": ""}
+        if k == "fin" and tiefe == 0:
+            schnell = self._fin_schnell(auftrag)
+            if schnell:
+                return self._auswerten(erg, schnell, t0, "lokal (ohne Modell)")
         prov, model, fehler = self._modell(p)
         if not prov:
             erg.update(status="nicht verfügbar", meldung=f"{p['name']}: {fehler}.")
@@ -446,8 +516,20 @@ class Stab:
             tools.append(self._abstimm_tool(k))
         system = self._prompt(p, tiefe, an)
         ist_cloud = prov is c.providers["claude"]
-        max_tokens = min(c.cfg["claude" if ist_cloud else "local"]["max_tokens"], 1500)
-        work = [{"role": "user", "content": auftrag}]
+        max_tokens = min(c.cfg["claude" if ist_cloud else "local"]["max_tokens"], MELDE_TOKENS)
+        inhalt = auftrag
+        if vorab:                                    # vorab abgeholte Daten gleich mitgeben
+            teile = []
+            for name, args, fut in vorab:
+                try:
+                    out = fut.result(timeout=max(1, FRIST_S - (time.monotonic() - t0)))
+                except Exception as e:
+                    out = f"Fehler: {e}"
+                a = ", ".join(f"{x}={y}" for x, y in args.items())
+                teile.append(f"[{name}({a})]\n{str(out)[:5000]}")
+            inhalt += ("\n\nVorab ermittelt (aktuell, verlässlich) – nutze es direkt, rufe Werkzeuge nur für fehlende "
+                       "Details auf:\n" + "\n\n".join(teile))
+        work = [{"role": "user", "content": inhalt}]
         text = ""
         try:
             for _ in range(MAX_SCHRITTE):
@@ -469,13 +551,16 @@ class Stab:
                     break
                 if result.text and text.endswith(result.text):
                     text = text[: -len(result.text)]
-                outs = []
-                for call in result.tool_calls:
-                    erg["werkzeuge"].append(call.name)
+                def ausf(call):
                     if call.name == "abstimmen":
-                        outs.append((call, self._abstimmen(p, call.args, tiefe, erg)))
-                    else:
-                        outs.append((call, agent._tool(c, call, None, None, nur_lesen)))
+                        return call, self._abstimmen(p, call.args, tiefe, erg)
+                    return call, agent._tool(c, call, None, None, nur_lesen)
+                erg["werkzeuge"] += [cl.name for cl in result.tool_calls]
+                if len(result.tool_calls) > 1:            # mehrere Abfragen gleichzeitig
+                    with ThreadPoolExecutor(max_workers=len(result.tool_calls)) as tp:
+                        outs = list(tp.map(ausf, result.tool_calls))
+                else:
+                    outs = [ausf(result.tool_calls[0])]
                 work += [result.assistant_msg, *prov.tool_results(outs)]
         except Exception as e:
             erg["status"] = "Fehler"
@@ -488,6 +573,12 @@ class Stab:
                 erg["kosten_eur"] += (erg["tokens_in"] * preis[0] + erg["tokens_out"] * preis[1]) / 1e6 * EUR_JE_USD
         else:
             c.audit.add_usage("lokal", erg["tokens_in"], erg["tokens_out"])
+        return self._auswerten(erg, text, t0)
+
+    @staticmethod
+    def _auswerten(erg: dict, text: str, t0: float, modell: str = "") -> dict:
+        if modell:
+            erg["modell"] = modell
         erg["kosten_eur"] = round(erg["kosten_eur"], 5)
         d = re.search(r"DRINGLICHKEIT:\s*([1-5])", text)
         w = re.search(r"WICHTIGKEIT:\s*([1-5])", text)
@@ -540,12 +631,27 @@ class Stab:
         t0 = time.monotonic()
         namen = [self.laden(k)["name"] for k, _ in jobs]
         self.c.broadcast({"type": "stab", "phase": "start", "agenten": namen, "kuerzel": [KUERZEL[k] for k, _ in jobs]})
+        vor_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="stab-vorab")
+        abrufe: dict = {}
+
+        def hol(name: str, args: dict):
+            key = name + json.dumps(args, sort_keys=True)
+            if key not in abrufe:
+                abrufe[key] = vor_pool.submit(self._werkzeug, name, args)
+            return abrufe[key]
+        vorab = {}
+        for k, a in jobs:
+            if k == "fin" and self._fin_schnell(a):
+                continue
+            v, b = _zeitraum(a + " " + (text or ""))
+            vorab[k] = [(n, args, hol(n, args)) for n, args in _vorabruf(k, v, b) if n in self.c.tools]
         ex = ThreadPoolExecutor(max_workers=len(jobs), thread_name_prefix="stab")
-        futs = {ex.submit(self._lauf, k, a, 0, nur_lesen): (k, a) for k, a in jobs}
+        futs = {ex.submit(self._lauf, k, a, 0, nur_lesen, "JARVIS", vorab.get(k)): (k, a) for k, a in jobs}
         for f, (k, _) in futs.items():              # Dashboard: Meldung eines Agenten ist da
             f.add_done_callback(lambda _f, kz=KUERZEL[k]: self.c.broadcast({"type": "stab", "phase": "meldung", "kuerzel": kz}))
-        fertig, offen = wait(futs, timeout=FRIST_S + 20)
+        fertig, offen = wait(futs, timeout=WARTE_S)
         ex.shutdown(wait=False)
+        vor_pool.shutdown(wait=False)
         meldungen = []
         for f, (k, a) in futs.items():
             if f in fertig:
@@ -556,7 +662,7 @@ class Stab:
                          "meldung": f"Fehler: {e}", "kosten_eur": 0, "dringlichkeit": 1, "wichtigkeit": 1}
             else:
                 r = {"agent": KUERZEL[k], "name": self.laden(k)["name"], "status": "Zeitüberschreitung",
-                     "meldung": "Keine Meldung innerhalb der Frist.", "kosten_eur": 0, "dringlichkeit": 1,
+                     "meldung": f"Keine Meldung innerhalb von {WARTE_S} s.", "kosten_eur": 0, "dringlichkeit": 1,
                      "wichtigkeit": 1}
             r["bezug"] = self._bezug(r["agent"], r.get("meldung", ""))
             r["gewicht"] = r.get("dringlichkeit", 3) * r.get("wichtigkeit", 3) * r["bezug"]
@@ -591,6 +697,68 @@ class Stab:
                                     "verbraucht (Grenze per Befehl erhöhbar).")
             self.c.broadcast({"type": "info", "text": f"Stab: 80 % der Kostengrenze erreicht ({self.kosten_monat():.2f} € / {g} €)"})
         return out
+
+    # ------------------------------------------------------------ Schnellweg
+    def schnellweg(self, text: str, nur_lesen: bool = False, quelle: str = "chat") -> dict | None:
+        """Typische Lagefragen („Was steht heute an?“, „Bereite meine Woche vor“, Morgenbriefing): Der Stab legt
+        sofort los – ohne dass JARVIS erst überlegt, wen er beauftragt. JARVIS formuliert danach nur noch den
+        Vortrag (ein einziger Modell-Durchlauf)."""
+        t = (text or "").strip()
+        if not t or len(t) > 260 or not self.bereit() or not LAGE.search(t):
+            return None
+        v, b = _zeitraum(t)
+        zr = ("heute" if v == b == date.today() else f"{v:%d.%m.}" if v == b else f"{v:%d.%m.} bis {b:%d.%m.%Y}")
+        auftraege = [{"agent": "ZEIT", "auftrag": f"Termine, Konflikte, fällige Erinnerungen und Geburtstage ({zr})"},
+                     {"agent": "DIENST", "auftrag": f"Dienstliche Termine und neue dienstliche Mails ({zr})"},
+                     {"agent": "KOM", "auftrag": "Wichtige ungelesene oder unbeantwortete private Mails"},
+                     {"agent": "FIN", "auftrag": "Fällige Fristen und offene Zahlungen"},
+                     {"agent": "AUFKL", "auftrag": f"Wetter ({zr})"}]
+        erg = self.einsatz(auftraege, nur_lesen=nur_lesen, quelle=quelle, text=t)
+        return None if erg.get("fehler") else erg
+
+    def vorab_hinweis(self, erg: dict) -> str:
+        return ("\n\nDein Stab hat zu dieser Anfrage bereits gemeldet (Ergebnis von 'stab_einsatz'). Trage daraus "
+                "direkt den Lagevortrag vor – ohne weitere Werkzeuge, außer es fehlt Wesentliches:\n"
+                + json.dumps(erg, ensure_ascii=False)[:14000])
+
+    # ------------------------------------------------------------ Messung: mit vs. ohne Stab
+    MESSFRAGEN = ["Was steht heute an?", "Bereite meine Woche vor.", "Wie wird das Wetter morgen?"]
+
+    def messen(self, fragen: list | None = None) -> dict:
+        from atlas import agent
+        from atlas.paths import LOCAL_DIR
+        laeufe = []
+        try:
+            for modus in (False, True):              # Aufwärmen (Prompt-Cache), zählt nicht
+                self.erzwingen = modus
+                self.anwenden()
+                agent.run(self.c, "Hallo", nur_lesen=True, quelle="messung")
+            for frage in fragen or self.MESSFRAGEN:
+                for modus in (False, True):
+                    self.erzwingen = modus
+                    self.anwenden()
+                    vorher = len(self.einsaetze(500))
+                    t0 = time.monotonic()
+                    try:
+                        antwort = agent.run(self.c, frage, nur_lesen=True, quelle="messung")
+                    except Exception as e:
+                        antwort = f"Fehler: {type(e).__name__}: {e}"
+                    laeufe.append({"frage": frage, "stab": modus, "sekunden": round(time.monotonic() - t0, 1),
+                                   "stab_eingesetzt": len(self.einsaetze(500)) > vorher,
+                                   "antwort": (antwort or "")[:500]})
+        finally:
+            self.erzwingen = None
+            self.anwenden()
+        ergebnis = {"zeit": datetime.now().isoformat(timespec="seconds"), "laeufe": laeufe}
+        try:
+            ordner = LOCAL_DIR / "messungen"
+            ordner.mkdir(parents=True, exist_ok=True)
+            (ordner / f"messung-{datetime.now():%Y%m%d-%H%M}.json").write_text(
+                json.dumps(ergebnis, ensure_ascii=False, indent=1), encoding="utf-8")
+        except OSError:
+            pass
+        self.c.audit.log("stab_messung", laeufe=[(l["frage"][:20], l["stab"], l["sekunden"]) for l in laeufe])
+        return ergebnis
 
     # ------------------------------------------------------------ Übersicht (Dashboard/Werkzeug)
     def uebersicht(self) -> dict:

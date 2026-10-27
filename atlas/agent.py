@@ -47,6 +47,11 @@ def run(core, text: str, history: list[dict] | None = None, *,
     if hinweis:
         system += "\n\n" + hinweis
     max_tokens = c.cfg["claude" if d.target == "claude" else "local"]["max_tokens"]
+    if d.target == "claude" and hasattr(c, "stab"):           # Schnellweg: Lagefragen sofort an den Stab
+        vorab = c.stab.schnellweg(text, nur_lesen, quelle)
+        if vorab:
+            system += c.stab.vorab_hinweis(vorab)
+            tools = werkzeugwahl.auswahl(c.tools, set())
     work = [*(history or []), {"role": "user", "content": text}]
     reply, t_in, t_out = "", 0, 0
     for _ in range(MAX_STEPS):
@@ -64,13 +69,22 @@ def run(core, text: str, history: list[dict] | None = None, *,
         if not result.tool_calls:
             break
         outs = []
+        normale = [cl for cl in result.tool_calls if cl.name != werkzeugwahl.LADEN]
+        vorweg = {}
+        if len(normale) > 1 and all(cl.name in c.tools and c.gate.level(c.tools[cl.name].action) < Level.BESTAETIGEN
+                                    for cl in normale):       # mehrere Leseabfragen gleichzeitig
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=len(normale)) as tp:
+                vorweg = dict(zip([id(cl) for cl in normale],
+                                  tp.map(lambda cl: _tool(c, cl, confirm, notify, nur_lesen), normale)))
         for call in result.tool_calls:
             if call.name == werkzeugwahl.LADEN:
                 tools = alle
                 outs.append((call, "Alle Werkzeuge stehen jetzt zur Verfügung."))
             else:
-                outs.append((call, _tool(c, call, confirm, notify, nur_lesen)))
+                outs.append((call, vorweg[id(call)] if id(call) in vorweg else _tool(c, call, confirm, notify, nur_lesen)))
         if (d.target == "claude" and any(cl.name == "stab_einsatz" for cl in result.tool_calls)
+                and c.stab.einstellungen().get("vortrag_modell") == "sonnet"
                 and "sonnet" not in model and "opus" not in model):
             try:
                 model = provider.resolve_model("sonnet")

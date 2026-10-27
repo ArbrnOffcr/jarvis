@@ -447,6 +447,16 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
                    "Dokument; nenne Fristen und geforderte Handlungen ausdrücklich. Ablage nur auf Wunsch über "
                    "'dokument_ablage_vorschlag' und 'dokument_ablegen'; Fristen bei Bedarf mit 'frist_eintragen', "
                    "Steuerbelege nach der Ablage mit 'steuer_vormerken'.")
+    # Schnellweg: Lagefragen gehen sofort und parallel an den Stab; JARVIS formuliert nur noch den Vortrag
+    if (not doks and d.target == "claude" and s.mode == "auto" and hasattr(c, "stab")
+            and await asyncio.to_thread(c.stab.bereit)):
+        from atlas.stab import LAGE
+        if LAGE.search(text or ""):
+            await ws.send_json({"type": "tool", "name": "stab_einsatz", "text": "Stab: Lage wird erhoben"})
+            vorab = await asyncio.to_thread(c.stab.schnellweg, text, False, "chat")
+            if vorab:
+                system += c.stab.vorab_hinweis(vorab)
+                tools, gruppen = werkzeugwahl.auswahl(c.tools, set()), set()   # nur 'werkzeuge_laden' – schlanker Aufruf
     work = [*s.messages, {"role": "user", "content": text + anhang}]
     reply, t_in, t_out = "", 0, 0
     unterbrochen = False
@@ -475,12 +485,17 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
             if not result.tool_calls:
                 break
             outputs = []
+            normale = [cl for cl in result.tool_calls if cl.name != werkzeugwahl.LADEN]
+            parallel = len(normale) > 1 and all(                      # mehrere Leseabfragen gleichzeitig ausführen
+                cl.name in c.tools and c.gate.level(c.tools[cl.name].action) < Level.BESTAETIGEN for cl in normale)
+            vorweg = dict(zip([id(cl) for cl in normale],
+                              await asyncio.gather(*[_run_tool(ws, cl) for cl in normale]))) if parallel else {}
             for call in result.tool_calls:
                 if call.name == werkzeugwahl.LADEN:          # alle Werkzeuge nachladen
                     tools, gruppen = alle, None
                     outputs.append((call, "Alle Werkzeuge stehen jetzt zur Verfügung."))
                 else:
-                    outputs.append((call, await _run_tool(ws, call)))
+                    outputs.append((call, vorweg[id(call)] if parallel else await _run_tool(ws, call)))
             for call, out in outputs:
                 if call.name == werkzeugwahl.LADEN:
                     continue
@@ -489,7 +504,8 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
             if result.text and reply.endswith(result.text):          # Vorrede vor Werkzeugaufruf nicht speichern
                 reply = reply[: -len(result.text)]
             if (d.target == "claude" and any(cl.name == "stab_einsatz" for cl in result.tool_calls)
-                    and "sonnet" not in model and "opus" not in model):   # Lagevortrag aus mehreren Meldungen
+                    and c.stab.einstellungen().get("vortrag_modell") == "sonnet"
+                    and "sonnet" not in model and "opus" not in model):   # Lagevortrag optional mit Sonnet
                 try:
                     model = await asyncio.to_thread(provider.resolve_model, "sonnet")
                 except ProviderError:
@@ -601,6 +617,11 @@ def stab_kostengrenze(data: dict, _: None = Depends(auth)):
         return get_core().stab.kostengrenze(data.get("wert"))
     except (TypeError, ValueError):
         raise HTTPException(400, "Ungültiger Betrag")
+
+
+@app.post("/stab/messen")
+async def stab_messen(data: dict | None = None, _: None = Depends(auth)):
+    return await asyncio.to_thread(get_core().stab.messen, (data or {}).get("fragen"))
 
 
 @app.post("/stab/persona/{agent}")

@@ -312,6 +312,31 @@ def status() -> None:
     console.print(t)
 
 
+def messen() -> None:
+    """Geschwindigkeit mit und ohne Stab messen (dieselben Fragen, nur lesend)."""
+    console.print("Messe JARVIS mit und ohne Stab (3 Fragen × 2 Durchgänge, ca. 3–6 Minuten, wenige Cent) …")
+    try:
+        r = httpx.post(f"{BASE}/stab/messen", headers={"x-atlas-token": core_token()}, json={}, timeout=1200)
+        d = r.json()
+    except httpx.HTTPError as e:
+        console.print(f"[red]Messung nicht möglich:[/] {e}")
+        return
+    t = Table(title="◢ STAB-MESSUNG ◣", border_style="cyan")
+    for k in ("Frage", "ohne Stab", "mit Stab", "Unterschied"):
+        t.add_column(k)
+    fragen: dict = {}
+    for l in d.get("laeufe", []):
+        fragen.setdefault(l["frage"], {})["an" if l["stab"] else "aus"] = l
+    for f, v in fragen.items():
+        a, b = v.get("aus", {}).get("sekunden"), v.get("an", {}).get("sekunden")
+        diff = f"{(b - a):+.1f} s" if a is not None and b is not None else "–"
+        farbe = "green" if a is not None and b is not None and b <= a else "yellow"
+        t.add_row(f, f"{a} s", f"{b} s" + ("" if v.get("an", {}).get("stab_eingesetzt") else " (direkt)"),
+                  f"[{farbe}]{diff}[/]")
+    console.print(t)
+    console.print("[dim]Ergebnis gespeichert unter ~/.atlas/messungen/[/]")
+
+
 def berechtigungen() -> None:
     console.print("Prüfe Zugriffe – macOS fragt ggf. nach Erlaubnis. "
                   "Bitte jeweils [bold]OK[/] klicken.\n")
@@ -749,6 +774,8 @@ def main() -> None:
         dienst(args[1] if len(args) > 1 else "")
     elif cmd == "update":
         update()
+    elif cmd == "messen":
+        messen()
     elif cmd == "speichern":
         speichern(" ".join(args[1:]))
     elif cmd in ("chat", "gespraech"):
