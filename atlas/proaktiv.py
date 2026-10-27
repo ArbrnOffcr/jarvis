@@ -60,7 +60,8 @@ class Proaktiv:
             return self.briefing_today()
         text = agent.run(self.c, BRIEFING_PROMPT, nur_lesen=True, quelle="briefing",
                          hinweis="Dies ist das Morgenbriefing; es wird vorgelesen und per Telegram "
-                                 "verschickt. Keine Rückfragen, keine Markdown-Formatierung.")
+                                 "verschickt. Keine Rückfragen, keine Markdown-Formatierung. "
+                                 + (self.c.stab.briefing_hinweis() if hasattr(self.c, "stab") else ""))
         try:                                     # Zahlungen aus dem Rechnungs-Workflow (lokal ermittelt)
             zahlungen = self.c.beihilfe.briefing_zeilen()
         except Exception:

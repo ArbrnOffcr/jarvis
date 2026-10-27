@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 23.10.2026 · Version 0.7
+Stand: 27.10.2026 · Version 0.8
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -168,7 +168,25 @@ Bedeutung der Zeichen:
 | Protokoll aller Aktionen, Kostenbremse (Monatsbudget) | ✅ | |
 | Eigene Zusatzregeln in config.yaml (persona.zusatz) | ✅ | |
 
-## 12. Technik und Betrieb
+## 12. Stab – JARVIS als Chef des Stabes
+
+| Funktion | Stand | Hinweis |
+|---|---|---|
+| Größere Aufträge („Bereite meine Woche vor“) verteilt JARVIS parallel an Sachgebietsagenten und trägt dir das gewichtete Ergebnis als Lagevortrag vor | ✅ | Sofort · Diese Woche · Zur Kenntnis |
+| Sieben Agenten: Chronos (Termine), Hermes (Mail/Nachrichten), Adjutant (Dienstliches), Quaestor (Beihilfe/Finanzen, lokal), Archivar (Ablage), Scout (Recherche/Wetter), Quartiermeister (Einkauf/Routen) | ✅ | einzeln abschaltbar |
+| Nur JARVIS spricht mit dir; Agenten stimmen sich bei Bedarf direkt untereinander ab | ✅ | nur Auskünfte, ohne Freigabe, protokolliert |
+| Einfache Fragen beantwortet JARVIS weiter direkt | ✅ | |
+| Stab ein-/ausschalten | ✅ | Button STAB in der Kopfleiste, ⚙ Einstellungen → Stab oder „Schalte den Stab aus“ |
+| Alle Agenten mit Aufgaben, Rechten und Werkzeugen ansehen | ✅ | ⚙ Einstellungen → Stab |
+| Persönlichkeit von JARVIS einstellen: Grundton (Butler, Stabsoffizier, herzlich, sachlich), Humor, Ausführlichkeit, Du/Sie, eigene Anweisung | ✅ | auch per Sprache, mit Bestätigung |
+| Persönlichkeit der Agenten: Tonfall, Ausführlichkeit, Modell, eigene Anweisung | ✅ | Quaestor bleibt immer lokal |
+| Jede Persona-Änderung versioniert, mit Grund protokolliert und zurücksetzbar | ✅ | ATLAS-Privat/agenten/ |
+| Einsatzprotokoll (wer, was, Modell, Dauer, Kosten – ohne Inhalte) | ✅ | Einstellungen → Stab → Letzte Einsätze |
+| Kostengrenze für den Stab (Standard 20 € pro Monat), Hinweis bei 80 % | ✅ | per Befehl erhöhbar oder aufhebbar |
+| Morgenbriefing vom Stab erstellt | ✅ | automatisch wie bisher |
+| Agenten mit eigener Stimme | ❌ | bewusst nicht – nur JARVIS spricht |
+
+## 13. Technik und Betrieb
 
 | Funktion | Stand | Hinweis |
 |---|---|---|

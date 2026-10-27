@@ -33,12 +33,14 @@ def run(core, text: str, history: list[dict] | None = None, *,
     provider = c.providers[d.target]
     model = provider.resolve_model(d.alias)
     from atlas import werkzeugwahl
-    alle = list(c.tools.values())
+    alle = c.stab.filtern(list(c.tools.values())) if hasattr(c, "stab") else list(c.tools.values())
     gruppen = None
     if (d.target == "lokal" or d.alias == "haiku") and c.cfg.get("werkzeugwahl", True):
         gruppen = werkzeugwahl.gruppen_fuer(" ".join([*(m.get("content", "") for m in (history or [])[-2:]
                                                          if isinstance(m.get("content"), str)), text]))
     tools = alle if gruppen is None else werkzeugwahl.auswahl(c.tools, gruppen)
+    if hasattr(c, "stab") and gruppen is not None:
+        tools = c.stab.filtern(tools)
     system = system_prompt(c.cfg["assistant_name"], c.name, d.target, True, c.memory.digest())
     if gruppen is not None:
         system += werkzeugwahl.hinweis(gruppen)
@@ -68,6 +70,12 @@ def run(core, text: str, history: list[dict] | None = None, *,
                 outs.append((call, "Alle Werkzeuge stehen jetzt zur Verfügung."))
             else:
                 outs.append((call, _tool(c, call, confirm, notify, nur_lesen)))
+        if (d.target == "claude" and any(cl.name == "stab_einsatz" for cl in result.tool_calls)
+                and "sonnet" not in model and "opus" not in model):
+            try:
+                model = provider.resolve_model("sonnet")
+            except ProviderError:
+                pass
         work += [result.assistant_msg, *provider.tool_results(outs)]
         if reply and not reply.endswith("\n"):
             reply += "\n"

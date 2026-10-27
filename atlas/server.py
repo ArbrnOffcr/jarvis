@@ -114,6 +114,10 @@ class Core:
         self.timer = _timer.Timer(self)
         self.musik = _musik.Musik(self)
         self.tools.update({t.name: t for t in _karte.tools(self) + _timer.tools(self) + _musik.tools(self)})
+        # Stab: JARVIS als Chef des Stabes mit Sachgebietsagenten (Einstellungen → Stab)
+        from atlas.stab import Stab
+        self.stab = Stab(self)
+        self.tools.update({t.name: t for t in self.stab.tools()})
         from atlas.tools import Tool as _Tool, S as _S
         self.tools["kontakt_aus_dokument"] = _Tool(
             "kontakt_aus_dokument",
@@ -417,13 +421,13 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
     await ws.send_json({"type": "route", "target": d.target, "model": model,
                         "reason": d.reason, "sensibel": s.sensitive})
     # Werkzeuge nach Bedarf: Gespräch und Alltagsaufgaben bekommen nur die passenden Gruppen
-    alle = list(c.tools.values())
+    alle = c.stab.filtern(list(c.tools.values()))
     gruppen = None
     if not doks and (d.target == "lokal" or d.alias == "haiku") and c.cfg.get("werkzeugwahl", True):
         gruppen = werkzeugwahl.gruppen_fuer(text)
         if d.reason == "Fortsetzung" or (s.last and len(text) < 80):
             gruppen = None if s.gruppen is None else gruppen | s.gruppen
-    tools = alle if gruppen is None else werkzeugwahl.auswahl(c.tools, gruppen)
+    tools = alle if gruppen is None else c.stab.filtern(werkzeugwahl.auswahl(c.tools, gruppen))
     system = system_prompt(c.cfg["assistant_name"], c.name, d.target, True,
                            await asyncio.to_thread(c.digest_cached))
     if gruppen is not None:
@@ -484,6 +488,12 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
                 s.fakten.append(f"- {call.name}({args}) → {out[:600]}")
             if result.text and reply.endswith(result.text):          # Vorrede vor Werkzeugaufruf nicht speichern
                 reply = reply[: -len(result.text)]
+            if (d.target == "claude" and any(cl.name == "stab_einsatz" for cl in result.tool_calls)
+                    and "sonnet" not in model and "opus" not in model):   # Lagevortrag aus mehreren Meldungen
+                try:
+                    model = await asyncio.to_thread(provider.resolve_model, "sonnet")
+                except ProviderError:
+                    pass
             c.lage.invalidate("termine", "erinnerungen", "mail")   # Lagebild erneuern
             c._digest_cache = None                                  # Gedächtnis ggf. geändert
             work += [result.assistant_msg, *provider.tool_results(outputs)]
@@ -573,6 +583,42 @@ def einstellungen(_: None = Depends(auth)):
 @app.post("/einstellungen")
 def einstellungen_setzen(data: dict, _: None = Depends(auth)):
     return get_core().lage.save_settings(data)
+
+
+@app.get("/stab")
+def stab_uebersicht(_: None = Depends(auth)):
+    return get_core().stab.uebersicht()
+
+
+@app.post("/stab/schalter")
+def stab_schalter(data: dict, _: None = Depends(auth)):
+    return get_core().stab.schalten(bool(data.get("aktiv")))
+
+
+@app.post("/stab/kostengrenze")
+def stab_kostengrenze(data: dict, _: None = Depends(auth)):
+    try:
+        return get_core().stab.kostengrenze(data.get("wert"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Ungültiger Betrag")
+
+
+@app.post("/stab/persona/{agent}")
+def stab_persona(agent: str, data: dict, _: None = Depends(auth)):
+    try:
+        return get_core().stab.speichern(agent, data.get("aenderungen") or {}, data.get("grund") or "",
+                                         von="Einstellungen")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/stab/zuruecksetzen/{agent}")
+def stab_zuruecksetzen(agent: str, data: dict, _: None = Depends(auth)):
+    try:
+        return get_core().stab.zuruecksetzen(agent, str(data.get("version") or ""), data.get("grund") or "",
+                                             von="Einstellungen")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/briefing")

@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="JARVIS">
 <meta name="theme-color" content="#03080d">
-<link rel="stylesheet" href="style.css?v=20261025b">
+<link rel="stylesheet" href="style.css?v=20261027a">
 </head>
 <body>
 <div class="scan"></div>
@@ -23,6 +23,7 @@
     <span class="sub" id="who">—</span>
   </div>
   <div class="chips" id="chips"></div>
+  <button type="button" id="stabbtn" class="fokusbtn" aria-pressed="false" title="Stab (Sachgebietsagenten) ein-/ausschalten">STAB</button>
   <button type="button" id="einstbtn" class="fokusbtn" title="Einstellungen und Hilfe (⌘,)">⚙ EINSTELLUNGEN</button>
   <button type="button" id="stilbtn" class="fokusbtn" title="Stilwelt wechseln">STIL</button>
   <button type="button" id="klangbtn" class="fokusbtn" title="UI-Klänge ein-/ausschalten">KLANG</button>
@@ -143,6 +144,7 @@
     <header><h3 id="einst-titel">⚙ EINSTELLUNGEN</h3><button type="button" id="einst-zu" aria-label="Schließen">✕</button></header>
     <div class="einst-inhalt">
       <section><h4>VERBINDUNGEN &amp; SCHLÜSSEL</h4><div id="einst-vb" class="vb">…</div></section>
+      <section><h4>STAB · AGENTEN &amp; PERSÖNLICHKEIT</h4><div id="einst-stab" class="vb stab">…</div></section>
       <section><h4>STIMME &amp; GESPRÄCH</h4>
         <div class="einst-zeile"><span>Antworten vorlesen</span><button type="button" data-proxy="outbtn"></button></div>
         <div class="einst-zeile"><span>Auf „Hey Jarvis“ hören</span><button type="button" data-proxy="wakebtn"></button></div>
@@ -176,7 +178,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20261025b"></script>
-<script type="module" src="core3d.bundle.js?v=20261025b"></script>
+<script src="app.js?v=20261027a"></script>
+<script type="module" src="core3d.bundle.js?v=20261027a"></script>
 </body>
 </html>

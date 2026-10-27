@@ -60,6 +60,11 @@ DEFAULT_POLICY = {
     "fristen.schreiben": Level.MELDEN,
     "steuer.lesen": Level.FREI,
     "steuer.schreiben": Level.MELDEN,
+    # Stab (Sachgebietsagenten): Einsatz und Abstimmung untereinander ohne Rückfrage
+    "stab.einsatz": Level.FREI,
+    "stab.lesen": Level.FREI,
+    "stab.steuern": Level.MELDEN,          # an/aus, Kostengrenze – nur auf Befehl
+    "stab.aendern": Level.BESTAETIGEN,     # Persona-Änderungen per Sprache: Unterschied bestätigen
 }
 
 NOTAUS_FILE = LOCAL_DIR / "NOTAUS"

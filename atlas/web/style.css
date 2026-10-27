@@ -981,3 +981,12 @@ body.mobil .pl-laut{display:none}
 body.mobil .vb input{font-size:16px}
 .vb-knopf{font:600 10px var(--mono);letter-spacing:.16em;color:#001218;background:var(--accent);border:1px solid var(--accent);padding:7px 11px;cursor:pointer}
 .einst-iphone a{cursor:pointer}
+/* Stab */
+.vb textarea{width:100%;padding:8px 10px;background:rgba(0,229,255,.04);border:1px solid var(--line);color:var(--ink);font:13px var(--sans,inherit);resize:vertical;border-radius:2px}
+.vb textarea:focus{border-color:var(--accent);outline:none}
+.stab-raster{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px 12px}
+.stab-raster .vb-feld select,.stab-raster .vb-feld input{min-width:0}
+.stab-liste{margin:0 0 8px;padding-left:16px;font-size:12px;color:var(--ink2);line-height:1.55}
+.stab-liste i{color:var(--muted)}
+.stab-kosten{font:11px var(--mono);font-style:normal;color:var(--ink2)}.stab-kosten.warn{color:var(--warn)}
+.stab-grenze{margin:6px 0 4px}.stab-grenze input{max-width:160px}

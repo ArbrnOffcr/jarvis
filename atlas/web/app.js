@@ -3232,3 +3232,134 @@ $("einst-vb").addEventListener("change", (e) => {
 });
 const _einstOeffnenVB = window.einstellungenOeffnen;
 window.einstellungenOeffnen = function () { _einstOeffnenVB(); vbAufbauen(); };
+
+// ---------- Stab: Agenten, Aufgaben, Persönlichkeit (Einstellungen) und Schalter in der Kopfleiste ----------
+const STAB = { d: null };
+async function stabPost(pfad, body) {
+  const r = await fetch(pfad, { method: "POST", headers: { "content-type": "application/json", ...(TOKEN ? { "x-atlas-token": TOKEN } : {}) },
+    body: JSON.stringify(body || {}) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || `Fehler ${r.status}`);
+  return j;
+}
+function stabBtn() {
+  const b = $("stabbtn"); if (!b) return;
+  if (!STAB.d) { b.hidden = true; return; }
+  b.hidden = false; b.setAttribute("aria-pressed", STAB.d.aktiv ? "true" : "false");
+  b.textContent = STAB.d.aktiv ? "STAB: AN" : "STAB: AUS";
+  b.title = STAB.d.aktiv ? "Stab ist eingeschaltet – JARVIS verteilt größere Aufträge an seine Agenten. Klick: ausschalten"
+                         : "Stab ist ausgeschaltet – JARVIS erledigt alles selbst. Klick: einschalten";
+}
+async function stabLaden() { try { STAB.d = await api("/stab"); } catch (e) { STAB.d = null; } stabBtn(); return STAB.d; }
+async function stabSchalten(an) {
+  try { await stabPost("/stab/schalter", { aktiv: an }); toast(an ? "Stab eingeschaltet" : "Stab ausgeschaltet – JARVIS erledigt alles selbst"); }
+  catch (e) { toast("Stab: " + e.message); }
+  await stabLaden(); if (!$("einst").hidden) stabAufbauen();
+}
+function stabOpt(map, wert) { return Object.entries(map).map(([k, v]) => `<option value="${esc(k)}" ${k === wert ? "selected" : ""}>${esc(v)}</option>`).join(""); }
+function stabListe(arr) { return (arr || []).length ? `<ul class="stab-liste">${arr.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "<p class='vb-hilfe'>–</p>"; }
+function stabVerlauf(p, versionen) {
+  const v = (p.verlauf || []).slice(-5).reverse().map((e) => `<li><b>${esc(e.version)}</b> · ${esc(fdat(e.datum))} · ${esc(e.grund)}${e.von ? " <i>(" + esc(e.von) + ")</i>" : ""}</li>`).join("");
+  const opt = (versionen || []).slice().reverse().map((x) => `<option>${esc(x)}</option>`).join("");
+  return `<div class="vb-feld"><label>Verlauf (aktuell ${esc(p.version)})</label><ul class="stab-liste">${v}</ul></div>
+    ${opt ? `<div class="vb-reihe"><select data-f="version">${opt}</select><button type="button" data-a="zurueck">ZURÜCKSETZEN</button></div>` : ""}`;
+}
+function stabGrund() {
+  return `<div class="vb-feld"><label>Grund der Änderung (wird protokolliert)</label><input type="text" data-f="grund" placeholder="z. B. soll förmlicher klingen"></div>`;
+}
+function stabAufbauen() {
+  const box = $("einst-stab"), d = STAB.d;
+  if (!box) return;
+  if (!d) { box.innerHTML = "<p class='vb-hilfe'>Stab nicht verfügbar.</p>"; return; }
+  const offen = [...box.querySelectorAll("details[open]")].map((x) => x.dataset.id);
+  const o = d.optionen, j = d.jarvis, pe = j.persoenlichkeit || {};
+  const grenze = d.kostengrenze_eur;
+  const html = [];
+  html.push(`<p class="vb-hilfe">Du sprichst nur mit JARVIS. Größere Aufträge verteilt er an seine Agenten, die sich bei Bedarf untereinander abstimmen; er gewichtet die Ergebnisse und trägt sie dir vor. Rechte und Bestätigungen gelten für alle Agenten unverändert.</p>
+    <div class="einst-zeile"><span>Stab</span><button type="button" data-a="schalter" class="${d.aktiv ? "an" : ""}">${d.aktiv ? "AN" : "AUS"}</button></div>
+    <div class="einst-zeile"><span>Kosten diesen Monat</span><em class="stab-kosten ${grenze && d.kosten_monat >= grenze * 0.8 ? "warn" : ""}">${d.kosten_monat.toFixed(2)} € ${grenze ? "von " + Number(grenze).toFixed(2) + " €" : "· keine Grenze"}</em></div>
+    <div class="vb-reihe stab-grenze"><input type="number" min="1" step="1" data-f="grenze" placeholder="Grenze in €" value="${grenze ?? ""}">
+      <button type="button" data-a="grenze" class="primary">GRENZE SETZEN</button>${grenze ? `<button type="button" data-a="grenze-weg">AUFHEBEN</button>` : ""}</div><div class="vb-status" data-st="kopf"></div>`);
+  html.push(vbZeile("jarvis", "JARVIS · Chef des Stabes", { ok: true, text: `v${j.version} · ${o.grundton[pe.grundton] || ""}` },
+    `<p class="vb-hilfe"><b>Aufgabe:</b> ${esc(j.auftrag)}</p>
+     <div class="stab-raster">
+      <div class="vb-feld"><label>Grundton</label><select data-p="grundton">${stabOpt(o.grundton, pe.grundton)}</select></div>
+      <div class="vb-feld"><label>Humor</label><select data-p="humor">${stabOpt(o.humor, pe.humor)}</select></div>
+      <div class="vb-feld"><label>Ausführlichkeit</label><select data-p="ausfuehrlichkeit">${stabOpt(o.ausfuehrlichkeit, pe.ausfuehrlichkeit)}</select></div>
+      <div class="vb-feld"><label>Anrede</label><select data-p="anrede_form">${stabOpt(o.anrede_form, pe.anrede_form)}</select></div>
+     </div>
+     <div class="vb-feld"><label>Eigene Anweisung zum Auftreten</label><textarea data-p="zusatz" rows="2" placeholder="z. B. Nenne Zeiten als Datum-Zeit-Gruppe">${esc(pe.zusatz || "")}</textarea></div>
+     ${stabGrund()}<div class="vb-reihe"><button type="button" data-a="speichern" class="primary">SPEICHERN</button></div>
+     ${stabVerlauf(j, d.jarvis_versionen)}`, offen.includes("jarvis") || !offen.length));
+  for (const a of d.agenten) {
+    html.push(vbZeile(a.id, `${esc(a.name)} · ${esc(a.kuerzel)}`, a.aktiv === false ? { text: `v${a.version} · aus` } : { ok: true, text: `v${a.version} · ${esc(o.modell[a.modell] ? a.modell : "")}` },
+      `<p class="vb-hilfe"><b>Sachgebiet:</b> ${esc(a.sachgebiet)}<br><b>Auftrag:</b> ${esc(a.auftrag)}</p>
+       <div class="stab-raster"><div class="vb-feld"><label>Darf</label>${stabListe(a.darf)}</div><div class="vb-feld"><label>Darf nicht</label>${stabListe(a.darf_nicht)}</div></div>
+       <p class="vb-hilfe"><b>Werkzeuge:</b> ${esc((a.werkzeuge || []).join(", "))} · <b>Datenschutz:</b> ${esc(a.datenschutz || "")}</p>
+       <div class="stab-raster">
+        <div class="vb-feld"><label>Tonfall</label><input type="text" data-f="tonfall" value="${esc(a.tonfall || "")}"></div>
+        <div class="vb-feld"><label>Ausführlichkeit</label><select data-f="ausfuehrlichkeit">${stabOpt(o.ausfuehrlichkeit, a.ausfuehrlichkeit)}</select></div>
+        <div class="vb-feld"><label>Modell</label><select data-f="modell" ${a.fest_lokal ? "disabled title='Bleibt aus Datenschutzgründen lokal'" : ""}>${stabOpt(o.modell, a.modell)}</select></div>
+        <div class="vb-feld"><label>Einsatzbereit</label><select data-f="aktiv"><option value="1" ${a.aktiv !== false ? "selected" : ""}>Aktiv</option><option value="0" ${a.aktiv === false ? "selected" : ""}>Abgeschaltet</option></select></div>
+       </div>
+       <div class="vb-feld"><label>Eigene Anweisung</label><textarea data-f="zusatz" rows="2">${esc(a.zusatz || "")}</textarea></div>
+       ${stabGrund()}<div class="vb-reihe"><button type="button" data-a="speichern" class="primary">SPEICHERN</button></div>
+       ${stabVerlauf(a, a.versionen)}`, offen.includes(a.id)));
+  }
+  const ein = (d.einsaetze || []).map((e) => `<li><b>${esc(e.zeit.slice(5, 16).replace("T", " "))}</b> · ${esc((e.agenten || []).map((x) => x.agent).join(", "))} · ${esc(e.dauer_s)} s · ${Number(e.kosten_eur || 0).toFixed(3)} €${e.auftrag ? "<br><i>" + esc(e.auftrag) + "</i>" : ""}</li>`).join("");
+  html.push(vbZeile("einsaetze", "Letzte Einsätze", { text: `${(d.einsaetze || []).length}` },
+    ein ? `<ul class="stab-liste">${ein}</ul>` : "<p class='vb-hilfe'>Noch keine Einsätze.</p>", offen.includes("einsaetze")));
+  box.innerHTML = html.join("");
+}
+$("einst-stab")?.addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-a]"); if (!b) return;
+  const box = $("einst-stab"), zeile = b.closest(".vb-zeile");
+  const st = zeile ? zeile.querySelector(".vb-status") : box.querySelector('[data-st="kopf"]');
+  const melde = (t, art = "") => { if (st) { st.textContent = t; st.className = "vb-status " + art; } };
+  const f = (n) => zeile?.querySelector(`[data-f="${n}"]`)?.value ?? "";
+  try {
+    if (b.dataset.a === "schalter") { await stabSchalten(!STAB.d.aktiv); return; }
+    if (b.dataset.a === "grenze" || b.dataset.a === "grenze-weg") {
+      const wert = b.dataset.a === "grenze" ? Number(box.querySelector('[data-f="grenze"]').value) : null;
+      if (b.dataset.a === "grenze" && !(wert > 0)) { melde("Bitte einen Betrag in Euro eingeben.", "fehler"); return; }
+      await stabPost("/stab/kostengrenze", { wert }); await stabLaden(); stabAufbauen();
+      toast(wert ? `Kostengrenze des Stabs: ${wert} € pro Monat` : "Kostengrenze des Stabs aufgehoben"); return;
+    }
+    const id = zeile.dataset.id, grund = f("grund").trim();
+    if (b.dataset.a === "zurueck") {
+      const version = f("version");
+      if (!b.dataset.sicher) { b.dataset.sicher = "1"; b.textContent = `AUF ${version}?`; setTimeout(() => { if (b.isConnected) { delete b.dataset.sicher; b.textContent = "ZURÜCKSETZEN"; } }, 4000); return; }
+      b.disabled = true; melde("Einen Moment …");
+      const r = await stabPost(`/stab/zuruecksetzen/${id}`, { version, grund });
+      await stabLaden(); stabAufbauen(); toast(`Zurückgesetzt – jetzt Version ${r.version}`); return;
+    }
+    if (b.dataset.a === "speichern") {
+      if (!grund) { melde("Bitte kurz einen Grund angeben – er wird im Verlauf protokolliert.", "fehler"); zeile.querySelector('[data-f="grund"]').focus(); return; }
+      let aenderungen;
+      if (id === "jarvis") {
+        const pe = {}; zeile.querySelectorAll("[data-p]").forEach((x) => { pe[x.dataset.p] = x.value; });
+        aenderungen = { persoenlichkeit: pe };
+      } else {
+        aenderungen = { tonfall: f("tonfall"), ausfuehrlichkeit: f("ausfuehrlichkeit"), zusatz: f("zusatz"), aktiv: f("aktiv") === "1" };
+        const m = zeile.querySelector('[data-f="modell"]'); if (m && !m.disabled) aenderungen.modell = m.value;
+      }
+      b.disabled = true; melde("Speichere …");
+      const r = await stabPost(`/stab/persona/${id}`, { aenderungen, grund });
+      await stabLaden(); stabAufbauen();
+      toast(r.unveraendert ? "Keine Änderung" : `Gespeichert – Version ${r.version}`);
+    }
+  } catch (err) { melde(err.message, "fehler"); b.disabled = false; }
+});
+$("stabbtn")?.addEventListener("click", () => { if (STAB.d) stabSchalten(!STAB.d.aktiv); });
+const _handleStab = handle;
+handle = function (ev) {
+  if (ev.type === "stab") {
+    if (ev.phase === "start") toast("Stab arbeitet: " + (ev.agenten || []).join(", "));
+    if (ev.phase === "schalter" && STAB.d) { STAB.d.aktiv = !!ev.aktiv; stabBtn(); }
+    return;
+  }
+  _handleStab(ev);
+};
+const _einstOeffnenStab = window.einstellungenOeffnen;
+window.einstellungenOeffnen = function () { _einstOeffnenStab(); stabLaden().then(stabAufbauen); };
+stabLaden();

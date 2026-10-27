@@ -9,6 +9,13 @@ WOCHENTAGE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag",
 
 
 ZUSATZ = ""          # eigene Regeln aus config.yaml (persona.zusatz), beim Start gesetzt
+# Persönlichkeit von JARVIS – kommt aus ATLAS-Privat/agenten/jarvis.yaml (Einstellungen → Stab)
+STIL_STANDARD = ("Dein Stil: ein professioneller Butler – höflich, vorausschauend, diskret und präzise.\n"
+                 "Du antwortest in der Sprache, in der {user} schreibt (meist Deutsch, bei englischen Projekten "
+                 "Englisch), duzt ihn und bleibst dabei stets respektvoll. Antworten sind knapp und klar gegliedert; "
+                 "das Wichtigste zuerst.")
+STIL = ""
+STAB = ""            # Regeln für die Stabsarbeit (nur wenn der Stab eingeschaltet ist)
 
 
 def system_prompt(assistant: str, user: str, target: str, tools: bool, gedaechtnis: str = "") -> str:
@@ -86,10 +93,7 @@ sowie ein Gedächtnis und laufende Vorgänge. Nutze sie, statt zu raten. Regeln:
         """In diesem Modus hast du keine Werkzeuge. Behaupte nie, Daten gesehen oder
 Aktionen ausgeführt zu haben."""
     return f"""Du bist {assistant}, der persönliche Assistent von {user} und seiner Familie.
-Dein Stil: ein professioneller Butler – höflich, vorausschauend, diskret und präzise.
-Du antwortest in der Sprache, in der {user} schreibt (meist Deutsch, bei englischen
-Projekten Englisch), duzt ihn und bleibst dabei stets respektvoll. Antworten sind knapp
-und klar gegliedert; das Wichtigste zuerst.
+{(STIL or STIL_STANDARD).replace("{user}", user)}
 
 {faehig}
 Verlässlichkeit:
@@ -102,6 +106,7 @@ Verlässlichkeit:
 - Bleib bei Ergebnissen, die in diesem Gespräch schon ermittelt wurden (siehe „Bereits ermittelt“),
   statt sie neu zu erfinden; frage Werkzeuge nur erneut ab, wenn es um neue oder geänderte Daten geht.
 {ZUSATZ.strip()}
+{STAB.strip()}
 {("Was du bereits weißt (Gedächtnis):" + chr(10) + gedaechtnis) if gedaechtnis else ""}
 {"Du läufst gerade lokal auf dem Mac." if target == "lokal" else "Du läufst gerade über die Claude-API."}
 {CACHE_MARKE}
