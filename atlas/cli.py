@@ -174,7 +174,7 @@ def setup_icloud() -> None:
 
 
 def baue_app(tmp, quelle=None, name: str = "JARVIS", bundle_id: str = "de.atlas.jarvis",
-             frameworks=("Cocoa", "WebKit", "AVFoundation"), mikrofon: bool = True):
+             frameworks=("Cocoa", "WebKit", "AVFoundation", "CoreLocation"), mikrofon: bool = True):
     """Übersetzt eine Swift-App nach tmp/<name>.app (mit Symbol, ad-hoc signiert). Rückgabe: Pfad oder None."""
     import plistlib
     from pathlib import Path
@@ -198,6 +198,8 @@ def baue_app(tmp, quelle=None, name: str = "JARVIS", bundle_id: str = "de.atlas.
             "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True}}
     if mikrofon:
         info["NSMicrophoneUsageDescription"] = "JARVIS hört auf „Hey Jarvis“ und auf deine Sprachbefehle."
+        info["NSLocationUsageDescription"] = "JARVIS nutzt deinen ungefähren Standort für das Wetter vor Ort und an heutigen Reisezielen."
+        info["NSLocationWhenInUseUsageDescription"] = info["NSLocationUsageDescription"]
     with open(app / "Contents/Info.plist", "wb") as f:
         plistlib.dump(info, f)
     icon = REPO_DIR / "app" / "icon.png"

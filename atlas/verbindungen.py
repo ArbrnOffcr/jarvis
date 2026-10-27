@@ -52,7 +52,8 @@ def status(core) -> dict:
         "icloud": {"apple_id": get_secret("icloud_apple_id") or "", "mail": get_secret("icloud_email") or "",
                    "gesetzt": bool(get_secret("icloud_app_pw"))},
         "telegram": {"verbunden": bool(tg().get("chat_id")), "bot": _bot_name(get_secret("telegram"))},
-        "profil": {"name": cfg.get("name") or core.name, "anrede": cfg.get("anrede", "Sir"), "ort": w.get("ort", "")},
+        "profil": {"name": cfg.get("name") or core.name, "anrede": cfg.get("anrede", "Sir"), "ort": w.get("ort", ""),
+                   "standort": core.standort.status() if hasattr(core, "standort") else {"bekannt": False}},
         "archiv": str(core.archiv.archive) if core.archiv and core.archiv.archive else "",
         "lokal": lokal_status(),
     }
@@ -211,10 +212,14 @@ def _config_aendern(aenderung) -> None:
 
 
 def profil_setzen(core, name: str, anrede: str, ort: str) -> dict:
-    from atlas.einrichtung import ort_finden
-    w = ort_finden(ort.strip()) if ort and ort.strip() else None
-    if ort and ort.strip() and not w:
-        raise ToolError(f"Ort „{ort}“ nicht gefunden")
+    from atlas.standort import OrtNichtGefunden, geocode
+    w = None
+    alt = (core.cfg.get("wetter") or {}).get("ort", "")
+    if ort and ort.strip() and ort.strip() != alt:
+        try:
+            w = geocode(ort.strip())
+        except OrtNichtGefunden as e:
+            raise ToolError(str(e))
 
     def aendern(cfg):
         if name is not None:

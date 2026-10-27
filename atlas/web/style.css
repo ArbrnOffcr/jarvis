@@ -1206,3 +1206,13 @@ body.mobil .vb input{font-size:16px}
 body.mit-vortrag .chat{z-index:141}
 @media (max-width:800px){.vt-woche{grid-template-columns:repeat(2,1fr)}.vt-rahmen{max-height:72vh}.vortrag{padding-top:3vh}.vt-gross{font-size:22px}}
 @media (prefers-reduced-motion:reduce){.vortrag *{animation-duration:.01s!important;animation-iteration-count:1!important}}
+/* Wetter: Reiseziele heute */
+.reiseziel{display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:7px;border-top:1px dashed rgba(0,229,255,.15);font-size:12px;color:var(--ink2)}
+.reiseziel i{width:20px;height:20px;display:inline-flex}.reiseziel i svg{width:100%;height:100%}
+.reiseziel span{flex:1}.reiseziel b{color:var(--ink);font-weight:500}.reiseziel em{font:11px var(--mono);font-style:normal;color:var(--accent-soft)}
+.vt-reise{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:14px}
+.vt-reisekarte{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid rgba(255,181,71,.35);background:rgba(255,181,71,.04);animation:vt-auf .5s calc(.4s + var(--i) * .1s) both}
+.vt-reisekarte .vt-wicon{width:44px;height:44px;flex:0 0 44px}
+.vt-reisekarte b{display:block;font-size:13px;color:var(--ink)}.vt-reisekarte span{font:11px var(--mono);color:var(--ink2)}
+.vt-reisekarte em{margin-left:auto;font:600 16px var(--mono);font-style:normal;color:#ffd08a}
+.vt-reise-titel{font:600 9px var(--mono);letter-spacing:.26em;color:#ffb547;margin-top:16px}

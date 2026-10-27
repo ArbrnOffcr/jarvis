@@ -11,15 +11,12 @@ WMO = {0: "klar", 1: "überwiegend klar", 2: "teils bewölkt", 3: "bedeckt", 45:
        96: "Gewitter mit Hagel", 99: "Gewitter mit Hagel"}
 
 
-def wetter(cfg: dict, ort: str = "", tage: int = 3) -> dict:
-    lat, lon, name = cfg["lat"], cfg["lon"], cfg["ort"]
-    if ort and ort.lower() != name.lower():
-        g = httpx.get("https://geocoding-api.open-meteo.com/v1/search",
-                      params={"name": ort, "count": 1, "language": "de"}, timeout=10).json()
-        if not g.get("results"):
-            raise ToolError(f"Ort '{ort}' nicht gefunden")
-        r = g["results"][0]
-        lat, lon, name = r["latitude"], r["longitude"], r["name"]
+# Vom Kern gesetzt: aktueller Wetterort (Standort oder Heimatort) und heutige Reiseziele > 50 km
+ORT = None          # () -> {"ort", "lat", "lon", "quelle"}
+ZIELE = None        # () -> [{"ort", "lat", "lon", "km", "termin", "zeit"}]
+
+
+def _vorhersage(lat: float, lon: float, name: str, tage: int = 3) -> dict:
     try:
         d = httpx.get("https://api.open-meteo.com/v1/forecast", timeout=10, params={
             "latitude": lat, "longitude": lon, "timezone": "Europe/Berlin", "forecast_days": max(1, min(7, tage)),
@@ -27,7 +24,7 @@ def wetter(cfg: dict, ort: str = "", tage: int = 3) -> dict:
             "hourly": "temperature_2m,precipitation_probability,weather_code",
             "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,sunrise,sunset",
         }).json()
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, ValueError) as e:
         raise ToolError(f"Wetterdienst nicht erreichbar: {e}")
     cur, hr, dy = d["current"], d["hourly"], d["daily"]
     now = cur["time"][:13]
@@ -39,7 +36,7 @@ def wetter(cfg: dict, ort: str = "", tage: int = 3) -> dict:
                     "wind_kmh": round(cur["wind_speed_10m"])},
         "stunden": [{"zeit": hr["time"][i][11:16], "temp": round(hr["temperature_2m"][i]),
                      "regen": hr["precipitation_probability"][i], "code": hr["weather_code"][i]}
-                    for i in range(start, min(start + 13, len(hr["time"])))],
+                    for i in range(start, min(start + 24, len(hr["time"])))],
         "tage": [{"datum": dy["time"][i], "min": round(dy["temperature_2m_min"][i]),
                   "max": round(dy["temperature_2m_max"][i]), "regen": dy["precipitation_probability_max"][i],
                   "code": dy["weather_code"][i], "text": WMO.get(dy["weather_code"][i], "–"),
@@ -48,8 +45,48 @@ def wetter(cfg: dict, ort: str = "", tage: int = 3) -> dict:
     }
 
 
+def wetter(cfg: dict, ort: str = "", tage: int = 3) -> dict:
+    """Wetter am aktuellen Standort (sonst Heimatort) – oder an einem genannten Ort. Ohne Ortsangabe kommen
+    heutige Reiseziele (Termine mit Ort, > 50 km entfernt) mit ihrem Wetter zur Terminzeit dazu."""
+    if ort and ort.strip():
+        from atlas.standort import OrtNichtGefunden, geocode
+        try:
+            g = geocode(ort)
+        except OrtNichtGefunden as e:
+            raise ToolError(str(e))
+        return _vorhersage(g["lat"], g["lon"], g["ort"], tage)
+    basis = None
+    if ORT:
+        try:
+            basis = ORT()
+        except Exception:
+            basis = None
+    basis = basis or {"ort": cfg["ort"], "lat": cfg["lat"], "lon": cfg["lon"], "quelle": "heimatort"}
+    out = _vorhersage(basis["lat"], basis["lon"], basis["ort"], tage)
+    out["quelle"] = basis.get("quelle", "heimatort")
+    if ZIELE:
+        try:
+            ziele = ZIELE()
+        except Exception:
+            ziele = []
+        for z in ziele[:3]:
+            try:
+                w = _vorhersage(z["lat"], z["lon"], z["ort"], 1)
+            except ToolError:
+                continue
+            h = next((s for s in w["stunden"] if z.get("zeit") and s["zeit"][:2] == str(z["zeit"])[:2]), None)
+            t0 = (w["tage"] or [{}])[0]
+            out.setdefault("reiseziele", []).append({
+                "ort": z["ort"], "km": z["km"], "termin": z.get("termin", ""), "zeit": z.get("zeit"),
+                "min": t0.get("min"), "max": t0.get("max"), "regen": t0.get("regen"), "code": t0.get("code"),
+                "text": t0.get("text"), "zur_terminzeit": h})
+    return out
+
+
 def tools(cfg, secrets) -> list[Tool]:
     w = cfg["wetter"]
-    return [Tool("wetter", f"Wetter und Vorhersage (Standard: {w['ort']}). Optional anderer Ort.",
+    return [Tool("wetter", "Wetter und Vorhersage am aktuellen Standort (sonst Heimatort " + w["ort"] + "); enthält "
+                 "auch heutige Reiseziele aus dem Kalender (> 50 km entfernt) mit Wetter zur Terminzeit. "
+                 "Optional ein anderer Ort.",
                  "wetter.lesen", lambda ort="", tage=3: wetter(w, ort, tage),
                  {"ort": S("Ort, optional"), "tage": {"type": "integer", "description": "1–7 Tage"}})]

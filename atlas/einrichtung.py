@@ -20,7 +20,12 @@ def _p(art: str, text: str) -> None:
 
 
 def ort_finden(ort: str) -> dict | None:
-    """Ort → Koordinaten (Open-Meteo, ohne Konto)."""
+    """Ort → Koordinaten (Open-Meteo, sonst OpenStreetMap)."""
+    from atlas.standort import OrtNichtGefunden, geocode
+    try:
+        return geocode(ort)
+    except OrtNichtGefunden:
+        return None
     try:
         r = httpx.get("https://geocoding-api.open-meteo.com/v1/search",
                       params={"name": ort, "count": 1, "language": "de", "format": "json"}, timeout=15)

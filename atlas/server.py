@@ -114,6 +114,12 @@ class Core:
         self.timer = _timer.Timer(self)
         self.musik = _musik.Musik(self)
         self.tools.update({t.name: t for t in _karte.tools(self) + _timer.tools(self) + _musik.tools(self)})
+        # Standort: Wetter dort, wo ich bin – und an heutigen Reisezielen (> 50 km)
+        from atlas.standort import Standort
+        from atlas.tools import wetter as _wetter_mod
+        self.standort = Standort(self)
+        _wetter_mod.ORT = self.standort.wetter_ort
+        _wetter_mod.ZIELE = self.standort.reiseziele
         # Stab: JARVIS als Chef des Stabes mit Sachgebietsagenten (Einstellungen → Stab)
         from atlas.stab import Stab
         self.stab = Stab(self)
@@ -655,6 +661,24 @@ def stab_zuruecksetzen(agent: str, data: dict, _: None = Depends(auth)):
                                              von="Einstellungen")
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/standort")
+async def standort_setzen(data: dict, _: None = Depends(auth)):
+    try:
+        lat, lon = float(data["lat"]), float(data["lon"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(400, "lat/lon fehlen")
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(400, "ungültige Koordinaten")
+    st = await asyncio.to_thread(get_core().standort.setzen, lat, lon, data.get("genauigkeit"),
+                                 str(data.get("quelle") or "mac")[:20])
+    return {"ok": True, "ort": st.get("ort", "")}
+
+
+@app.get("/standort")
+def standort_lesen(_: None = Depends(auth)):
+    return get_core().standort.status()
 
 
 @app.get("/briefing")
@@ -1443,6 +1467,7 @@ async def ws_endpoint(ws: WebSocket, token: str = ""):
                 st = msg.get("standort")
                 if isinstance(st, dict) and st.get("lat") is not None:
                     c.karte.standort = (float(st["lat"]), float(st["lon"]), time.time())
+                    asyncio.get_running_loop().run_in_executor(None, c.standort.setzen, st["lat"], st["lon"], None, "browser")
                 if s.task and not s.task.done():   # vorherige Antwort läuft noch: erst beenden
                     s.task.cancel()
                     try:

@@ -127,7 +127,9 @@ Bedeutung der Zeichen:
 | YouTube-Videos eingebettet (stumm starten, Ton, Pause, nächstes) | ⚙️ | YouTube-Schlüssel |
 | Kurze freie Clips zur Veranschaulichung | ✅ | |
 | Prinzipskizzen beim Erklären („Wie funktioniert …?“) | ✅ | |
-| Wetter und Vorhersage | ✅ | Standardort aus der Einrichtung |
+| Wetter am aktuellen Standort (Mac-Ortungsdienste oder iPhone), sonst am Heimatort | ⚙️ | Einmal Ortungsdienste erlauben; Standort gilt 8 Stunden |
+| Wetter an heutigen Reisezielen: Termine mit Ort, die noch anstehen und mehr als 50 km entfernt sind – mit Wetter zur Terminzeit | ✅ | im Dashboard, im Tagesupdate und im Lagevortrag |
+| Heimatort in den Einstellungen ändern (Ortsname, PLZ oder Adresse) | ✅ | Ortssuche über Open-Meteo und OpenStreetMap |
 | Übersetzen, Texte formulieren, Konzepte und Pläne | ✅ | |
 | Live-Kamera auswerten, Bilder selbst erzeugen | ❌ | |
 

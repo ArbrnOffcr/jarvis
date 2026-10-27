@@ -550,7 +550,8 @@ const SYM = (c) => (c === 0 ? "☀" : c <= 2 ? "⛅" : c === 3 ? "☁" : c <= 48
   : c <= 77 || c === 85 || c === 86 ? "❄" : "ϟ") + "\uFE0E";
 function renderWetter(w, err) {
   if (err || !w.aktuell) { $("wetter").innerHTML = `<div class="sysline">⚠ Wetter: ${esc(err || "keine Daten")}</div>`; return; }
-  $("wort").textContent = "· " + w.ort.toUpperCase();
+  $("wort").textContent = "· " + w.ort.toUpperCase() + (w.quelle === "standort" ? " ⌖" : "");
+  $("wort").title = w.quelle === "standort" ? "Aktueller Standort" : "Heimatort (Standort unbekannt)";
   const a = w.aktuell, d = (w.tage || [])[0] || {};
   const hours = (w.stunden || []).filter((_, i) => i % 2 === 0).slice(1, 7);
   $("wetter").innerHTML =
@@ -558,7 +559,10 @@ function renderWetter(w, err) {
     `<div class="desc">${esc(a.text)}<br>gefühlt ${a.gefuehlt}° · Wind ${a.wind_kmh} km/h<br>` +
     `heute ${d.min ?? "–"}° / ${d.max ?? "–"}° · Regen ${d.regen ?? 0} %</div></div>` +
     `<div class="hours">${hours.map((h) => `<div>${h.zeit}<i>${SYM(h.code)}</i><b>${h.temp}°</b>` +
-      `<span class="rain">${h.regen ?? 0}%</span></div>`).join("")}</div>`;
+      `<span class="rain">${h.regen ?? 0}%</span></div>`).join("")}</div>` +
+    (w.reiseziele || []).map((z) => `<div class="reiseziel" title="${esc(z.termin)} · ${z.km} km entfernt"><i>${SYM(z.code)}</i>` +
+      `<span>→ <b>${esc(z.ort)}</b>${z.zeit ? " · " + esc(z.zeit) : ""}</span><em>${z.zur_terminzeit ? z.zur_terminzeit.temp + "°" : (z.max ?? "–") + "°"}` +
+      ` · ☂ ${(z.zur_terminzeit?.regen ?? z.regen) ?? 0}%</em></div>`).join("");
 }
 
 // Posteingang
@@ -3186,7 +3190,8 @@ async function vbAufbauen(versuch = 0) {
   html.push(vbZeile("profil", "Über dich", { ok: true, text: `${d.profil.name}${d.profil.ort ? " · " + d.profil.ort : ""}` },
     `<div class="vb-feld"><label>Name</label><input type="text" data-f="name" value="${esc(d.profil.name)}"></div>
      <div class="vb-feld"><label>Begrüßung („Guten Morgen, …“)</label><input type="text" data-f="anrede" value="${esc(d.profil.anrede)}" placeholder="z. B. Sir, Ma'am oder Vorname – leer = ohne"></div>
-     <div class="vb-feld"><label>Wohnort (Wetter, Routen)</label><input type="text" data-f="ort" value="${esc(d.profil.ort)}"></div>
+     <div class="vb-feld"><label>Heimatort (Wetter, wenn der Standort unbekannt ist; Routen „nach Hause“)</label><input type="text" data-f="ort" value="${esc(d.profil.ort)}" placeholder="z. B. Leipzig oder 04109 Leipzig"></div>
+     <p class="vb-hilfe">${d.profil.standort?.bekannt ? `Aktueller Standort: <b>${esc(d.profil.standort.ort || "bekannt")}</b> (${esc({ mac: "Mac", iphone: "iPhone", browser: "Browser" }[d.profil.standort.quelle] || d.profil.standort.quelle)}, vor ${d.profil.standort.alter_min < 60 ? d.profil.standort.alter_min + " Min." : Math.round(d.profil.standort.alter_min / 60) + " Std."})${d.profil.standort.aktuell ? " – das Wetter gilt dort." : " – zu alt, Wetter gilt für den Heimatort."}` : "Standort noch unbekannt: Beim nächsten Start fragt die JARVIS-App einmal nach den Ortungsdiensten (am iPhone fragt Safari)."} Termine von heute mit Ort, die mehr als 50 km entfernt sind, bekommen ihr eigenes Wetter.</p>
      <div class="vb-reihe"><button type="button" data-a="profil" class="primary">SPEICHERN</button></div>`));
   html.push(vbZeile("archiv", "Dokumenten-Ordner", d.archiv ? { ok: true, text: "✓ " + d.archiv.split("/").pop() } : { text: "– keiner" },
     `<p class="vb-hilfe">${d.archiv ? esc(d.archiv) : "JARVIS durchsucht diesen Ordner, legt Post ab und zeigt Dokumente."}</p>
@@ -3624,7 +3629,11 @@ function vtWetterSzene(d) {
       <span class="vt-regen ${t.regen >= 50 ? "hoch" : ""}">☂ ${t.regen ?? 0} %</span></div>`;
   }).join("");
   const a = w.aktuell ? `<div class="vt-jetztwetter">${vtWetterIcon(w.aktuell.code)}<div><b>${w.aktuell.temp}°</b><span>${esc(w.aktuell.text || "")} · gefühlt ${w.aktuell.gefuehlt}° · Wind ${w.aktuell.wind_kmh} km/h</span></div></div>` : "";
-  return `<div class="vt-wetter-kopf">${esc(w.ort || "")}</div>${a}<div class="vt-wetter ${tage.length > 3 ? "viele" : ""}">${karten}</div>`;
+  const rz = (w.reiseziele || []).map((z, i) => `<div class="vt-reisekarte" style="--i:${i}">${vtWetterIcon(z.code ?? 3)}
+    <div><b>${esc(z.ort)}${z.zeit ? " · " + esc(z.zeit) : ""}</b><span>${esc(z.termin || "")} · ${z.km} km · ☂ ${(z.zur_terminzeit?.regen ?? z.regen) ?? 0} %</span></div>
+    <em>${z.zur_terminzeit ? z.zur_terminzeit.temp : (z.max ?? "–")}°</em></div>`).join("");
+  return `<div class="vt-wetter-kopf">${esc(w.ort || "")}${w.quelle === "standort" ? " · AKTUELLER STANDORT" : ""}</div>${a}<div class="vt-wetter ${tage.length > 3 ? "viele" : ""}">${karten}</div>` +
+    (rz ? `<div class="vt-reise-titel">HEUTE AUCH UNTERWEGS</div><div class="vt-reise">${rz}</div>` : "");
 }
 function vtRing(tage, max = 30) {
   const anteil = tage < 0 ? 1 : Math.max(.04, 1 - Math.min(tage, max) / max), u = 2 * Math.PI * 19;
@@ -3785,3 +3794,15 @@ handle = function (ev) {
   }
   _handleVT(ev);
 };
+
+// ---------- Standort vom iPhone/Browser (Wetter vor Ort, Reiseziele) ----------
+function standortSenden() {
+  if (!MOBIL || !navigator.geolocation || document.hidden) return;
+  navigator.geolocation.getCurrentPosition((p) => {
+    fetch("/standort", { method: "POST", headers: { "content-type": "application/json", ...(TOKEN ? { "x-atlas-token": TOKEN } : {}) },
+      body: JSON.stringify({ lat: p.coords.latitude, lon: p.coords.longitude, genauigkeit: p.coords.accuracy, quelle: "iphone" }) })
+      .then(() => loadLage?.()).catch(() => {});
+  }, () => {}, { timeout: 8000, maximumAge: 600000, enableHighAccuracy: false });
+}
+if (MOBIL) { setTimeout(standortSenden, 3000); setInterval(standortSenden, 15 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) standortSenden(); }); }

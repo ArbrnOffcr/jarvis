@@ -796,7 +796,8 @@ class Stab:
         termine.sort(key=lambda x: (x["datum"], x["zeit"] or ""))
         w = roh.get("wetter") or {}
         wetter = {"ort": w.get("ort", ""), "tage": [t for t in w.get("tage") or [] if v.isoformat() <= t.get("datum", "") <= b.isoformat()]
-                  or (w.get("tage") or [])[:1], "aktuell": w.get("aktuell")} if isinstance(w, dict) and w.get("tage") else None
+                  or (w.get("tage") or [])[:1], "aktuell": w.get("aktuell"), "quelle": w.get("quelle", ""),
+                  "reiseziele": w.get("reiseziele") or []} if isinstance(w, dict) and w.get("tage") else None
         m = roh.get("mail_posteingang")
         mails = None
         if isinstance(m, dict):

@@ -4,6 +4,7 @@
 import AVFoundation
 import Carbon
 import Cocoa
+import CoreLocation
 import WebKit
 
 // Unsichtbare Leiste am oberen Rand: Da die Webseite das ganze Fenster füllt, gäbe es sonst keine
@@ -37,8 +38,10 @@ final class JarvisFenster: NSWindow, NSServicesMenuRequestor {
     func readSelection(from pboard: NSPasteboard) -> Bool { empfang?(pboard) ?? false }
 }
 
-final class JarvisApp: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, NSMenuDelegate {
-    var importModus = 2                       // 1 = Kontakt, 2 = Dokument
+final class JarvisApp: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, NSMenuDelegate, CLLocationManagerDelegate {
+    var importModus = 2
+    let ortung = CLLocationManager()          // Standort für Wetter & Reiseziele (nur mit Erlaubnis)
+    var ortTimer: Timer?                       // 1 = Kontakt, 2 = Dokument
     var port: Int { 47000 + Int(getuid()) % 1000 }
     var token: String {
         let f = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".atlas/token")
@@ -93,6 +96,7 @@ final class JarvisApp: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigati
 
         AVCaptureDevice.requestAccess(for: .audio) { _ in }      // macOS fragt einmal, dann nie wieder
         globaleTaste()
+        ortungStarten()
         web.load(URLRequest(url: startURL, cachePolicy: .reloadIgnoringLocalCacheData))
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -194,6 +198,30 @@ final class JarvisApp: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigati
         }.resume()
     }
     func js(_ code: String) { web.evaluateJavaScript(code, completionHandler: nil) }
+
+    // ---------- Standort (Ortungsdienste) → JARVIS-Kern ----------
+    func ortungStarten() {
+        ortung.delegate = self
+        ortung.desiredAccuracy = kCLLocationAccuracyKilometer      // Ortsgenauigkeit genügt fürs Wetter
+        ortung.distanceFilter = 2000
+        if #available(macOS 11.0, *) {
+            if ortung.authorizationStatus == .notDetermined { ortung.requestWhenInUseAuthorization() }
+        }
+        ortung.startUpdatingLocation()
+        ortTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in self?.ortung.requestLocation() }
+    }
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let l = locations.last, l.horizontalAccuracy >= 0, l.horizontalAccuracy < 20000 else { return }
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/standort")!)
+        req.httpMethod = "POST"; req.timeoutInterval = 30
+        req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.setValue(token, forHTTPHeaderField: "x-atlas-token")
+        let daten: [String: Any] = ["lat": l.coordinate.latitude, "lon": l.coordinate.longitude,
+                                    "genauigkeit": l.horizontalAccuracy, "quelle": "mac"]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: daten)
+        URLSession.shared.dataTask(with: req).resume()
+    }
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 
     @objc func neuLaden(_ sender: Any?) { web.reloadFromOrigin() }      // immer frisch vom Kern, nie aus dem Zwischenspeicher
 
