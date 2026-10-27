@@ -300,6 +300,11 @@ function connect() {
   ws.onmessage = (m) => handle(JSON.parse(m.data));
 }
 
+// Tippt der Nutzer gerade in einem Feld (Einstellungen, Dialoge …)? Dann keine Tastenkürzel abfangen.
+function inFeld(el = document.activeElement) {
+  return !!el && el !== document.body && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+}
+
 function handle(ev) {
   switch (ev.type) {
     case "info":
@@ -808,10 +813,10 @@ const mic = $("micbtn");
 mic.addEventListener("pointerdown", (e) => { e.preventDefault(); pttStart(); });
 ["pointerup", "pointerleave", "pointercancel"].forEach((t) => mic.addEventListener(t, pttStop));
 document.addEventListener("keydown", (e) => {
-  if (e.code !== "Space" || e.repeat || document.activeElement === input || !$("modal").hidden) return;
+  if (e.code !== "Space" || e.repeat || document.activeElement === input || inFeld() || !$("modal").hidden) return;
   e.preventDefault(); pttStart();
 });
-document.addEventListener("keyup", (e) => { if (e.code === "Space" && document.activeElement !== input) pttStop(); });
+document.addEventListener("keyup", (e) => { if (e.code === "Space" && document.activeElement !== input && !inFeld()) pttStop(); });
 
 // ---------- Vorlesen ----------
 function unlockAudio() {
@@ -1276,6 +1281,7 @@ function tippen(on) {
 document.addEventListener("keydown", (e) => {
   if (!body.classList.contains("rein") || !$("modal").hidden || e.metaKey || e.ctrlKey || e.altKey) return;
   const imFeld = document.activeElement === input;
+  if (inFeld() || !$("einst").hidden || e.target.closest?.("#einst,.einst,.ansicht,.karte,.modal")) return;   // Einstellungen & andere Felder
   if (e.key === "Escape") { if (body.classList.contains("tippen")) { tippen(false); e.stopPropagation(); } return; }
   if (imFeld) return;
   if ((e.key === "d" || e.key === "D") && !body.classList.contains("tippen")) { e.preventDefault(); e.stopPropagation(); $("rh-dash").click(); return; }
@@ -2113,6 +2119,7 @@ async function bootSequenz(erzwingen = false) {
   let nachUpdate = false;
   try {
     nachUpdate = sessionStorage.getItem("jarvis-nach-update") === "1"; sessionStorage.removeItem("jarvis-nach-update");
+    window.JARVIS_NACH_UPDATE = nachUpdate;
     if (!localStorage.getItem("jarvis-boot-v3")) {          // einmalig: eine früher abgeschaltete Sequenz wieder an
       localStorage.setItem("jarvis-boot-v3", "1"); localStorage.removeItem("jarvis-boot");
     }
@@ -3493,3 +3500,21 @@ function saEnde() {
   setTimeout(() => { if (!SA.el) return; SA.el.classList.add("heim"); clearTimeout(SA.weg); SA.weg = setTimeout(() => saWeg(), 900); }, SA.ruhig ? 400 : 1000);
 }
 addEventListener("resize", () => { if (SA.el) saWeg(true); });
+
+// ---------- Begrüßung beim Start: nur gesprochen, kein Text. Einmal am Tag übernimmt das Tagesupdate ----------
+let GRUSS_FERTIG = false;
+const _handleGruss = handle;
+handle = function (ev) {
+  if (ev.type !== "gruss") return _handleGruss(ev);
+  if (GRUSS_FERTIG || ev.briefing) { GRUSS_FERTIG = true; return; }     // nur einmal je Start, nicht bei Neuverbindung
+  GRUSS_FERTIG = true;
+  if (window.JARVIS_NACH_UPDATE || V.out === "aus") return;
+  const sagen = (n = 0) => {
+    if (document.querySelector(".boot") && n < 60) { setTimeout(() => sagen(n + 1), 400); return; }   // nach der Startsequenz
+    try { unlockAudio(); } catch (e) { return; }
+    const los = () => { V.turnLang = "de"; V.privat = false; ttsSay(ev.text); };
+    if (play.ctx.state === "running") los();
+    else play.ctx.resume().then(() => { if (play.ctx.state === "running") los(); }).catch(() => {});
+  };
+  setTimeout(sagen, 700);
+};

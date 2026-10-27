@@ -1356,13 +1356,15 @@ async def ws_endpoint(ws: WebSocket, token: str = ""):
     h = datetime.now().hour
     gruss = "Guten Morgen" if 4 <= h < 11 else "Guten Tag" if 11 <= h < 18 else "Guten Abend"
     anrede = (c.cfg.get("anrede") or "").strip()
-    await ws.send_json({"type": "info", "text": f"{gruss}, {anrede}." if anrede else f"{gruss}."})
     shown = LOCAL_DIR / "briefing_gezeigt"
     b = await asyncio.to_thread(c.proaktiv.briefing_today)
     try:
         already = shown.read_text().strip() == date.today().isoformat()
     except OSError:
         already = False
+    # Begrüßung nur gesprochen (kein Text im Dashboard); gibt es heute erstmals das Tagesupdate, begrüßt dieses
+    await ws.send_json({"type": "gruss", "text": f"{gruss}, {anrede}." if anrede else f"{gruss}.",
+                        "briefing": bool(b.get("text")) and not already})
     if b.get("text") and not already:
         await ws.send_json({"type": "briefing", "text": b["text"]})
         try:

@@ -16,6 +16,7 @@ Bedeutung der Zeichen:
 | Funktion | Stand | Hinweis |
 |---|---|---|
 | Text-Chat im Dashboard und im Terminal (`jarvis`) | ✅ | |
+| Start ohne Text: JARVIS begrüßt nur gesprochen („Guten Morgen/Tag/Abend, Sir“) und wartet; einmal am Tag kommt stattdessen das Tagesupdate mit Text | ✅ | Begrüßung entfällt, wenn die Stimme auf AUS steht |
 | Spracheingabe per Leertaste (gedrückt halten) | ✅ | Erkennung lokal mit Whisper, nichts geht ins Netz |
 | Weckwort „Hey Jarvis“ | ⚙️ | Knopf WECKWORT; lauscht lokal |
 | Gesprächsmodus: nach jeder Antwort 6 s weiter zuhören | ✅ | Knopf GESPRÄCH: AN / OHNE STOPP / AUS |
