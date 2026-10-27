@@ -2151,9 +2151,11 @@ async function bootSequenz(erzwingen = false) {
   document.body.appendChild(b);
   const ton = { a: bootTon() };
   const statusP = Promise.race([api("/status").catch(() => ({})), new Promise((r) => setTimeout(() => r({}), 800))]);
+  const stabP = Promise.race([api("/stab").catch(() => null), new Promise((r) => setTimeout(() => r(null), 900))]);
   const ein = await Promise.race([api("/einstellungen").catch(() => ({})), new Promise((r) => setTimeout(() => r({}), 600))]);
   const vorlauf = ein.klang !== false ? await tonStarten(ton.a) : null;
   const st = await statusP;
+  const sd = await stabP;                       // läuft parallel zu /status – verzögert den Start nicht spürbar
   // Start: Bild und Ton gleichzeitig (läuft der Ton schon ein paar Millisekunden, zieht das Bild nach)
   const versatz = Math.min(.6, vorlauf || 0);
   const t0 = performance.now() - versatz * 1000;
@@ -2161,14 +2163,27 @@ async function bootSequenz(erzwingen = false) {
   uiLog(`Startsequenz läuft (Ton: ${vorlauf === null ? (ein.klang === false ? "aus" : "blockiert") : "ja"}, `
         + `Bewegung reduziert: ${matchMedia("(prefers-reduced-motion: reduce)").matches ? "ja" : "nein"})`);
   const stopLeinwand = bootLeinwand(b.querySelector(".boot-cv"), t0, ZUEND);
+  // Stab meldet sich: Embleme der aktiven Agenten erscheinen auf einem Ring um den Kern und werden beim Laden hineingezogen
+  const agK = sd && sd.aktiv ? (sd.agenten || []).filter((a) => a.aktiv !== false).map((a) => a.kuerzel) : [];
+  if (agK.length) {
+    const R = 222, n = agK.length;
+    const teile = agK.map((k, i) => {
+      const w = -Math.PI / 2 + (i / n) * Math.PI * 2, co = Math.cos(w), si = Math.sin(w);
+      const x = 200 + co * R, y = 200 + si * R, d = (4.4 + i * .18).toFixed(2);
+      return `<line x1="${(200 + co * 112).toFixed(1)}" y1="${(200 + si * 112).toFixed(1)}" x2="${(x - co * 30).toFixed(1)}" y2="${(y - si * 30).toFixed(1)}" pathLength="1" class="b-al" style="animation-delay:${d}s"/>
+        <g class="b-ag" style="transform-origin:${x.toFixed(1)}px ${y.toFixed(1)}px;animation-delay:${d}s">${stabLogo(k).replace("<svg ", `<svg x="${(x - 25).toFixed(1)}" y="${(y - 25).toFixed(1)}" width="50" height="50" `)}
+        <text x="${x.toFixed(1)}" y="${(y + 39).toFixed(1)}" class="b-agt">${esc(STAB_NAMEN[k] || k)}</text></g>`;
+    }).join("");
+    b.querySelector(".boot-svg").insertAdjacentHTML("beforeend", `<g class="b-stab">${teile}</g>`);
+  }
   const zeilen = [
     ["KERN", `v${st.version || "?"} · ${st.host || "MAC"}`], ["WACHE", "AKTIV"],
     ["LOKALES MODELL", String(st.lokal || "–").split(" ")[0]], ["CLAUDE", String(st.claude || "–").split(" ")[0]],
     ["ARCHIV", `${st.index?.dateien ?? "–"} DATEIEN`], ["WERKZEUGE", `${st.werkzeuge ?? "–"} GELADEN`],
     ["SPRACHE", "ELEVENLABS · WHISPER"], ["SICHERHEIT", st.notaus ? "NOT-AUS AKTIV" : "RECHTE GEPRÜFT"],
-    ["SYSTEME", "BEREIT"]];
+    ["STAB", agK.length ? `${agK.length} AGENTEN BEREIT` : (sd ? "AUS" : "–")], ["SYSTEME", "BEREIT"]];
   const STATUS = [[0, "INITIALISIERE KERN …"], [2.2, "STARTE NEURONALES NETZ …"], [3.6, "LADE SPRACHMODELLE …"],
-    [5.0, "VERBINDE ARCHIV UND DIENSTE …"], [6.3, "KALIBRIERE SENSORIK …"], [7.4, "ENERGIE WIRD GEBÜNDELT …"], [ZUEND, "ONLINE"]];
+    [5.0, "VERBINDE ARCHIV UND DIENSTE …"], ...(agK.length ? [[5.6, "STAB MELDET EINSATZBEREITSCHAFT …"]] : []), [6.3, "KALIBRIERE SENSORIK …"], [7.4, "ENERGIE WIRD GEBÜNDELT …"], [ZUEND, "ONLINE"]];
   const links = b.querySelector(".boot-links"), hex = b.querySelector(".b-hex"), meter = b.querySelector(".b-meter");
   const balken = b.querySelector(".b-balken i"), proz = b.querySelector(".b-prozent"), titel = b.querySelector(".boot-titel");
   const status = b.querySelector(".b-status");
@@ -3280,7 +3295,7 @@ function stabAufbauen() {
     <div class="einst-zeile"><span>Kosten diesen Monat</span><em class="stab-kosten ${grenze && d.kosten_monat >= grenze * 0.8 ? "warn" : ""}">${d.kosten_monat.toFixed(2)} € ${grenze ? "von " + Number(grenze).toFixed(2) + " €" : "· keine Grenze"}</em></div>
     <div class="vb-reihe stab-grenze"><input type="number" min="1" step="1" data-f="grenze" placeholder="Grenze in €" value="${grenze ?? ""}">
       <button type="button" data-a="grenze" class="primary">GRENZE SETZEN</button>${grenze ? `<button type="button" data-a="grenze-weg">AUFHEBEN</button>` : ""}</div><div class="vb-status" data-st="kopf"></div>`);
-  html.push(vbZeile("jarvis", "JARVIS · Chef des Stabes", { ok: true, text: `v${j.version} · ${o.grundton[pe.grundton] || ""}` },
+  html.push(vbZeile("jarvis", `${stabLogo("JARVIS", "klein")}JARVIS · Chef des Stabes`, { ok: true, text: `v${j.version} · ${o.grundton[pe.grundton] || ""}` },
     `<p class="vb-hilfe"><b>Aufgabe:</b> ${esc(j.auftrag)}</p>
      <div class="stab-raster">
       <div class="vb-feld"><label>Grundton</label><select data-p="grundton">${stabOpt(o.grundton, pe.grundton)}</select></div>
@@ -3292,7 +3307,7 @@ function stabAufbauen() {
      ${stabGrund()}<div class="vb-reihe"><button type="button" data-a="speichern" class="primary">SPEICHERN</button></div>
      ${stabVerlauf(j, d.jarvis_versionen)}`, offen.includes("jarvis") || !offen.length));
   for (const a of d.agenten) {
-    html.push(vbZeile(a.id, `${esc(a.name)} · ${esc(a.kuerzel)}`, a.aktiv === false ? { text: `v${a.version} · aus` } : { ok: true, text: `v${a.version} · ${esc(o.modell[a.modell] ? a.modell : "")}` },
+    html.push(vbZeile(a.id, `${stabLogo(a.kuerzel, "klein")}${esc(a.name)} · ${esc(a.kuerzel)}`, a.aktiv === false ? { text: `v${a.version} · aus` } : { ok: true, text: `v${a.version} · ${esc(o.modell[a.modell] ? a.modell : "")}` },
       `<p class="vb-hilfe"><b>Sachgebiet:</b> ${esc(a.sachgebiet)}<br><b>Auftrag:</b> ${esc(a.auftrag)}</p>
        <div class="stab-raster"><div class="vb-feld"><label>Darf</label>${stabListe(a.darf)}</div><div class="vb-feld"><label>Darf nicht</label>${stabListe(a.darf_nicht)}</div></div>
        <p class="vb-hilfe"><b>Werkzeuge:</b> ${esc((a.werkzeuge || []).join(", "))} · <b>Datenschutz:</b> ${esc(a.datenschutz || "")}</p>
@@ -3354,7 +3369,10 @@ $("stabbtn")?.addEventListener("click", () => { if (STAB.d) stabSchalten(!STAB.d
 const _handleStab = handle;
 handle = function (ev) {
   if (ev.type === "stab") {
-    if (ev.phase === "start") toast("Stab arbeitet: " + (ev.agenten || []).join(", "));
+    if (ev.phase === "start") { if (document.hidden || !ev.kuerzel) toast("Stab arbeitet: " + (ev.agenten || []).join(", ")); else saStart(ev.kuerzel); }
+    if (ev.phase === "abstimmung") saAbstimmung(ev.von, ev.an);
+    if (ev.phase === "meldung") saMeldung(ev.kuerzel);
+    if (ev.phase === "ende") saEnde();
     if (ev.phase === "schalter" && STAB.d) { STAB.d.aktiv = !!ev.aktiv; stabBtn(); }
     return;
   }
@@ -3363,3 +3381,115 @@ handle = function (ev) {
 const _einstOeffnenStab = window.einstellungenOeffnen;
 window.einstellungenOeffnen = function () { _einstOeffnenStab(); stabLaden().then(stabAufbauen); };
 stabLaden();
+// ---------- Stab: Embleme der Agenten (gleiche Formsprache wie der JARVIS-Kern: Sechseck, Ticks, Linien) ----------
+function stabGlyph(k) {
+  const G = {
+    JARVIS: `<circle cx="32" cy="32" r="11"/><circle cx="32" cy="32" r="5" class="sl-voll"/><path d="M32 17 V21 M32 43 V47 M17 32 H21 M43 32 H47"/>`,
+    ZEIT: `<path d="M23 19 H41 M23 45 H41"/><path d="M25 19 C25 28 31 29 32 32 C33 35 39 36 39 45 M39 19 C39 28 33 29 32 32 C31 35 25 36 25 45"/><path d="M27.5 43.5 L32 38 L36.5 43.5 Z" class="sl-voll"/><path d="M29 24.5 H35" class="sl-fein"/>`,
+    KOM: `<rect x="23" y="25" width="18" height="14" rx="1.5"/><path d="M23 26 L32 33 L41 26"/><path d="M21 29 L13 25 M21 32.5 L11 31 M21 36 L14 37" class="sl-fein"/><path d="M43 29 L51 25 M43 32.5 L53 31 M43 36 L50 37" class="sl-fein"/>`,
+    DIENST: `<path d="M21 37 L32 30.5 L43 37 M21 44 L32 37.5 L43 44"/><path d="M32 15.5 L33.8 20.2 L38.7 20.4 L34.9 23.5 L36.2 28.3 L32 25.6 L27.8 28.3 L29.1 23.5 L25.3 20.4 L30.2 20.2 Z" class="sl-voll"/>`,
+    FIN: `<path d="M32 19 V44 M25 45 H39 M19 23 H45"/><circle cx="32" cy="18" r="1.8" class="sl-voll"/><path d="M19 23 L15 32 M19 23 L23 32 M44 23 L40 32 M44 23 L48 32" class="sl-fein"/><path d="M14.5 32 Q19 37 23.5 32 Z M39.5 32 Q44 37 48.5 32 Z"/>`,
+    AKTE: `<rect x="21" y="17" width="22" height="30" rx="1.5"/><path d="M21 27 H43 M21 37 H43"/><path d="M28.5 21.5 H35.5 M28.5 31.5 H35.5 M28.5 41.5 H35.5" class="sl-dick"/>`,
+    AUFKL: `<circle cx="32" cy="32" r="13"/><circle cx="32" cy="32" r="6.5" class="sl-fein"/><path d="M32 32 L41.2 22.8"/><path d="M32 32 L41.2 22.8 A13 13 0 0 1 45 32 Z" class="sl-schwenk"/><path d="M32 15 V19 M32 45 V49 M15 32 H19 M45 32 H49" class="sl-fein"/><circle cx="37" cy="36.5" r="1.8" class="sl-voll"/>`,
+    LOG: `<path d="M32 45 C27 38.5 24.5 34.5 24.5 30 A7.5 7.5 0 0 1 39.5 30 C39.5 34.5 37 38.5 32 45 Z"/><circle cx="32" cy="30" r="2.8"/><path d="M16 47 Q22 41 27 46 M37 46 Q42 41 48 47" class="sl-weg"/>`,
+  };
+  return G[k] || "";
+}
+function stabLogo(k, cls = "") {
+  return `<svg viewBox="0 0 64 64" class="stab-logo ${cls}" data-k="${k}" aria-hidden="true">
+    <path class="sl-rahmen" d="M32 4 L56.2 18 L56.2 46 L32 60 L7.8 46 L7.8 18 Z"/>
+    <path class="sl-innen" d="M32 8.5 L52.3 20.25 L52.3 43.75 L32 55.5 L11.7 43.75 L11.7 20.25 Z"/>
+    <path class="sl-ecken" d="M32 0.5 V4 M32 60 V63.5 M3 16 L7.8 18 M61 16 L56.2 18 M3 48 L7.8 46 M61 48 L56.2 46"/>
+    <g class="sl-glyph">${stabGlyph(k)}</g></svg>`;
+}
+const STAB_NAMEN = { JARVIS: "JARVIS", ZEIT: "CHRONOS", KOM: "HERMES", DIENST: "ADJUTANT", FIN: "QUAESTOR", AKTE: "ARCHIVAR", AUFKL: "SCOUT", LOG: "QUARTIERMEISTER" };
+
+// ---------- Stab: Animation beim Delegieren (Kern → Agenten → Meldung zurück) ----------
+const SA = { el: null, svg: null, ag: {}, c: [0, 0], weg: null, ruhig: false };
+function saZentrum() {
+  for (const id of ["core3d", "core"]) {
+    const r = $(id)?.getBoundingClientRect();
+    if (r && r.width > 60 && r.height > 60) return [r.left + r.width / 2, r.top + r.height / 2];
+  }
+  return [innerWidth / 2, innerHeight * 0.42];
+}
+function saPaket(x1, y1, x2, y2, dauer = .8, verz = 0, cls = "") {
+  if (!SA.svg) return;
+  const ns = "http://www.w3.org/2000/svg", c = document.createElementNS(ns, "circle");
+  c.setAttribute("r", "3.5"); c.setAttribute("class", "sa-paket " + cls); c.setAttribute("cx", "0"); c.setAttribute("cy", "0");
+  c.style.opacity = "0"; SA.svg.appendChild(c);
+  c.animate([{ transform: `translate(${x1}px,${y1}px)`, opacity: 0 }, { opacity: 1, offset: .15 },
+    { transform: `translate(${x2}px,${y2}px)`, opacity: 1, offset: .9 }, { transform: `translate(${x2}px,${y2}px)`, opacity: 0 }],
+    { duration: dauer * 1000, delay: verz * 1000, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }).onfinish = () => c.remove();
+}
+function saLinie(x1, y1, x2, y2, cls = "", kurve = 0) {
+  const ns = "http://www.w3.org/2000/svg", p = document.createElementNS(ns, "path");
+  const mx = (x1 + x2) / 2 - (y2 - y1) * kurve, my = (y1 + y2) / 2 + (x2 - x1) * kurve;
+  p.setAttribute("d", `M${x1} ${y1} Q${mx} ${my} ${x2} ${y2}`); p.setAttribute("pathLength", "1"); p.setAttribute("class", "sa-linie " + cls);
+  SA.svg.appendChild(p); return p;
+}
+function saWeg(sofort = false) {
+  clearTimeout(SA.weg);
+  if (!SA.el) return;
+  const el = SA.el; SA.el = null; SA.svg = null; SA.ag = {};
+  if (sofort) { el.remove(); return; }
+  el.classList.add("aus"); setTimeout(() => el.remove(), 700);
+}
+function saAgent(k, x, y, verz = 0, gast = false) {
+  const [cx, cy] = SA.c;
+  const d = document.createElement("div");
+  d.className = "sa-agent" + (gast ? " gast" : "");
+  d.style.left = `${x}px`; d.style.top = `${y}px`;
+  d.style.setProperty("--dx", `${cx - x}px`); d.style.setProperty("--dy", `${cy - y}px`); d.style.animationDelay = `${verz}s`;
+  d.innerHTML = `<div class="sa-ring"></div>${stabLogo(k)}<b>${esc(STAB_NAMEN[k] || k)}</b><span>${gast ? "AUSKUNFT" : "AUFTRAG"}</span>`;
+  SA.el.appendChild(d);
+  SA.ag[k] = { el: d, x, y };
+  return d;
+}
+function saStart(kuerzel) {
+  saWeg(true);
+  if (!kuerzel || !kuerzel.length) return;
+  SA.ruhig = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const [cx, cy] = SA.c = saZentrum();
+  const n = kuerzel.length, R = Math.max(130, Math.min(280, Math.min(innerWidth, innerHeight) * 0.3));
+  const el = SA.el = document.createElement("div"); el.className = "stab-anim" + (SA.ruhig ? " ruhig" : "");
+  el.innerHTML = `<svg class="sa-svg" width="${innerWidth}" height="${innerHeight}" viewBox="0 0 ${innerWidth} ${innerHeight}"></svg>
+    <div class="sa-kern" style="left:${cx}px;top:${cy}px">${stabLogo("JARVIS")}</div>
+    <div class="sa-titel" style="left:${cx}px;top:${cy + Math.min(150, R * .62)}px">DELEGIERE · ${n} ${n === 1 ? "AGENT" : "AGENTEN"}</div>`;
+  document.body.appendChild(el);
+  SA.svg = el.querySelector(".sa-svg");
+  kuerzel.forEach((k, i) => {
+    const w = -Math.PI / 2 + (n === 1 ? 0 : (i / n) * Math.PI * 2);
+    const x = cx + Math.cos(w) * R * 1.25, y = cy + Math.sin(w) * R * .78;
+    const verz = .12 + i * .1;
+    const l = saLinie(cx, cy, x, y); l.style.animationDelay = `${verz}s`;
+    SA.ag[k] = null; saAgent(k, x, y, verz);
+    SA.ag[k].linie = l;
+    if (!SA.ruhig) saPaket(cx, cy, x, y, .7, verz);
+  });
+  SA.weg = setTimeout(() => saWeg(), 150000);                  // Notbremse
+}
+function saMeldung(k) {
+  const a = SA.ag[k]; if (!a || a.el.classList.contains("fertig")) return;
+  a.el.classList.add("fertig"); a.el.querySelector("span").textContent = "MELDUNG ✓";
+  if (!SA.ruhig) saPaket(a.x, a.y, SA.c[0], SA.c[1], .8, 0, "zurueck");
+}
+function saAbstimmung(von, an) {
+  if (!SA.el) return;
+  const a = SA.ag[von]; if (!a) return;
+  let b = SA.ag[an];
+  if (!b) {                                                      // befragter Agent war nicht beauftragt: kommt als Gast dazu
+    const [cx, cy] = SA.c, w = Math.atan2(a.y - cy, a.x - cx) + .55;
+    const r = Math.hypot(a.x - cx, a.y - cy) * .62;
+    saAgent(an, cx + Math.cos(w) * r, cy + Math.sin(w) * r, 0, true); b = SA.ag[an];
+  }
+  saLinie(a.x, a.y, b.x, b.y, "quer", .25);
+  if (!SA.ruhig) { saPaket(a.x, a.y, b.x, b.y, .7); setTimeout(() => saPaket(b.x, b.y, a.x, a.y, .7, 0, "zurueck"), 900); }
+}
+function saEnde() {
+  if (!SA.el) return;
+  Object.keys(SA.ag).forEach(saMeldung);
+  const t = SA.el.querySelector(".sa-titel"); if (t) t.textContent = "LAGE WIRD BEURTEILT";
+  setTimeout(() => { if (!SA.el) return; SA.el.classList.add("heim"); clearTimeout(SA.weg); SA.weg = setTimeout(() => saWeg(), 900); }, SA.ruhig ? 400 : 1000);
+}
+addEventListener("resize", () => { if (SA.el) saWeg(true); });

@@ -504,6 +504,7 @@ class Stab:
             return "Fehler: unbekannter oder eigener Agent."
         if not self.laden(ziel).get("aktiv", True):
             return f"{KUERZEL[ziel]} ist abgeschaltet."
+        self.c.broadcast({"type": "stab", "phase": "abstimmung", "von": von["kuerzel"], "an": KUERZEL[ziel]})
         a = self._lauf(ziel, frage, tiefe + 1, nur_lesen=True, an=f"{von['name']} ({von['kuerzel']})")
         erg["abstimmungen"].append({"an": a["agent"], "status": a["status"], "kosten_eur": a["kosten_eur"],
                                     "dauer_s": a.get("dauer_s")})
@@ -538,9 +539,11 @@ class Stab:
             return {"fehler": "Kein gültiger Teilauftrag (Agent unbekannt oder abgeschaltet) – erledige es selbst."}
         t0 = time.monotonic()
         namen = [self.laden(k)["name"] for k, _ in jobs]
-        self.c.broadcast({"type": "stab", "phase": "start", "agenten": namen})
+        self.c.broadcast({"type": "stab", "phase": "start", "agenten": namen, "kuerzel": [KUERZEL[k] for k, _ in jobs]})
         ex = ThreadPoolExecutor(max_workers=len(jobs), thread_name_prefix="stab")
         futs = {ex.submit(self._lauf, k, a, 0, nur_lesen): (k, a) for k, a in jobs}
+        for f, (k, _) in futs.items():              # Dashboard: Meldung eines Agenten ist da
+            f.add_done_callback(lambda _f, kz=KUERZEL[k]: self.c.broadcast({"type": "stab", "phase": "meldung", "kuerzel": kz}))
         fertig, offen = wait(futs, timeout=FRIST_S + 20)
         ex.shutdown(wait=False)
         meldungen = []
@@ -572,7 +575,8 @@ class Stab:
             pass
         self.c.audit.log("stab_einsatz", agenten=[r["agent"] for r in meldungen], kosten_eur=kosten,
                          dauer_s=eintrag["dauer_s"])
-        self.c.broadcast({"type": "stab", "phase": "ende", "agenten": namen, "dauer_s": eintrag["dauer_s"]})
+        self.c.broadcast({"type": "stab", "phase": "ende", "agenten": namen, "kuerzel": [r["agent"] for r in meldungen],
+                          "dauer_s": eintrag["dauer_s"]})
         out = {"meldungen": [{"agent": r["agent"], "name": r["name"], "gewicht": r["gewicht"],
                               "dringlichkeit": r.get("dringlichkeit"), "wichtigkeit": r.get("wichtigkeit"),
                               "bezug": r["bezug"], "status": r.get("status"), "meldung": r.get("meldung", "")}

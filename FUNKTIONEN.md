@@ -176,6 +176,7 @@ Bedeutung der Zeichen:
 | Sieben Agenten: Chronos (Termine), Hermes (Mail/Nachrichten), Adjutant (Dienstliches), Quaestor (Beihilfe/Finanzen, lokal), Archivar (Ablage), Scout (Recherche/Wetter), Quartiermeister (Einkauf/Routen) | ✅ | einzeln abschaltbar |
 | Nur JARVIS spricht mit dir; Agenten stimmen sich bei Bedarf direkt untereinander ab | ✅ | nur Auskünfte, ohne Freigabe, protokolliert |
 | Einfache Fragen beantwortet JARVIS weiter direkt | ✅ | |
+| Eigenes Emblem je Agent; beim Delegieren fliegen die Embleme sichtbar aus dem Kern, Abstimmungen und Meldungen werden als Datenpakete gezeigt | ✅ | auch in der Startsequenz und in den Einstellungen |
 | Stab ein-/ausschalten | ✅ | Button STAB in der Kopfleiste, ⚙ Einstellungen → Stab oder „Schalte den Stab aus“ |
 | Alle Agenten mit Aufgaben, Rechten und Werkzeugen ansehen | ✅ | ⚙ Einstellungen → Stab |
 | Persönlichkeit von JARVIS einstellen: Grundton (Butler, Stabsoffizier, herzlich, sachlich), Humor, Ausführlichkeit, Du/Sie, eigene Anweisung | ✅ | auch per Sprache, mit Bestätigung |
