@@ -716,10 +716,26 @@ async def tesla_bild(modell: str = "my", lack: str = "", _: None = Depends(auth)
     import re as _re
     if not _re.fullmatch(r"[a-z0-9]{2}", modell) or (lack and not _re.fullmatch(r"[A-Z0-9]{4}", lack)):
         raise HTTPException(400, "ungültig")
-    daten = await asyncio.to_thread(get_core().tesla.bild, modell, lack)
-    if not daten:
+    erg = await asyncio.to_thread(get_core().tesla.bild, modell, lack)
+    if not erg:
         raise HTTPException(404, "kein Bild")
-    return Response(daten, media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+    return Response(erg[0], media_type=erg[1], headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/tesla/bild")
+async def tesla_bild_hochladen(request: Request, x_dateiname: str = Header(default="Auto.jpg"),
+                               _: None = Depends(auth)):
+    from atlas.tools import ToolError
+    daten = await request.body()
+    try:
+        return await asyncio.to_thread(get_core().tesla.bild_hochladen, daten, x_dateiname)
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/tesla/bild")
+async def tesla_bild_entfernen(_: None = Depends(auth)):
+    return await asyncio.to_thread(get_core().tesla.bild_entfernen)
 
 
 @app.get("/tesla/rueckruf")

@@ -41,9 +41,13 @@ ENDPOINTS = "charge_state;climate_state;drive_state;location_data;vehicle_state;
 LACK = {"pearlwhite": "PPSW", "solidblack": "PBSB", "obsidianblack": "PMBL", "deepblue": "PPSB",
         "midnightsilver": "PMNG", "redmulticoat": "PPMR", "stealthgrey": "PN01", "quicksilver": "PN00",
         "ultrared": "PR01", "midnightcherryred": "PR00", "silvermetallic": "PMSS"}
-LACK_FARBE = {"PPSW": "#e9ecef", "PBSB": "#121417", "PMBL": "#16181c", "PPSB": "#1f3b73", "PMNG": "#4a5058",
+LACK_FARBE = {"PBCW": "#f2f3f4", "PPSW": "#e9ecef", "PBSB": "#121417", "PMBL": "#16181c", "PPSB": "#1f3b73", "PMNG": "#4a5058",
               "PPMR": "#a3101a", "PN01": "#5a5f66", "PN00": "#a7acb2", "PR01": "#b3121f", "PR00": "#5c1420",
               "PMSS": "#9aa1a8"}
+HIGHLAND_FELGEN = ("glider", "photon", "nova", "w38a", "w39s")       # Model 3 ab Ende 2023 („Highland“)
+AUSSTATTUNG = {"50": "Standard Range", "62": "Standard Range", "74": "Long Range", "74d": "Long Range",
+               "p74d": "Performance", "100d": "Long Range", "p100d": "Performance", "plaid": "Plaid"}
+JAHR = dict(zip("ABCDEFGHJKLMNPRSTVWXY123456789", range(2010, 2040)))   # 10. Stelle der FIN
 MODELL = {"modely": ("my", "Model Y"), "model3": ("m3", "Model 3"), "models": ("ms", "Model S"),
           "modelx": ("mx", "Model X"), "cybertruck": ("ct", "Cybertruck")}
 
@@ -89,11 +93,37 @@ class Tesla:
 
     # ------------------------------------------------------------ Einrichtung, Schritt für Schritt
     def app_setzen(self, client_id: str, client_secret: str) -> dict:
-        if not client_id.strip() or not client_secret.strip():
+        import re
+        cid = re.sub(r"\s+", "", client_id or "")
+        sec = re.sub(r"\s+", "", client_secret or "")
+        if not cid or not sec:
             raise ToolError("Client-ID und Client-Secret eintragen")
-        set_secret("tesla_client_id", client_id.strip())
-        set_secret("tesla_client_secret", client_secret.strip())
-        return {"ok": True, "text": "✓ Tesla-App gespeichert (Schlüsselbund)"}
+        if cid.startswith("ta-secret") or (sec and re.fullmatch(r"[0-9a-f-]{36}", sec)):
+            raise ToolError("Client-ID und Client-Secret scheinen vertauscht – die ID ist eine lange Zeichenkette mit "
+                            "Bindestrichen, das Secret beginnt mit „ta-secret.“")
+        if not re.fullmatch(r"[0-9a-fA-F-]{36}", cid):
+            raise ToolError("Die Client-ID sieht ungewöhnlich aus (erwartet: 8-4-4-4-12 Zeichen mit Bindestrichen). "
+                            "Bitte direkt aus dem Tesla-Portal kopieren.")
+        if not sec.startswith("ta-secret."):
+            raise ToolError("Das Client-Secret beginnt normalerweise mit „ta-secret.“ – im Tesla-Portal bei der App "
+                            "auf „Anmeldedaten/Credentials“ das Secret einblenden und vollständig kopieren.")
+        # Gleich bei Tesla prüfen, ob die Kombination angenommen wird
+        r = httpx.post(TOKEN_URL, data={"grant_type": "client_credentials", "client_id": cid, "client_secret": sec,
+                                        "scope": "openid vehicle_device_data", "audience": self.server}, timeout=30)
+        if r.status_code != 200:
+            fehler = ""
+            try:
+                fehler = r.json().get("error", "")
+            except ValueError:
+                pass
+            if fehler == "unauthorized_client":
+                raise ToolError("Tesla erkennt ID und Secret nicht an. Häufigste Ursachen: Secret unvollständig kopiert, "
+                                "die App ist im Portal noch nicht freigegeben (Status prüfen) oder das Secret wurde neu "
+                                "erzeugt. Im Portal das Secret erneut kopieren und hier speichern.")
+            raise ToolError(f"Tesla meldet {r.status_code}: {r.text[:200]}")
+        set_secret("tesla_client_id", cid)
+        set_secret("tesla_client_secret", sec)
+        return {"ok": True, "text": "✓ Von Tesla bestätigt und im Schlüsselbund gespeichert"}
 
     def helfer_einrichten(self) -> dict:
         """Eigene Python-3.13-Umgebung für die signierten Befehle (läuft im Hintergrund, ca. 1–2 Min.)."""
@@ -187,6 +217,9 @@ class Tesla:
                                         "scope": SCOPES.replace("offline_access ", ""), "audience": self.server},
                        timeout=30)
         if r.status_code != 200:
+            if "unauthorized_client" in r.text:
+                raise ToolError("Tesla erkennt Client-ID/Secret nicht an – bitte in Schritt 1 erneut aus dem Tesla-Portal "
+                                "kopieren und speichern (JARVIS prüft sie dann sofort).")
             raise ToolError(f"Tesla lehnt die App-Anmeldung ab ({r.status_code}): {r.text[:200]}")
         return r.json()["access_token"]
 
@@ -337,9 +370,20 @@ class Tesla:
             plan_txt = f"Abfahrt {m // 60:02d}:{m % 60:02d}"
         typ = MODELL.get(str(vc.get("car_type", "")).lower(), ("my", "Tesla"))
         lack = LACK.get(str(vc.get("exterior_color", "")).lower().replace(" ", ""), "")
+        if lack == "PPSW" and "white" in str(vc.get("exterior_color", "")).lower() and "pearl" not in str(vc.get("exterior_color", "")).lower():
+            lack = "PBCW"
+        vin = r.get("vin") or self._zustand().get("vin", "")
+        jahr = JAHR.get(vin[9:10].upper()) if len(vin) >= 10 else None
+        felgen = str(vc.get("wheel_type", "")).lower()
+        highland = typ[0] == "m3" and (any(f in felgen for f in HIGHLAND_FELGEN) or (jahr or 0) >= 2024)
+        variante = AUSSTATTUNG.get(str(vc.get("trim_badging", "")).lower(), "")
+        if not variante and str(vc.get("trim_badging", "")).lower().startswith("p"):
+            variante = "Performance"
         return {
             "name": r.get("display_name") or vs.get("vehicle_name") or self._zustand().get("name", "Tesla"),
-            "modell": typ[1], "modell_code": typ[0], "lack": lack, "farbe": LACK_FARBE.get(lack, "#9aa1a8"),
+            "modell": " ".join(x for x in (typ[1], variante) if x), "modell_code": typ[0], "lack": lack,
+            "baujahr": jahr, "highland": highland, "farbe": LACK_FARBE.get(lack, "#9aa1a8"),
+            "eigenes_bild": self._eigenes_bild() is not None,
             "farbname": vc.get("exterior_color", ""), "felgen": vc.get("wheel_type", ""),
             "online": True, "zustand": "online", "stand": datetime.now().isoformat(timespec="minutes"),
             "akku": ch.get("battery_level"), "akku_nutzbar": ch.get("usable_battery_level"),
@@ -373,11 +417,66 @@ class Tesla:
         return {"ok": True}
 
     # ------------------------------------------------------------ Bild
-    def bild(self, modell: str, lack: str) -> bytes | None:
-        """Konfigurator-Bild (Tesla-Compositor), zwischengespeichert. None → Dashboard zeichnet eigene Grafik."""
+    def _eigenes_bild(self) -> Path | None:
+        for n in ("eigenes_bild.png", "eigenes_bild.jpg"):
+            if (ORDNER / n).exists():
+                return ORDNER / n
+        return None
+
+    def bild_hochladen(self, daten: bytes, name: str = "") -> dict:
+        """Eigenes Foto des Autos: Hintergrund wird (macOS 14+) automatisch entfernt; sonst Foto unverändert."""
+        if len(daten) < 2000 or len(daten) > 25_000_000:
+            raise ToolError("Bitte ein Foto (JPG, PNG oder HEIC) bis 25 MB")
+        endung = (Path(name).suffix.lower() or ".jpg") if name else ".jpg"
+        if endung not in (".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp"):
+            endung = ".jpg"
+        roh = ORDNER / f"eigenes_original{endung}"
+        roh.write_bytes(daten)
+        for alt in ("eigenes_bild.png", "eigenes_bild.jpg"):
+            (ORDNER / alt).unlink(missing_ok=True)
+        frei = self._freistellen(roh, ORDNER / "eigenes_bild.png")
+        if not frei:                                   # ohne Freistellen: als JPG/PNG übernehmen
+            ziel = ORDNER / ("eigenes_bild.png" if endung == ".png" else "eigenes_bild.jpg")
+            if endung in (".heic", ".heif", ".webp"):
+                subprocess.run(["sips", "-s", "format", "jpeg", str(roh), "--out", str(ziel)], capture_output=True)
+            else:
+                shutil.copyfile(roh, ziel)
+        return {"ok": True, "freigestellt": frei,
+                "text": "✓ Bild übernommen" + (" und freigestellt" if frei else " (Hintergrund bleibt – freistellen braucht macOS 14)")}
+
+    def bild_entfernen(self) -> dict:
+        for n in ("eigenes_bild.png", "eigenes_bild.jpg"):
+            (ORDNER / n).unlink(missing_ok=True)
+        return {"ok": True}
+
+    def _freistellen(self, ein: Path, aus: Path) -> bool:
+        werkzeug = LOCAL_DIR / "bin" / "freistellen"
+        quelle = REPO_DIR / "app" / "freistellen.swift"
+        if not werkzeug.exists() or (quelle.exists() and quelle.stat().st_mtime > werkzeug.stat().st_mtime):
+            werkzeug.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                r = subprocess.run(["swiftc", "-O", str(quelle), "-o", str(werkzeug)], capture_output=True, timeout=300)
+            except (OSError, subprocess.SubprocessError):
+                return False
+            if r.returncode:
+                return False
+        try:
+            r = subprocess.run([str(werkzeug), str(ein), str(aus)], capture_output=True, timeout=120)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return r.returncode == 0 and aus.exists() and aus.stat().st_size > 2000
+
+    def bild(self, modell: str, lack: str) -> tuple[bytes, str] | None:
+        """Bild fürs Dashboard: eigenes Foto, sonst Konfigurator-Bild (Tesla-Compositor). Für das Model 3 ab 2024
+        („Highland“) liefert der Compositor kein verlässliches Bild – dann zeichnet das Dashboard eine eigene Grafik."""
+        eigen = self._eigenes_bild()
+        if eigen:
+            return eigen.read_bytes(), "image/png" if eigen.suffix == ".png" else "image/jpeg"
+        if self._cache().get("highland") or (modell == "m3" and "highland" not in self._cache()):
+            return None
         datei = ORDNER / f"bild_{modell}_{lack or 'x'}.png"
         if datei.exists() and datei.stat().st_size > 20000:
-            return datei.read_bytes()
+            return datei.read_bytes(), "image/png"
         if not lack:
             return None
         basis = "https://static-assets.tesla.com/configurator/compositor"
@@ -390,7 +489,7 @@ class Tesla:
                 return None
             if r.status_code == 200 and r.headers.get("content-type", "").startswith("image") and len(r.content) > 20000:
                 datei.write_bytes(r.content)
-                return r.content
+                return r.content, "image/png"
         return None
 
 

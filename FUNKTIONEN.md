@@ -154,7 +154,8 @@ Bedeutung der Zeichen:
 | Funktion | Stand | Hinweis |
 |---|---|---|
 | Status: Akku, Reichweite, Laden (Leistung, Ladeende, Limit, Ladeplan), Klima innen/außen, Standort, verriegelt | ⚙️ | Einmalige Einrichtung unter ⚙ Einstellungen → Verbindungen → Tesla (offizielle Fleet API, eigener Zugang) |
-| Grafische Ansicht mit Bild des eigenen Autos (Modell und Farbe automatisch), animiertem Akku, Ladeanzeige und Klima | ✅ | „Zeig mir mein Auto“, „Wie voll ist der Akku?“ |
+| Grafische Ansicht mit Bild des eigenen Autos, animiertem Akku, Ladeanzeige und Klima; Modell, Ausstattung (z. B. Long Range) und Baujahr automatisch | ✅ | „Zeig mir mein Auto“, „Wie voll ist der Akku?“ |
+| Eigenes Foto des Autos verwenden – Hintergrund wird auf dem Mac automatisch entfernt | ✅ | Knopf „Bild ändern“ im Fahrzeugfenster; Freistellen ab macOS 14 |
 | Klimatisierung ein/aus, Wunschtemperatur | ⚙️ | per Sprache oder Knopf; braucht den virtuellen Schlüssel im Auto |
 | Laden starten/stoppen, Ladelimit, Ladeplan (Abfahrtszeit mit Vorklimatisierung oder Ladestart) | ⚙️ | per Sprache oder Knopf |
 | Schlafendes Auto wird nur auf Wunsch geweckt | ✅ | sonst letzter Stand mit Uhrzeit |

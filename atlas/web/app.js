@@ -3837,11 +3837,12 @@ function teslaHTML(d) {
   const stand = d.stand ? new Date(d.stand).toLocaleString("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "";
   const ladeText = laedt ? `Lädt mit ${l.leistung_kw ?? "–"} kW${l.minuten_bis_voll ? " · voll um " + teslaZeit(l.minuten_bis_voll) : ""}`
     : l.zustand === "Complete" ? "Fertig geladen" : l.kabel ? "Kabel steckt · lädt nicht" : "Nicht angeschlossen";
-  const bild = `<img class="ts-bild" alt="" src="/tesla/bild?modell=${encodeURIComponent(d.modell_code || "my")}&lack=${encodeURIComponent(d.lack || "")}"
+  const bild = `<img class="ts-bild" alt="" src="/tesla/bild?modell=${encodeURIComponent(d.modell_code || "my")}&lack=${encodeURIComponent(d.lack || "")}&v=${TS.bildV || 0}"
       onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ts-bild-svg',innerHTML:teslaAuto(TS.d||{})}))">`;
   return `<div class="ts-grid">
     <div class="ts-links">
-      <div class="ts-buehne ${laedt ? "laedt" : ""} ${k.an ? "klima" : ""}">${d.lack ? bild : `<div class="ts-bild-svg">${teslaAuto(d)}</div>`}
+      <div class="ts-buehne ${laedt ? "laedt" : ""} ${k.an ? "klima" : ""}">${d.eigenes_bild || (d.lack && !d.highland) ? bild : `<div class="ts-bild-svg">${teslaAuto(d)}</div>`}
+        ${d.eigenes_bild ? "" : `<button type="button" class="ts-foto-hinweis" data-t="foto">＋ EIGENES FOTO – für ein echtes Bild deines Autos</button>`}
         <div class="ts-scan"></div>${laedt ? `<div class="ts-kabel"><i></i></div>` : ""}
         ${k.an ? `<div class="ts-luft"><i></i><i></i><i></i></div>` : ""}</div>
       <div class="ts-akku">
@@ -3881,12 +3882,13 @@ function teslaZeigen(d) {
   if (!TS.el) {
     TS.el = document.createElement("div"); TS.el.className = "tesla";
     TS.el.innerHTML = `<div class="ts-rahmen" role="dialog" aria-label="Fahrzeug"><header class="vt-kopf"><span class="vt-marke">◢ FAHRZEUG</span>
-      <span class="vt-kapitel ts-titel"></span><button type="button" class="ts-neu" data-t="neu" title="Aktuelle Werte holen (weckt das Auto)">AKTUALISIEREN</button>
+      <span class="vt-kapitel ts-titel"></span><button type="button" class="ts-neu" data-t="foto" title="Eigenes Foto deines Autos verwenden (Hintergrund wird automatisch entfernt)">BILD ÄNDERN</button>
+      <button type="button" class="ts-neu" data-t="neu" title="Aktuelle Werte holen (weckt das Auto)">AKTUALISIEREN</button><input type="file" accept="image/*,.heic" hidden class="ts-datei">
       <button type="button" class="vt-zu" data-t="zu" title="Schließen (Esc)">✕</button></header><div class="ts-inhalt"></div></div>`;
     document.body.appendChild(TS.el);
     requestAnimationFrame(() => TS.el.classList.add("an"));
   }
-  TS.el.querySelector(".ts-titel").textContent = `${(d.name || "Tesla").toUpperCase()}${d.modell ? " · " + d.modell.toUpperCase() : ""}`;
+  TS.el.querySelector(".ts-titel").textContent = `${(d.name || "Tesla").toUpperCase()}${d.modell ? " · " + d.modell.toUpperCase() : ""}${d.baujahr ? " · " + d.baujahr : ""}`;
   TS.el.querySelector(".ts-inhalt").innerHTML = teslaHTML(d);
   if (typeof vtZaehlen === "function") vtZaehlen(TS.el);
 }
@@ -3910,6 +3912,7 @@ document.addEventListener("click", (e) => {
   const t = b.dataset.t, f = (n) => TS.el.querySelector(`[data-f="${n}"]`);
   if (t === "zu") return teslaZu();
   if (t === "neu") return teslaLaden(true);
+  if (t === "foto") { TS.el.querySelector(".ts-datei").click(); return; }
   if (t === "klima-an") return teslaBefehl("klima", { an: true }, "Klima wird eingeschaltet");
   if (t === "klima-aus") return teslaBefehl("klima", { an: false }, "Klima wird ausgeschaltet");
   if (t === "klima-plus" || t === "klima-minus") {
@@ -3953,7 +3956,7 @@ async function teslaVbAufbauen() {
       · Scopes: Vehicle Information, Vehicle Location, Vehicle Commands, Vehicle Charging Management<br>Danach Client-ID und Client-Secret hier eintragen.</p>
       <div class="vb-feld"><label>Client-ID</label><input type="text" data-tf="client_id" autocomplete="off"></div>
       <div class="vb-feld"><label>Client-Secret</label><input type="password" data-tf="client_secret" autocomplete="off"></div>
-      <div class="vb-reihe"><button type="button" class="primary" data-ta="app">SPEICHERN</button></div>`, s1)}
+      <div class="vb-reihe"><button type="button" class="primary" data-ta="app">${z.app ? "NEU PRÜFEN &amp; SPEICHERN" : "PRÜFEN &amp; SPEICHERN"}</button></div>`, s1 || !z.angemeldet)}
     ${schritt(2, z.veroeffentlicht, "Schlüssel erzeugen &amp; veröffentlichen", `<p class="vb-hilfe">Richtet das Befehlsmodul ein (einmalig 1–2 Min.), erzeugt dein
       Schlüsselpaar und legt den <b>öffentlichen</b> Schlüssel auf deine GitHub-Seite (${esc(origin)}). Der private Schlüssel bleibt auf diesem Mac.</p>
       <div class="vb-reihe">${z.helfer ? "" : `<button type="button" data-ta="helfer" ${z.helfer_laedt ? "disabled" : ""}>${z.helfer_laedt ? "MODUL WIRD EINGERICHTET …" : "1 · BEFEHLSMODUL EINRICHTEN"}</button>`}
@@ -3992,3 +3995,18 @@ document.addEventListener("click", async (e) => {
 });
 const _vbAufbauenTesla = vbAufbauen;
 vbAufbauen = async function (...a) { await _vbAufbauenTesla(...a); teslaVbAufbauen(); };
+
+// Eigenes Fahrzeugfoto hochladen (wird auf dem Mac freigestellt)
+document.addEventListener("change", async (e) => {
+  if (!e.target.matches(".tesla .ts-datei") || !e.target.files.length) return;
+  const f = e.target.files[0], st = TS.el.querySelector(".ts-status");
+  st.textContent = "Bild wird übernommen und freigestellt …"; st.className = "ts-status";
+  try {
+    const r = await fetch("/tesla/bild", { method: "POST", body: f, headers: { "x-dateiname": encodeURIComponent(f.name).replace(/%20/g, " "),
+      ...(TOKEN ? { "x-atlas-token": TOKEN } : {}) } });
+    const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.status);
+    TS.bildV = Date.now(); if (TS.d) { TS.d.eigenes_bild = true; teslaZeigen(TS.d); }
+    const st2 = TS.el.querySelector(".ts-status"); st2.textContent = j.text; st2.className = "ts-status ok";
+  } catch (err) { st.textContent = "⚠ " + err.message; st.className = "ts-status fehler"; }
+  e.target.value = "";
+});
