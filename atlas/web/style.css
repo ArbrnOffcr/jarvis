@@ -1216,3 +1216,86 @@ body.mit-vortrag .chat{z-index:141}
 .vt-reisekarte b{display:block;font-size:13px;color:var(--ink)}.vt-reisekarte span{font:11px var(--mono);color:var(--ink2)}
 .vt-reisekarte em{margin-left:auto;font:600 16px var(--mono);font-style:normal;color:#ffd08a}
 .vt-reise-titel{font:600 9px var(--mono);letter-spacing:.26em;color:#ffb547;margin-top:16px}
+
+/* ---------- Tesla: Fahrzeugfenster ---------- */
+.tesla{position:fixed;inset:0;z-index:142;display:flex;align-items:flex-start;justify-content:center;padding:6vh 3vw 0;pointer-events:none;opacity:0;transition:opacity .45s}
+.tesla.an{opacity:1}
+.ts-rahmen{pointer-events:auto;position:relative;width:min(1120px,95vw);max-height:84vh;overflow:auto;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,rgba(6,22,32,.9),rgba(3,12,18,.94));border:1px solid var(--line);
+  box-shadow:0 0 40px rgba(0,229,255,.14),inset 0 0 60px rgba(0,229,255,.04);
+  clip-path:polygon(0 14px,14px 0,calc(100% - 14px) 0,100% 14px,100% calc(100% - 14px),calc(100% - 14px) 100%,14px 100%,0 calc(100% - 14px))}
+.ts-neu{font:600 9.5px var(--mono);letter-spacing:.18em;color:var(--ink2);background:rgba(0,229,255,.05);border:1px solid var(--line);padding:6px 10px;cursor:pointer;margin-right:8px}
+.ts-neu:hover{color:var(--ink);border-color:var(--accent)}
+.ts-inhalt{padding:16px 20px 18px}
+.ts-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:20px}
+.ts-buehne{position:relative;aspect-ratio:16/8;display:flex;align-items:center;justify-content:center;overflow:hidden;
+  background:radial-gradient(ellipse at 50% 78%,rgba(0,229,255,.16),transparent 62%)}
+.ts-buehne::after{content:"";position:absolute;left:8%;right:8%;bottom:9%;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.6;box-shadow:0 0 18px var(--accent)}
+.ts-bild{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 18px 24px rgba(0,0,0,.6)) drop-shadow(0 0 14px rgba(0,229,255,.18));animation:ts-rein .9s cubic-bezier(.2,.8,.2,1) both}
+.ts-bild-svg{width:92%;animation:ts-rein .9s cubic-bezier(.2,.8,.2,1) both}
+.ts-svg{width:100%;height:auto;overflow:visible}
+.ts-karosse{stroke:var(--accent-soft);stroke-width:1.4;filter:drop-shadow(0 0 6px rgba(0,229,255,.5))}
+.ts-glas{stroke:rgba(159,244,255,.6);stroke-width:1}
+.ts-linie{fill:none;stroke:rgba(0,0,0,.35);stroke-width:1.4}
+.ts-rad circle{fill:#05090c;stroke:var(--accent-soft);stroke-width:1.4}.ts-rad .ts-felge{fill:#1a2228;stroke:var(--accent)}
+.ts-speiche{stroke:var(--accent-soft);stroke-width:2;opacity:.7}
+.ts-boden{fill:rgba(0,229,255,.12);filter:blur(4px)}
+@keyframes ts-rein{from{opacity:0;transform:translateX(-40px) scale(.96)}to{opacity:1;transform:none}}
+.ts-scan{position:absolute;top:0;bottom:0;width:22%;left:-25%;background:linear-gradient(90deg,transparent,rgba(0,229,255,.16),transparent);animation:ts-scan 4.5s ease-in-out 1s infinite}
+@keyframes ts-scan{0%{left:-25%}55%,100%{left:105%}}
+.ts-kabel{position:absolute;right:0;bottom:30%;width:16%;height:3px;background:rgba(61,220,151,.25);overflow:hidden}
+.ts-kabel i{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 10px,#3ddc97 10px 18px);animation:ts-strom .6s linear infinite;box-shadow:0 0 8px #3ddc97}
+@keyframes ts-strom{from{transform:translateX(18px)}to{transform:translateX(0)}}
+.ts-luft{position:absolute;left:44%;top:22%;display:flex;gap:8px}
+.ts-luft i{width:3px;height:26px;border-radius:2px;background:linear-gradient(180deg,transparent,var(--accent-soft),transparent);animation:ts-luft 1.6s ease-in-out infinite;opacity:0}
+.ts-luft i:nth-child(2){animation-delay:.3s}.ts-luft i:nth-child(3){animation-delay:.6s}
+@keyframes ts-luft{0%{opacity:0;transform:translateY(8px)}50%{opacity:.8}100%{opacity:0;transform:translateY(-12px)}}
+.ts-akku{margin-top:12px}
+.ts-akku-zahl{display:flex;align-items:baseline;gap:6px}
+.ts-akku-zahl b{font:600 46px var(--mono);color:var(--ink);text-shadow:0 0 14px var(--accent);line-height:1}
+.ts-akku-zahl span{font:600 18px var(--mono);color:var(--ink2)}
+.ts-akku-zahl em{margin-left:auto;font:600 20px var(--mono);font-style:normal;color:var(--accent-soft)}
+.ts-akku-balken{position:relative;height:14px;margin:10px 0 8px;background:rgba(0,229,255,.07);border:1px solid rgba(0,229,255,.2)}
+.ts-akku-balken i{position:absolute;left:0;top:0;bottom:0;width:calc(var(--p) * 100%);background:linear-gradient(90deg,color-mix(in srgb,var(--f) 55%,transparent),var(--f));
+  box-shadow:0 0 12px var(--f);transform-origin:left;animation:vt-balken 1.2s .2s cubic-bezier(.2,.8,.2,1) both}
+.ts-akku-balken i.laedt::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);background-size:40% 100%;
+  background-repeat:no-repeat;animation:ts-laden 1.8s linear infinite}
+@keyframes ts-laden{from{background-position:-40% 0}to{background-position:140% 0}}
+.ts-akku-balken u{position:absolute;top:-5px;bottom:-5px;width:2px;background:var(--ink);text-decoration:none}
+.ts-akku-balken u span{position:absolute;top:-16px;left:50%;transform:translateX(-50%);font:600 9px var(--mono);color:var(--ink2);white-space:nowrap}
+.ts-akku-text{font-size:12.5px;color:var(--ink2)}.ts-akku-text b{color:var(--accent-soft);font-weight:500}
+.ts-rechts{display:flex;flex-direction:column;gap:10px}
+.ts-kachel{padding:10px 12px;border:1px solid rgba(0,229,255,.14);background:rgba(0,229,255,.03);animation:vt-auf .5s both}
+.ts-kachel:nth-child(2){animation-delay:.1s}.ts-kachel:nth-child(3){animation-delay:.2s}
+.ts-kachel h5{display:flex;justify-content:space-between;margin:0 0 8px;font:600 9.5px var(--mono);letter-spacing:.26em;color:var(--muted)}
+.ts-kachel h5 em{font-style:normal;color:var(--muted)}.ts-kachel h5 em.an{color:#3ddc97}
+.ts-kachel button{font:600 9.5px var(--mono);letter-spacing:.16em;color:var(--ink2);background:rgba(0,229,255,.05);border:1px solid var(--line);padding:7px 10px;cursor:pointer}
+.ts-kachel button:hover:not(:disabled){color:var(--ink);border-color:var(--accent)}
+.ts-kachel button:disabled{opacity:.4;cursor:default}
+.ts-haupt{width:100%;margin-top:8px}.ts-haupt.an{border-color:rgba(61,220,151,.5)!important;color:#3ddc97!important}
+.ts-temp{display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:8px;align-items:center}
+.ts-temp>div{display:flex;flex-direction:column;align-items:center;gap:2px}
+.ts-temp b{font:600 22px var(--mono);color:var(--ink)}.ts-temp span{font:600 8.5px var(--mono);letter-spacing:.2em;color:var(--muted)}
+.ts-soll{flex-direction:row!important;flex-wrap:wrap;justify-content:center}.ts-soll span{width:100%;text-align:center}
+.ts-soll button{padding:2px 10px!important;font-size:14px!important}
+.ts-reihe{display:flex;gap:8px;align-items:center;margin-bottom:8px}.ts-reihe button{flex:1}
+.ts-limit input{flex:1;accent-color:var(--accent)}.ts-limit b{font:600 12px var(--mono);color:var(--ink);min-width:44px;text-align:right}.ts-limit button{flex:0}
+.ts-plan{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--ink2)}
+.ts-plan select,.ts-plan input[type=time]{background:rgba(0,229,255,.04);border:1px solid var(--line);color:var(--ink);padding:5px 6px;font:12px var(--mono)}
+.ts-plan label{display:flex;gap:5px;align-items:center}
+.ts-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.ts-chips span{font:11px var(--mono);padding:3px 8px;border:1px solid rgba(0,229,255,.15);color:var(--ink2)}
+.ts-chips .ok{color:#3ddc97;border-color:rgba(61,220,151,.35)}.ts-chips .warn{color:#ffb547;border-color:rgba(255,181,71,.4)}
+.ts-ort{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink2)}.ts-ort b{flex:1;color:var(--ink);font-weight:500}
+.ts-stand{margin-top:6px;font:10.5px var(--mono);color:var(--muted)}.ts-stand b{color:#ffb547;font-weight:600}
+.ts-status{min-height:16px;margin-top:10px;font-size:12px;color:var(--ink2)}.ts-status.ok{color:#3ddc97}.ts-status.fehler{color:#ff6b4a}
+.ts-leer{padding:30px;text-align:center;color:var(--ink2);font-size:13px}
+@media (max-width:860px){.ts-grid{grid-template-columns:1fr}.tesla{padding-top:2vh}}
+/* Einrichtung */
+.ts-schritt{display:flex;gap:10px;padding:8px 0;border-top:1px solid rgba(0,229,255,.08);opacity:.55}
+.ts-schritt.aktiv{opacity:1}.ts-schritt.ok{opacity:.8}
+.ts-schritt>b{flex:0 0 22px;height:22px;display:grid;place-items:center;border:1px solid var(--line);font:600 11px var(--mono);color:var(--ink2)}
+.ts-schritt.ok>b{color:#3ddc97;border-color:rgba(61,220,151,.5)}.ts-schritt.aktiv>b{color:var(--bg,#001218);background:var(--accent);border-color:var(--accent)}
+.ts-schritt>div{flex:1;min-width:0}.ts-schritt h6{margin:2px 0 6px;font:600 12px inherit;color:var(--ink)}
+.ts-schritt code{font:11px var(--mono);color:var(--accent-soft);background:rgba(0,229,255,.06);padding:1px 4px;word-break:break-all}
+.ts-qr svg{width:150px;height:150px;background:#fff;padding:6px;margin:4px 0}

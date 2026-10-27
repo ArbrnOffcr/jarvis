@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 27.10.2026 · Version 0.8
+Stand: 27.10.2026 · Version 0.9
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -149,7 +149,18 @@ Bedeutung der Zeichen:
 | Mini-Player nur während der Wiedergabe; Musik wird leiser, wenn JARVIS spricht | ✅ | |
 | Podcasts-App selbst steuern, Spotify | ❌ | |
 
-## 10. Gedächtnis und Vorausdenken
+## 10. Tesla
+
+| Funktion | Stand | Hinweis |
+|---|---|---|
+| Status: Akku, Reichweite, Laden (Leistung, Ladeende, Limit, Ladeplan), Klima innen/außen, Standort, verriegelt | ⚙️ | Einmalige Einrichtung unter ⚙ Einstellungen → Verbindungen → Tesla (offizielle Fleet API, eigener Zugang) |
+| Grafische Ansicht mit Bild des eigenen Autos (Modell und Farbe automatisch), animiertem Akku, Ladeanzeige und Klima | ✅ | „Zeig mir mein Auto“, „Wie voll ist der Akku?“ |
+| Klimatisierung ein/aus, Wunschtemperatur | ⚙️ | per Sprache oder Knopf; braucht den virtuellen Schlüssel im Auto |
+| Laden starten/stoppen, Ladelimit, Ladeplan (Abfahrtszeit mit Vorklimatisierung oder Ladestart) | ⚙️ | per Sprache oder Knopf |
+| Schlafendes Auto wird nur auf Wunsch geweckt | ✅ | sonst letzter Stand mit Uhrzeit |
+| Entriegeln, Türen/Kofferraum öffnen, Fahren | ❌ | bewusst nicht |
+
+## 11. Gedächtnis und Vorausdenken
 
 | Funktion | Stand | Hinweis |
 |---|---|---|
@@ -160,7 +171,7 @@ Bedeutung der Zeichen:
 | Wochencheck „Was habe ich vergessen?“ | ✅ | Freitag 16 Uhr |
 | Gesprächsaufnahme mit Transkript, Zusammenfassung und Aufgaben | ✅ | lokal; Word-Datei im Archiv |
 
-## 11. Datenschutz und Sicherheit
+## 12. Datenschutz und Sicherheit
 
 | Funktion | Stand | Hinweis |
 |---|---|---|
@@ -171,7 +182,7 @@ Bedeutung der Zeichen:
 | Protokoll aller Aktionen, Kostenbremse (Monatsbudget) | ✅ | |
 | Eigene Zusatzregeln in config.yaml (persona.zusatz) | ✅ | |
 
-## 12. Stab – JARVIS als Chef des Stabes
+## 13. Stab – JARVIS als Chef des Stabes
 
 | Funktion | Stand | Hinweis |
 |---|---|---|
@@ -194,7 +205,7 @@ Bedeutung der Zeichen:
 | Morgenbriefing vom Stab erstellt | ✅ | automatisch wie bisher |
 | Agenten mit eigener Stimme | ❌ | bewusst nicht – nur JARVIS spricht |
 
-## 13. Technik und Betrieb
+## 14. Technik und Betrieb
 
 | Funktion | Stand | Hinweis |
 |---|---|---|

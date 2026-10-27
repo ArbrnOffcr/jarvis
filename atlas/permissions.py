@@ -61,6 +61,8 @@ DEFAULT_POLICY = {
     "steuer.lesen": Level.FREI,
     "steuer.schreiben": Level.MELDEN,
     # Stab (Sachgebietsagenten): Einsatz und Abstimmung untereinander ohne Rückfrage
+    "tesla.lesen": Level.FREI,
+    "tesla.steuern": Level.MELDEN,          # Klima und Laden; Entriegeln/Öffnen gibt es bewusst nicht
     "stab.einsatz": Level.FREI,
     "stab.lesen": Level.FREI,
     "stab.steuern": Level.MELDEN,          # an/aus, Kostengrenze – nur auf Befehl

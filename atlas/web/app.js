@@ -3806,3 +3806,189 @@ function standortSenden() {
 }
 if (MOBIL) { setTimeout(standortSenden, 3000); setInterval(standortSenden, 15 * 60 * 1000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) standortSenden(); }); }
+
+// =====================================================================
+//  TESLA: Fahrzeugfenster (Bild, Akku, Laden, Klima, Ort, Steuerung) und Einrichtung unter Verbindungen
+// =====================================================================
+const TS = { el: null, d: null, busy: false };
+function teslaAuto(d) {
+  // Eigene Grafik (falls kein Konfigurator-Bild verfügbar ist) – Seitenansicht in Lackfarbe, Holo-Kontur
+  const f = d.farbe || "#9aa1a8";
+  return `<svg viewBox="0 0 620 230" class="ts-svg" aria-hidden="true">
+    <defs><linearGradient id="ts-lack" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${f}" stop-opacity=".95"/>
+      <stop offset=".55" stop-color="${f}" stop-opacity=".8"/><stop offset="1" stop-color="#000" stop-opacity=".55"/></linearGradient>
+      <linearGradient id="ts-glas" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9ff4ff" stop-opacity=".35"/><stop offset="1" stop-color="#02121a" stop-opacity=".9"/></linearGradient></defs>
+    <ellipse cx="312" cy="196" rx="270" ry="14" class="ts-boden"/>
+    <path class="ts-karosse" fill="url(#ts-lack)" d="M44 160 L58 128 Q84 102 172 92 L246 64 Q306 42 388 46 Q458 50 508 92 L552 104 Q578 110 580 134 L578 156 Q576 168 562 168 L528 168 A44 44 0 0 0 440 168 L196 168 A44 44 0 0 0 108 168 L60 168 Q44 168 44 160 Z"/>
+    <path fill="url(#ts-glas)" class="ts-glas" d="M192 96 L254 70 Q306 54 376 56 L378 96 Z M392 56 Q446 60 488 94 L392 96 Z"/>
+    <path class="ts-linie" d="M190 100 L560 108 M300 102 L298 160 M386 100 L388 160 M548 116 L572 120 M58 132 L80 128"/>
+    <g class="ts-rad"><circle cx="152" cy="168" r="36"/><circle cx="152" cy="168" r="22" class="ts-felge"/>
+      <path class="ts-speiche" d="M152 146 V190 M130 168 H174 M137 153 L167 183 M167 153 L137 183"/></g>
+    <g class="ts-rad"><circle cx="484" cy="168" r="36"/><circle cx="484" cy="168" r="22" class="ts-felge"/>
+      <path class="ts-speiche" d="M484 146 V190 M462 168 H506 M469 153 L499 183 M499 153 L469 183"/></g>
+  </svg>`;
+}
+function teslaZeit(min) { if (min == null) return ""; const t = new Date(Date.now() + min * 60000); return t.toTimeString().slice(0, 5); }
+function teslaAkkuFarbe(p) { return p >= 50 ? "var(--good,#3ddc97)" : p >= 20 ? "#ffb547" : "#ff6b4a"; }
+function teslaHTML(d) {
+  if (d.leer) return `<div class="ts-leer">Noch keine Daten – „AKTUALISIEREN“ weckt das Auto und lädt den Stand.</div>`;
+  const l = d.laden || {}, k = d.klima || {}, o = d.ort || {}, akku = d.akku ?? 0;
+  const laedt = l.zustand === "Charging";
+  const stand = d.stand ? new Date(d.stand).toLocaleString("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "";
+  const ladeText = laedt ? `Lädt mit ${l.leistung_kw ?? "–"} kW${l.minuten_bis_voll ? " · voll um " + teslaZeit(l.minuten_bis_voll) : ""}`
+    : l.zustand === "Complete" ? "Fertig geladen" : l.kabel ? "Kabel steckt · lädt nicht" : "Nicht angeschlossen";
+  const bild = `<img class="ts-bild" alt="" src="/tesla/bild?modell=${encodeURIComponent(d.modell_code || "my")}&lack=${encodeURIComponent(d.lack || "")}"
+      onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ts-bild-svg',innerHTML:teslaAuto(TS.d||{})}))">`;
+  return `<div class="ts-grid">
+    <div class="ts-links">
+      <div class="ts-buehne ${laedt ? "laedt" : ""} ${k.an ? "klima" : ""}">${d.lack ? bild : `<div class="ts-bild-svg">${teslaAuto(d)}</div>`}
+        <div class="ts-scan"></div>${laedt ? `<div class="ts-kabel"><i></i></div>` : ""}
+        ${k.an ? `<div class="ts-luft"><i></i><i></i><i></i></div>` : ""}</div>
+      <div class="ts-akku">
+        <div class="ts-akku-zahl"><b data-zahl="${akku}">${akku}</b><span>%</span><em>${d.reichweite_km ?? "–"} km</em></div>
+        <div class="ts-akku-balken"><i style="--p:${akku / 100};--f:${teslaAkkuFarbe(akku)}" class="${laedt ? "laedt" : ""}"></i>
+          ${l.limit ? `<u style="left:${l.limit}%" title="Ladelimit ${l.limit} %"><span>${l.limit} %</span></u>` : ""}</div>
+        <div class="ts-akku-text">${esc(ladeText)}${l.plan_text ? ` · <b>${esc(l.plan_text)}</b>` : ""}</div>
+      </div>
+    </div>
+    <div class="ts-rechts">
+      <section class="ts-kachel"><h5>KLIMA <em class="${k.an ? "an" : ""}">${k.an ? "LÄUFT" : "AUS"}</em></h5>
+        <div class="ts-temp"><div><b>${k.innen != null ? Math.round(k.innen) + "°" : "–"}</b><span>INNEN</span></div>
+          <div><b>${k.aussen != null ? Math.round(k.aussen) + "°" : "–"}</b><span>AUSSEN</span></div>
+          <div class="ts-soll"><button type="button" data-t="klima-minus">−</button><b data-soll="${k.soll ?? 21}">${(k.soll ?? 21).toFixed(1).replace(".0", "")}°</b>
+            <button type="button" data-t="klima-plus">+</button><span>WUNSCH</span></div></div>
+        <button type="button" class="ts-haupt ${k.an ? "an" : ""}" data-t="${k.an ? "klima-aus" : "klima-an"}">${k.an ? "KLIMA AUSSCHALTEN" : "KLIMA EINSCHALTEN"}</button></section>
+      <section class="ts-kachel"><h5>LADEN</h5>
+        <div class="ts-reihe"><button type="button" data-t="laden-start" ${laedt || !l.kabel ? "disabled" : ""}>START</button>
+          <button type="button" data-t="laden-stop" ${laedt ? "" : "disabled"}>STOPP</button></div>
+        <div class="ts-reihe ts-limit"><input type="range" min="50" max="100" step="5" value="${l.limit ?? 80}" data-f="limit">
+          <b data-limit>${l.limit ?? 80} %</b><button type="button" data-t="limit">SETZEN</button></div>
+        <div class="ts-plan"><select data-f="modus"><option value="abfahrt" ${l.plan === "DepartBy" ? "selected" : ""}>Abfahrt um</option>
+            <option value="start" ${l.plan === "StartAt" ? "selected" : ""}>Ladestart um</option><option value="aus" ${l.plan === "Off" ? "selected" : ""}>Kein Ladeplan</option></select>
+          <input type="time" data-f="uhrzeit" value="${l.plan_text ? l.plan_text.slice(-5) : "07:00"}">
+          <label><input type="checkbox" data-f="vorklima" checked> vorklimatisieren</label>
+          <button type="button" data-t="plan">ÜBERNEHMEN</button></div></section>
+      <section class="ts-kachel ts-info"><h5>FAHRZEUG</h5>
+        <div class="ts-chips"><span class="${d.verriegelt ? "ok" : "warn"}">${d.verriegelt ? "🔒 verriegelt" : "🔓 offen"}</span>
+          ${d.waechter ? `<span>◉ Wächter an</span>` : ""}${o.faehrt ? `<span class="ok">▶ fährt ${o.geschwindigkeit_kmh ?? ""} km/h</span>` : ""}
+          ${d.kilometerstand ? `<span>${d.kilometerstand.toLocaleString("de-DE")} km</span>` : ""}</div>
+        <div class="ts-ort">⌖ <b>${esc(o.name || "Standort unbekannt")}</b>${o.name ? `<button type="button" data-t="karte">AUF KARTE</button>` : ""}</div>
+        <div class="ts-stand">${d.online ? "Stand " + esc(stand) : `<b>${esc(d.zustand || "schläft")}</b> · letzter Stand ${esc(stand)}`}</div></section>
+    </div></div><div class="ts-status"></div>`;
+}
+function teslaZeigen(d) {
+  TS.d = d;
+  if (!TS.el) {
+    TS.el = document.createElement("div"); TS.el.className = "tesla";
+    TS.el.innerHTML = `<div class="ts-rahmen" role="dialog" aria-label="Fahrzeug"><header class="vt-kopf"><span class="vt-marke">◢ FAHRZEUG</span>
+      <span class="vt-kapitel ts-titel"></span><button type="button" class="ts-neu" data-t="neu" title="Aktuelle Werte holen (weckt das Auto)">AKTUALISIEREN</button>
+      <button type="button" class="vt-zu" data-t="zu" title="Schließen (Esc)">✕</button></header><div class="ts-inhalt"></div></div>`;
+    document.body.appendChild(TS.el);
+    requestAnimationFrame(() => TS.el.classList.add("an"));
+  }
+  TS.el.querySelector(".ts-titel").textContent = `${(d.name || "Tesla").toUpperCase()}${d.modell ? " · " + d.modell.toUpperCase() : ""}`;
+  TS.el.querySelector(".ts-inhalt").innerHTML = teslaHTML(d);
+  if (typeof vtZaehlen === "function") vtZaehlen(TS.el);
+}
+function teslaZu() { if (!TS.el) return; const el = TS.el; TS.el = null; el.classList.remove("an"); setTimeout(() => el.remove(), 500); }
+async function teslaLaden(wecken = false) {
+  const st = TS.el?.querySelector(".ts-status"); if (st) { st.textContent = wecken ? "Wecke das Auto …" : "Lade …"; st.className = "ts-status"; }
+  try { const r = await fetch(`/tesla?wecken=${wecken ? 1 : 0}`, { headers: TOKEN ? { "x-atlas-token": TOKEN } : {} });
+    const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.status); teslaZeigen(j); }
+  catch (e) { if (st) { st.textContent = "⚠ " + e.message; st.className = "ts-status fehler"; } else toast("Tesla: " + e.message); }
+}
+async function teslaBefehl(befehl, args, text) {
+  const st = TS.el.querySelector(".ts-status"); st.textContent = text + " …"; st.className = "ts-status";
+  TS.el.querySelectorAll(".ts-rechts button").forEach((b) => b.disabled = true);
+  try { await vbPost("/tesla/befehl", { befehl, args }); st.textContent = "✓ " + text; st.className = "ts-status ok"; sfx?.("ok");
+    setTimeout(() => teslaLaden(false), 2500); }
+  catch (e) { st.textContent = "⚠ " + e.message; st.className = "ts-status fehler"; TS.el.querySelectorAll(".ts-rechts button").forEach((b) => b.disabled = false); }
+}
+document.addEventListener("click", (e) => {
+  if (!TS.el || !e.target.closest(".tesla")) return;
+  const b = e.target.closest("[data-t]"); if (!b) return;
+  const t = b.dataset.t, f = (n) => TS.el.querySelector(`[data-f="${n}"]`);
+  if (t === "zu") return teslaZu();
+  if (t === "neu") return teslaLaden(true);
+  if (t === "klima-an") return teslaBefehl("klima", { an: true }, "Klima wird eingeschaltet");
+  if (t === "klima-aus") return teslaBefehl("klima", { an: false }, "Klima wird ausgeschaltet");
+  if (t === "klima-plus" || t === "klima-minus") {
+    const el = TS.el.querySelector("[data-soll]"); let v = parseFloat(el.dataset.soll) + (t === "klima-plus" ? 0.5 : -0.5);
+    v = Math.min(28, Math.max(15, v)); el.dataset.soll = v; el.textContent = String(v).replace(".0", "") + "°";
+    clearTimeout(TS.tempT); TS.tempT = setTimeout(() => teslaBefehl("klima", { an: true, temperatur: v }, `Klima auf ${v} °C`), 1200); return;
+  }
+  if (t === "laden-start") return teslaBefehl("laden", { aktion: "start" }, "Laden wird gestartet");
+  if (t === "laden-stop") return teslaBefehl("laden", { aktion: "stop" }, "Laden wird gestoppt");
+  if (t === "limit") return teslaBefehl("laden", { aktion: "limit", prozent: +f("limit").value }, `Ladelimit ${f("limit").value} %`);
+  if (t === "plan") {
+    const modus = f("modus").value, uhrzeit = f("uhrzeit").value;
+    return teslaBefehl("ladeplan", { modus, uhrzeit, vorklimatisieren: f("vorklima").checked },
+      modus === "aus" ? "Ladeplan wird ausgeschaltet" : `Ladeplan: ${modus === "abfahrt" ? "Abfahrt" : "Ladestart"} ${uhrzeit}`);
+  }
+  if (t === "karte" && TS.d?.ort?.name) { teslaZu(); sendText(`Zeig ${TS.d.ort.name} auf der Karte`); }
+});
+document.addEventListener("input", (e) => { if (TS.el && e.target.matches('.tesla [data-f="limit"]')) TS.el.querySelector("[data-limit]").textContent = e.target.value + " %"; });
+document.addEventListener("keydown", (e) => { if (TS.el && e.key === "Escape" && !inFeld()) teslaZu(); });
+const _handleTesla = handle;
+handle = function (ev) {
+  if (ev.type === "tesla") { teslaZeigen(ev.daten || {}); return; }
+  if (ev.type === "tesla_verbunden") { toast((ev.ok ? "✓ " : "⚠ ") + ev.text); if (!$("einst").hidden) teslaVbAufbauen(); return; }
+  _handleTesla(ev);
+};
+window.teslaAnzeigen = () => teslaLaden(false);
+
+// ---------- Einrichtung (Einstellungen → Verbindungen → Tesla) ----------
+async function teslaVbAufbauen() {
+  const box = $("einst-vb"); if (!box) return;
+  let z; try { z = await api("/verbindungen/tesla"); } catch (e) { return; }
+  const fertig = z.angemeldet && z.vin;
+  const schritt = (n, ok, titel, inhalt, aktiv) => `<div class="ts-schritt ${ok ? "ok" : aktiv ? "aktiv" : ""}"><b>${ok ? "✓" : n}</b><div><h6>${titel}</h6>${ok && !aktiv ? "" : inhalt}</div></div>`;
+  const s1 = !z.app, s2 = !s1 && !z.veroeffentlicht, s3 = !s1 && !s2 && !z.registriert, s4 = !s1 && !s2 && !s3 && !z.angemeldet,
+    s5 = !s1 && !s2 && !s3 && !s4 && !z.virtueller_schluessel;
+  const origin = z.origin || "https://<dein-github-name>.github.io";
+  const inhalt = `<p class="vb-hilfe">Offizielle Tesla-Schnittstelle (Fleet API) mit deinem eigenen Zugang. Für ein Auto deckt Teslas
+      Monatsguthaben die Abrufe normalerweise ab. Steuerbar sind nur Klima und Laden – kein Entriegeln.</p>
+    ${schritt(1, z.app, "Tesla-Entwickler-App anlegen", `<p class="vb-hilfe">Auf <a data-link="https://developer.tesla.com/">developer.tesla.com</a> mit deinem
+      Tesla-Konto anmelden → „Create Application“. Eintragen:<br>· Allowed Origin: <code>${esc(origin)}</code><br>· Redirect URI: <code>${esc(z.redirect)}</code><br>
+      · Scopes: Vehicle Information, Vehicle Location, Vehicle Commands, Vehicle Charging Management<br>Danach Client-ID und Client-Secret hier eintragen.</p>
+      <div class="vb-feld"><label>Client-ID</label><input type="text" data-tf="client_id" autocomplete="off"></div>
+      <div class="vb-feld"><label>Client-Secret</label><input type="password" data-tf="client_secret" autocomplete="off"></div>
+      <div class="vb-reihe"><button type="button" class="primary" data-ta="app">SPEICHERN</button></div>`, s1)}
+    ${schritt(2, z.veroeffentlicht, "Schlüssel erzeugen &amp; veröffentlichen", `<p class="vb-hilfe">Richtet das Befehlsmodul ein (einmalig 1–2 Min.), erzeugt dein
+      Schlüsselpaar und legt den <b>öffentlichen</b> Schlüssel auf deine GitHub-Seite (${esc(origin)}). Der private Schlüssel bleibt auf diesem Mac.</p>
+      <div class="vb-reihe">${z.helfer ? "" : `<button type="button" data-ta="helfer" ${z.helfer_laedt ? "disabled" : ""}>${z.helfer_laedt ? "MODUL WIRD EINGERICHTET …" : "1 · BEFEHLSMODUL EINRICHTEN"}</button>`}
+      <button type="button" class="primary" data-ta="schluessel" ${z.helfer ? "" : "disabled"}>${z.helfer ? "" : "2 · "}SCHLÜSSEL VERÖFFENTLICHEN</button></div>`, s2)}
+    ${schritt(3, z.registriert, "Bei Tesla registrieren", `<p class="vb-hilfe">Meldet deine App für Europa bei Tesla an (prüft den veröffentlichten Schlüssel).
+      Falls abgelehnt: 2 Minuten warten und erneut.</p><div class="vb-reihe"><button type="button" class="primary" data-ta="registrieren">REGISTRIEREN</button></div>`, s3)}
+    ${schritt(4, z.angemeldet, "Mit Tesla anmelden", `<p class="vb-hilfe">Öffnet die Tesla-Anmeldung im Browser. Dort einloggen und Zugriff erlauben – danach meldet
+      sich JARVIS automatisch.${z.fahrzeug ? " Verbunden: <b>" + esc(z.fahrzeug) + "</b>" : ""}</p>
+      <div class="vb-reihe"><button type="button" class="primary" data-ta="anmelden">${z.angemeldet ? "NEU ANMELDEN" : "ANMELDEN"}</button></div>`, s4)}
+    ${schritt(5, z.virtueller_schluessel, "Virtuellen Schlüssel ins Auto (für Klima &amp; Laden)", `<p class="vb-hilfe">Mit dem iPhone (Tesla-App angemeldet) den
+      Code scannen oder den Link öffnen, dann im Auto auf der Schlüsselkarte bestätigen. Ohne diesen Schritt funktioniert nur der Statusabruf.</p>
+      <div class="ts-qr"></div><div class="vb-reihe"><button type="button" data-ta="vschluessel">CODE ZEIGEN</button>
+      <button type="button" class="primary" data-ta="vschluessel_ok">IM AUTO BESTÄTIGT</button></div>`, s5)}
+    ${z.fehler ? `<p class="vb-hilfe" style="color:var(--crit,#ff6b4a)">${esc(z.fehler)}</p>` : ""}
+    ${fertig ? `<div class="vb-reihe"><button type="button" data-ta="zeigen">FAHRZEUG ANZEIGEN</button></div>` : ""}`;
+  let zeile = box.querySelector('details[data-id="tesla"]');
+  const html = vbZeile("tesla", "Tesla", fertig ? { ok: true, text: `✓ ${z.fahrzeug || "verbunden"}${z.virtueller_schluessel ? "" : " · nur Status"}` }
+    : { text: z.app ? "Einrichtung läuft" : "– nicht eingerichtet" }, inhalt, zeile?.open);
+  if (zeile) zeile.outerHTML = html; else box.insertAdjacentHTML("beforeend", html);
+  if (z.helfer_laedt) setTimeout(() => { if (!$("einst").hidden) teslaVbAufbauen(); }, 6000);
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-ta]"); if (!b || !b.closest('details[data-id="tesla"]')) return;
+  const zeile = b.closest(".vb-zeile"), st = zeile.querySelector(".vb-status");
+  const melde = (t, art = "") => { st.textContent = t; st.className = "vb-status " + art; };
+  const a = b.dataset.ta;
+  if (a === "zeigen") { einstZu(); teslaLaden(false); return; }
+  b.disabled = true; melde(a === "schluessel" ? "Erzeuge und veröffentliche …" : "Einen Moment …");
+  try {
+    const daten = a === "app" ? { client_id: zeile.querySelector('[data-tf="client_id"]').value, client_secret: zeile.querySelector('[data-tf="client_secret"]').value } : {};
+    const r = await vbPost(`/verbindungen/tesla/${a}`, daten);
+    if (a === "vschluessel") { zeile.querySelector(".ts-qr").innerHTML = `${r.qr || ""}<p class="vb-hilfe"><a data-link="${esc(r.link)}">${esc(r.link)}</a></p>`; melde(""); b.disabled = false; return; }
+    melde(r.text || "✓", "ok");
+    setTimeout(teslaVbAufbauen, a === "anmelden" ? 8000 : 900);
+  } catch (err) { melde(err.message, "fehler"); b.disabled = false; }
+});
+const _vbAufbauenTesla = vbAufbauen;
+vbAufbauen = async function (...a) { await _vbAufbauenTesla(...a); teslaVbAufbauen(); };

@@ -118,6 +118,10 @@ class Core:
         from atlas.standort import Standort
         from atlas.tools import wetter as _wetter_mod
         self.standort = Standort(self)
+        # Tesla (Fleet API): Status, Klima, Laden, Ladeplanung
+        from atlas import tesla as _tesla
+        self.tesla = _tesla.Tesla(self)
+        self.tools.update({t.name: t for t in _tesla.tools(self)})
         _wetter_mod.ORT = self.standort.wetter_ort
         _wetter_mod.ZIELE = self.standort.reiseziele
         # Stab: JARVIS als Chef des Stabes mit Sachgebietsagenten (Einstellungen → Stab)
@@ -681,6 +685,102 @@ def standort_lesen(_: None = Depends(auth)):
     return get_core().standort.status()
 
 
+# ---------------------------------------------------------------- Tesla
+@app.get("/tesla")
+async def tesla_status(wecken: int = 0, _: None = Depends(auth)):
+    from atlas.tools import ToolError
+    try:
+        return await asyncio.to_thread(get_core().tesla.status, bool(wecken))
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/tesla/befehl")
+async def tesla_befehl(data: dict, _: None = Depends(auth)):
+    """Knöpfe im Tesla-Fenster: ausdrücklicher Klick = Auftrag (wie ein bestätigter Sprachbefehl)."""
+    from atlas.tools import ToolError
+    c = get_core()
+    name = {"klima": "tesla_klima", "laden": "tesla_laden", "ladeplan": "tesla_ladeplan"}.get(str(data.get("befehl")))
+    if not name or name not in c.tools:
+        raise HTTPException(400, "Unbekannter Befehl")
+    try:
+        erg = await asyncio.to_thread(c.tools[name].func, **(data.get("args") or {}))
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+    c.audit.log("werkzeug", werkzeug=name, aktion="tesla.steuern", erfolg=True, quelle="dashboard")
+    return erg
+
+
+@app.get("/tesla/bild")
+async def tesla_bild(modell: str = "my", lack: str = "", _: None = Depends(auth)):
+    import re as _re
+    if not _re.fullmatch(r"[a-z0-9]{2}", modell) or (lack and not _re.fullmatch(r"[A-Z0-9]{4}", lack)):
+        raise HTTPException(400, "ungültig")
+    daten = await asyncio.to_thread(get_core().tesla.bild, modell, lack)
+    if not daten:
+        raise HTTPException(404, "kein Bild")
+    return Response(daten, media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+
+
+@app.get("/tesla/rueckruf")
+async def tesla_rueckruf(code: str = "", state: str = "", error: str = ""):
+    """Rücksprung nach der Tesla-Anmeldung im Browser (geschützt über den einmaligen state-Code)."""
+    from fastapi.responses import HTMLResponse
+    from atlas.tools import ToolError
+    if error:
+        text, ok = f"Tesla-Anmeldung abgebrochen: {error}", False
+    else:
+        try:
+            name = await asyncio.to_thread(get_core().tesla.rueckruf, code, state)
+            text, ok = f"Verbunden{' mit ' + name if name else ''}. Du kannst dieses Fenster schließen.", True
+        except ToolError as e:
+            text, ok = str(e), False
+    get_core().broadcast({"type": "tesla_verbunden", "ok": ok, "text": text})
+    farbe = "#3ddc97" if ok else "#ff6b4a"
+    return HTMLResponse(f"<!doctype html><meta charset='utf-8'><title>JARVIS · Tesla</title>"
+                        f"<body style='background:#02090e;color:#d9faff;font:16px -apple-system,sans-serif;display:grid;"
+                        f"place-items:center;height:100vh;margin:0'><div style='text-align:center'><div style='font:600 12px "
+                        f"monospace;letter-spacing:.3em;color:#00e5ff'>JARVIS · TESLA</div><p style='color:{farbe}'>"
+                        f"{'✓ ' if ok else '⚠ '}{text}</p></div>")
+
+
+@app.get("/verbindungen/tesla")
+def verbindungen_tesla(_: None = Depends(auth)):
+    return get_core().tesla.einrichtung()
+
+
+@app.post("/verbindungen/tesla/{aktion}")
+async def verbindungen_tesla_aktion(aktion: str, data: dict | None = None, _: None = Depends(auth)):
+    from atlas.tools import ToolError
+    t, d = get_core().tesla, data or {}
+    try:
+        if aktion == "app":
+            return await asyncio.to_thread(t.app_setzen, d.get("client_id", ""), d.get("client_secret", ""))
+        if aktion == "helfer":
+            return await asyncio.to_thread(t.helfer_einrichten)
+        if aktion == "schluessel":
+            return await asyncio.to_thread(t.schluessel_veroeffentlichen)
+        if aktion == "registrieren":
+            return await asyncio.to_thread(t.registrieren)
+        if aktion == "anmelden":
+            url = t.anmelde_url()
+            await asyncio.to_thread(subprocess.run, ["open", url], capture_output=True)
+            return {"ok": True, "text": "Browser geöffnet – bei Tesla anmelden und Zugriff erlauben …"}
+        if aktion == "vschluessel":
+            dom = t.einrichtung().get("domain")
+            if not dom:
+                raise ToolError("Zuerst den Schlüssel veröffentlichen")
+            from atlas import iphone
+            link = f"https://tesla.com/_ak/{dom}"
+            return {"ok": True, "link": link, "qr": iphone.qr_svg(link)}
+        if aktion == "vschluessel_ok":
+            t._zustand_setzen(virtueller_schluessel=True)
+            return {"ok": True, "text": "✓ Steuerung freigeschaltet"}
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+    raise HTTPException(404, "unbekannt")
+
+
 @app.get("/briefing")
 def briefing_get(_: None = Depends(auth)):
     return get_core().proaktiv.briefing_today()
@@ -1187,7 +1287,8 @@ async def link_oeffnen(data: dict, _: None = Depends(auth)):
     """Hilfe-Links (Anbieterseiten) im Standardbrowser des Macs öffnen."""
     from urllib.parse import urlparse
     url = str(data.get("url", ""))
-    erlaubt = ("console.anthropic.com", "elevenlabs.io", "account.apple.com", "t.me", "serper.dev",
+    erlaubt = ("console.anthropic.com", "elevenlabs.io", "account.apple.com", "t.me", "serper.dev", "developer.tesla.com",
+               "auth.tesla.com", "tesla.com",
                "console.cloud.google.com", "login.tailscale.com", "tailscale.com", "apps.apple.com")
     host = urlparse(url).hostname or ""
     if urlparse(url).scheme != "https" or not any(host == h or host.endswith("." + h) for h in erlaubt):

@@ -29,6 +29,7 @@ GRUPPEN = {
     "timer": ["timer_", "wecker_"],
     "musik": ["musik_", "podcast_"],
     "stab": ["stab_"],
+    "tesla": ["tesla_"],
 }
 
 # Wortanfänge → Gruppen
@@ -36,6 +37,8 @@ SIGNALE = [
     (r"termin|kalender|woche|übermorgen|morgen|heute|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|"
      r"wochenende|uhr\b|frei\b|zeit für|verschieb|absag", ["kalender", "erinnerungen"]),
     (r"tageslage|briefing|was steht an|was liegt an|überblick|was gibt.?s", ["kalender", "erinnerungen", "wetter", "fristen", "mail", "stab"]),
+    (r"tesla|mein auto|das auto|akku|reichweite|lade|ladestand|ladezustand|ladeplan|wallbox|vorklimat|vorheiz|"
+     r"klimaanlage|standheizung|enteis|wo (steht|parkt) (mein|das) auto", ["tesla"]),
     (r"woche|bereite|vorbereit|kümmer|lage\b|lagevortrag|stab\b|agent|chronos|hermes|adjutant|quaestor|archivar|scout|"
      r"quartiermeister|kostengrenze|persönlichkeit|persona|humor|tonfall|sprich (förmlicher|lockerer)|sei (lustiger|ernster)",
      ["stab"]),
