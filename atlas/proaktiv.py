@@ -58,18 +58,24 @@ class Proaktiv:
     def make_briefing(self, force: bool = False) -> dict:
         if not force and self.briefing_today().get("text"):
             return self.briefing_today()
-        text = agent.run(self.c, BRIEFING_PROMPT, nur_lesen=True, quelle="briefing",
+        stab = getattr(self.c, "stab", None)
+        if stab:
+            stab.letzter_vortrag = None
+        text = agent.run(self.c, BRIEFING_PROMPT, nur_lesen=True, quelle="briefing", marken=True,
                          hinweis="Dies ist das Morgenbriefing; es wird vorgelesen und per Telegram "
                                  "verschickt. Keine Rückfragen, keine Markdown-Formatierung. "
                                  + (self.c.stab.briefing_hinweis() if hasattr(self.c, "stab") else ""))
+        vortrag = stab.letzter_vortrag if stab else None
         try:                                     # Zahlungen aus dem Rechnungs-Workflow (lokal ermittelt)
             zahlungen = self.c.beihilfe.briefing_zeilen()
         except Exception:
             zahlungen = []
+        if vortrag:                              # hat der Stab schon gemeldet (Quaestor), nicht doppelt anhängen
+            zahlungen = []
         if zahlungen:
             text = (text or "").rstrip() + "\n\nZahlungen: " + " ".join(zahlungen)
         weitere = []
-        for quelle in (lambda: self.c.fristen.briefing_zeilen(), lambda: [self.c.post.briefing_zeile()],
+        for quelle in ((lambda: []) if vortrag else (lambda: self.c.fristen.briefing_zeilen()), lambda: [self.c.post.briefing_zeile()],
                        lambda: [self.c.steuer.briefing_hinweis()], lambda: [self.c.vertraege.monatsbericht()]):
             try:
                 weitere += [z for z in quelle() if z]
@@ -83,12 +89,14 @@ class Proaktiv:
             werbung = ""
         if werbung:
             text = (text or "").rstrip() + "\n\n" + werbung
-        data = {"text": text, "zeit": datetime.now().isoformat(timespec="minutes"),
-                "geraet": HOST}
+        from atlas.stab import ohne_marken
+        data = {"text": ohne_marken(text), "text_marken": text, "vortrag": vortrag,
+                "zeit": datetime.now().isoformat(timespec="minutes"), "geraet": HOST}
+        text = data["text"]
         write_private_json(self.briefing_name(), data)
         self.c.audit.log("briefing", laenge=len(text))
         self.telegram.send(f"☀️ Morgenbriefing\n\n{text}")
-        self.c.broadcast({"type": "briefing", "text": text})
+        self.c.broadcast({"type": "briefing", "text": text, "text_marken": data["text_marken"], "vortrag": vortrag})
         macos_notify("JARVIS · Morgenbriefing", text[:200])
         return data
 

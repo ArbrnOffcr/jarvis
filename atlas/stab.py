@@ -200,6 +200,7 @@ class Stab:
         except OSError:
             pass
         self.anwenden()
+        self.letzter_vortrag = None
 
     # ------------------------------------------------------------ Dateien
     def _datei(self, k: str):
@@ -467,31 +468,71 @@ class Stab:
             return lokal, lokal.resolve_model(None), ""
         return None, None, "kein Modell erreichbar"
 
-    def _werkzeug(self, name: str, args: dict) -> str:
-        from atlas import agent
-        from atlas.providers.base import ToolCall
-        return agent._tool(self.c, ToolCall("vorab", name, args), None, None, True)
+    def _werkzeug(self, name: str, args: dict, roh: dict | None = None, key: str = "") -> str:
+        """Leseabfrage für den Vorabruf – mit Rechteprüfung und VS-Schutz. Das unveränderte Ergebnis wird
+        zusätzlich für die Visualisierung des Lagevortrags aufbewahrt (nicht bei VS-Kennzeichnung)."""
+        from atlas.hilfen import vs_schutz
+        from atlas.permissions import Level
+        c = self.c
+        tool = c.tools.get(name)
+        if not tool or c.gate.level(tool.action) != Level.FREI:
+            return f"Fehler: {name} nicht verfügbar"
+        try:
+            ergebnis = tool.func(**args)
+            out = json.dumps(ergebnis, ensure_ascii=False, default=str)
+        except Exception as e:
+            c.audit.log("werkzeug", werkzeug=name, aktion=tool.action, erfolg=False, quelle="stab")
+            return f"Fehler: {type(e).__name__}: {e}"
+        c.audit.log("werkzeug", werkzeug=name, aktion=tool.action, erfolg=True, quelle="stab")
+        geschuetzt = vs_schutz(name, out)
+        if roh is not None and geschuetzt == out:
+            roh[key or name] = ergebnis
+        return geschuetzt[:12000]
+
+    def _fristen_zahlungen(self) -> tuple[list, list]:
+        """Fristen (30 Tage) und offene Zahlungen (14 Tage, Überfälliges) – nur lesend, ohne die
+        Erinnerungsstufen des Morgenbriefings zu verbrauchen."""
+        fristen, zahlungen = [], []
+        try:
+            fristen = sorted(self.c.fristen.zeitleiste(30), key=lambda f: f["datum"])
+        except Exception:
+            pass
+        try:
+            from atlas.workflows.beihilfe import euro, tag
+            heute = date.today()
+            for x in self.c.beihilfe.excel_zeilen() if getattr(self.c.beihilfe, "aktiv", False) else []:
+                if not x["kind"] or x["ueberwiesen"] or not x["ziel"] or x["betrag"] is None:
+                    continue
+                t = (x["ziel"] - heute).days
+                if t <= 14:
+                    zahlungen.append({"titel": f"Rechnung {x['nr']} ({x['kind']})", "betrag": euro(x["betrag"]),
+                                      "datum": x["ziel"].isoformat(), "tage": t, "text": f"Rechnung {x['nr']} für "
+                                      f"{x['kind']} über {euro(x['betrag'])} bis {tag(x['ziel'])}"})
+        except Exception:
+            pass
+        return fristen, zahlungen
 
     def _fin_schnell(self, auftrag: str) -> str | None:
-        """Quaestor ohne Sprachmodell: dieselben lokal ermittelten Zeilen wie im bisherigen Briefing
-        (Zahlungen aus der Beihilfe-Tabelle, Fristen) – schnell und ohne Belegdetails."""
+        """Quaestor ohne Sprachmodell: Fristen und Zahlungen lokal ermittelt – schnell und ohne Belegdetails."""
         if not FIN_SCHNELL.search(auftrag or ""):
             return None
-        zahl, frist = [], []
-        try:
-            zahl = [z for z in self.c.beihilfe.briefing_zeilen() if z]
-        except Exception:
-            pass
-        try:
-            frist = [z for z in self.c.fristen.briefing_zeilen() if z]
-        except Exception:
-            pass
+        fr, za = self._fristen_zahlungen()
+        heute = date.today()
+        frist = [f"{f['titel']} – {self._wann((date.fromisoformat(f['datum']) - heute).days)} "
+                 f"({date.fromisoformat(f['datum']):%d.%m.%Y})" for f in fr if (date.fromisoformat(f['datum']) - heute).days <= 14]
+        zahl = [f"{z['text']} – {self._wann(z['tage'])}" for z in za]
         if not zahl and not frist:
             return "Lage: Keine fälligen Fristen oder offenen Zahlungen.\nDRINGLICHKEIT: 1\nWICHTIGKEIT: 2"
         t = "Lage: " + ("Fristen und Zahlungen stehen an." if zahl and frist else "Fristen stehen an." if frist
                         else "Zahlungen stehen an.")
         t += "".join(f"\n- {z}" for z in [*frist, *zahl][:8])
-        return t + f"\nDRINGLICHKEIT: {4 if frist else 3}\nWICHTIGKEIT: 4"
+        naechst = min([(date.fromisoformat(f["datum"]) - heute).days for f in fr] + [z["tage"] for z in za] or [30])
+        return t + f"\nDRINGLICHKEIT: {5 if naechst <= 1 else 4 if naechst <= 7 else 3}\nWICHTIGKEIT: 4"
+
+    @staticmethod
+    def _wann(t: int) -> str:
+        return ("überfällig seit " + str(-t) + " Tag" + ("en" if t != -1 else "")) if t < 0 else \
+            "heute" if t == 0 else "morgen" if t == 1 else f"in {t} Tagen"
 
     def _lauf(self, k: str, auftrag: str, tiefe: int = 0, nur_lesen: bool = False, an: str = "JARVIS",
               vorab: list | None = None) -> dict:
@@ -633,11 +674,12 @@ class Stab:
         self.c.broadcast({"type": "stab", "phase": "start", "agenten": namen, "kuerzel": [KUERZEL[k] for k, _ in jobs]})
         vor_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="stab-vorab")
         abrufe: dict = {}
+        roh: dict = {}
 
         def hol(name: str, args: dict):
             key = name + json.dumps(args, sort_keys=True)
             if key not in abrufe:
-                abrufe[key] = vor_pool.submit(self._werkzeug, name, args)
+                abrufe[key] = vor_pool.submit(self._werkzeug, name, args, roh, name)
             return abrufe[key]
         vorab = {}
         for k, a in jobs:
@@ -696,6 +738,7 @@ class Stab:
             out["kostenhinweis"] = (f"Erwähne kurz: Der Stab hat {self.kosten_monat():.2f} € von {g} € Monatsgrenze "
                                     "verbraucht (Grenze per Befehl erhöhbar).")
             self.c.broadcast({"type": "info", "text": f"Stab: 80 % der Kostengrenze erreicht ({self.kosten_monat():.2f} € / {g} €)"})
+        out["_roh"] = roh                          # nur intern (Visualisierung), geht nicht ans Modell
         return out
 
     # ------------------------------------------------------------ Schnellweg
@@ -714,12 +757,83 @@ class Stab:
                      {"agent": "FIN", "auftrag": "Fällige Fristen und offene Zahlungen"},
                      {"agent": "AUFKL", "auftrag": f"Wetter ({zr})"}]
         erg = self.einsatz(auftraege, nur_lesen=nur_lesen, quelle=quelle, text=t)
-        return None if erg.get("fehler") else erg
+        if erg.get("fehler"):
+            return None
+        try:
+            erg["_vortrag"] = self.vortrag_daten(erg, erg.pop("_roh", {}), t)
+        except Exception as e:
+            self.c.audit.log("fehler", bereich="vortrag", text=f"{type(e).__name__}: {e}"[:200])
+            erg.pop("_roh", None)
+        self.letzter_vortrag = erg.get("_vortrag")
+        return erg
 
     def vorab_hinweis(self, erg: dict) -> str:
+        nutz = {k: v for k, v in erg.items() if not k.startswith("_")}
+        szenen = (erg.get("_vortrag") or {}).get("szenen") or []
+        marken = ""
+        if szenen:
+            marken = ("\nIm Dashboard läuft parallel eine animierte Darstellung. Gliedere den Vortrag in Abschnitte und "
+                      "beginne jeden Abschnitt mit seiner Marke allein auf einer Zeile, damit die passende Grafik "
+                      "erscheint: " + ", ".join(f"[{x}]" for x in szenen) + ". Nur diese Marken, jede höchstens einmal, "
+                      "Reihenfolge nach Wichtigkeit ([SOFORT] zuerst, falls vorhanden). Die Marken werden nicht "
+                      "vorgelesen. Verweise gelegentlich auf die Grafik („Wie Sie in der Übersicht sehen …“), "
+                      "lies aber keine Listen vollständig vor – die stehen in der Grafik.")
         return ("\n\nDein Stab hat zu dieser Anfrage bereits gemeldet (Ergebnis von 'stab_einsatz'). Trage daraus "
-                "direkt den Lagevortrag vor – ohne weitere Werkzeuge, außer es fehlt Wesentliches:\n"
-                + json.dumps(erg, ensure_ascii=False)[:14000])
+                "direkt den Lagevortrag vor – ohne weitere Werkzeuge, außer es fehlt Wesentliches." + marken + "\n"
+                + json.dumps(nutz, ensure_ascii=False)[:14000])
+
+    # ------------------------------------------------------------ Daten für die Visualisierung
+    def vortrag_daten(self, erg: dict, roh: dict, text: str) -> dict:
+        v, b = _zeitraum(text)
+        dienst_rx = re.compile(r"bundeswehr|dienst|\bbw\b|kaserne|truppe|einheit|kommando", re.I)
+        termine = []
+        for x in roh.get("kalender_termine") or []:
+            if isinstance(x, dict) and x.get("datum"):
+                termine.append({"titel": x.get("titel", ""), "datum": x["datum"], "zeit": x.get("zeit"),
+                                "ende": str(x.get("ende") or "")[11:16] if not x.get("ganztag") else "",
+                                "ganztag": bool(x.get("ganztag")), "kalender": x.get("kalender", ""),
+                                "ort": x.get("ort", ""), "dienst": bool(dienst_rx.search(x.get("kalender", "") or ""))})
+        termine.sort(key=lambda x: (x["datum"], x["zeit"] or ""))
+        w = roh.get("wetter") or {}
+        wetter = {"ort": w.get("ort", ""), "tage": [t for t in w.get("tage") or [] if v.isoformat() <= t.get("datum", "") <= b.isoformat()]
+                  or (w.get("tage") or [])[:1], "aktuell": w.get("aktuell")} if isinstance(w, dict) and w.get("tage") else None
+        m = roh.get("mail_posteingang")
+        mails = None
+        if isinstance(m, dict):
+            mails = {"ungelesen": m.get("ungelesen", 0), "neueste": [{"von": re.sub(r"\s*<.*?>", "", x.get("von", ""))[:40],
+                     "betreff": x.get("betreff", "")[:70]} for x in (m.get("neueste") or [])[:4]]}
+        ende = b.isoformat() + "T23:59"
+        erinnerungen = [{"titel": x.get("titel", ""), "faellig": (x.get("faellig") or "")[:10]}
+                        for x in roh.get("erinnerungen_offen") or [] if isinstance(x, dict)
+                        and x.get("faellig") and x["faellig"][:16] <= ende][:6]
+        geburtstage = [{"name": x.get("name", ""), "datum": x.get("datum", ""), "in_tagen": x.get("in_tagen", 0)}
+                       for x in roh.get("geburtstage") or [] if isinstance(x, dict)
+                       and x.get("in_tagen", 99) <= (b - v).days + (b - date.today()).days + 1][:5]
+        fristen, zahlungen = self._fristen_zahlungen()
+        heute = date.today()
+        fristen = [{"titel": f["titel"], "datum": f["datum"], "tage": (date.fromisoformat(f["datum"]) - heute).days}
+                   for f in fristen][:6]
+        meldungen = [{"agent": x["agent"], "name": x["name"], "gewicht": x["gewicht"], "meldung": x["meldung"][:600]}
+                     for x in erg.get("meldungen") or []]
+        d = {"titel": "WOCHENÜBERBLICK" if v != b else "TAGESLAGE", "von": v.isoformat(), "bis": b.isoformat(),
+             "meldungen": meldungen, "termine": termine[:40], "wetter": wetter, "mails": mails,
+             "erinnerungen": erinnerungen, "geburtstage": geburtstage, "fristen": fristen, "zahlungen": zahlungen}
+        sofort = [x for x in meldungen if x["gewicht"] >= 60]
+        szenen = []
+        if sofort:
+            szenen.append("SOFORT")
+        if termine:
+            szenen.append("TERMINE")
+        if wetter:
+            szenen.append("WETTER")
+        if fristen or zahlungen:
+            szenen.append("FRISTEN")
+        if mails or erinnerungen or geburtstage:
+            szenen.append("POST")
+        if len(meldungen) > len(sofort):
+            szenen.append("KENNTNIS")
+        d["szenen"] = szenen
+        return d
 
     # ------------------------------------------------------------ Messung: mit vs. ohne Stab
     MESSFRAGEN = ["Was steht heute an?", "Bereite meine Woche vor.", "Wie wird das Wetter morgen?"]
@@ -778,8 +892,10 @@ class Stab:
         from atlas.tools import S, Tool
 
         def einsatz(auftraege, **_):
-            return self.einsatz(auftraege, quelle="chat",
-                                text="; ".join(f"{a.get('agent')}: {a.get('auftrag')}" for a in auftraege or [])[:160])
+            erg = self.einsatz(auftraege, quelle="chat",
+                               text="; ".join(f"{a.get('agent')}: {a.get('auftrag')}" for a in auftraege or [])[:160])
+            erg.pop("_roh", None)
+            return erg
 
         def status():
             u = self.uebersicht()
@@ -852,3 +968,41 @@ class Stab:
                  "stab.steuern", schalter, {"aktiv": {"type": "boolean", "description": "true = an"}}, ["aktiv"],
                  label=lambda a: f"Stab {'einschalten' if a.get('aktiv') else 'ausschalten'}"),
         ]
+
+
+# ---------------------------------------------------------------- Abschnittsmarken im Lagevortrag
+MARKE = re.compile(r"\[(SOFORT|TERMINE|WETTER|FRISTEN|POST|KENNTNIS)\][ \t]*\n?")
+
+
+def ohne_marken(t: str) -> str:
+    return MARKE.sub("", t or "")
+
+
+class Markenfilter:
+    """Trennt gestreamten Text in Text und Abschnittsmarken – auch wenn eine Marke über zwei Stücke verteilt ist."""
+    def __init__(self):
+        self.rest = ""
+
+    def feed(self, stueck: str) -> list[tuple[str, str]]:
+        self.rest += stueck or ""
+        out = []
+        while True:
+            m = MARKE.search(self.rest)
+            if m:
+                out.append(("text", self.rest[:m.start()]))
+                out.append(("marke", m.group(1)))
+                self.rest = self.rest[m.end():]
+                continue
+            i = self.rest.rfind("[")
+            if i != -1 and "]" not in self.rest[i:] and len(self.rest) - i < 12:
+                out.append(("text", self.rest[:i]))
+                self.rest = self.rest[i:]
+            else:
+                out.append(("text", self.rest))
+                self.rest = ""
+            break
+        return [(a, w) for a, w in out if w]
+
+    def ende(self) -> list[tuple[str, str]]:
+        out, self.rest = ([("text", self.rest)] if self.rest else []), ""
+        return out

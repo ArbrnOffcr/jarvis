@@ -448,6 +448,7 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
                    "'dokument_ablage_vorschlag' und 'dokument_ablegen'; Fristen bei Bedarf mit 'frist_eintragen', "
                    "Steuerbelege nach der Ablage mit 'steuer_vormerken'.")
     # Schnellweg: Lagefragen gehen sofort und parallel an den Stab; JARVIS formuliert nur noch den Vortrag
+    marken = None
     if (not doks and d.target == "claude" and s.mode == "auto" and hasattr(c, "stab")
             and await asyncio.to_thread(c.stab.bereit)):
         from atlas.stab import LAGE
@@ -456,10 +457,25 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
             vorab = await asyncio.to_thread(c.stab.schnellweg, text, False, "chat")
             if vorab:
                 system += c.stab.vorab_hinweis(vorab)
+                if vorab.get("_vortrag"):                       # animierte Darstellung im Dashboard
+                    await ws.send_json({"type": "vortrag", "daten": vorab["_vortrag"]})
+                    from atlas.stab import Markenfilter
+                    marken = Markenfilter()
                 tools, gruppen = werkzeugwahl.auswahl(c.tools, set()), set()   # nur 'werkzeuge_laden' – schlanker Aufruf
     work = [*s.messages, {"role": "user", "content": text + anhang}]
     reply, t_in, t_out = "", 0, 0
     unterbrochen = False
+
+    async def ausgeben(stuecke):
+        nonlocal reply, t_erst
+        for art, wert in stuecke:
+            if art == "marke":                     # Abschnittswechsel der Vortragsgrafik
+                await ws.send_json({"type": "marke", "name": wert})
+                continue
+            if t_erst is None:
+                t_erst = time.monotonic() - t0
+            reply += wert
+            await ws.send_json({"type": "delta", "text": wert})
     try:
         for _ in range(MAX_STEPS):
             it = provider.step(model, system, list(work), tools, max_tokens)
@@ -469,12 +485,11 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
                 if ev is None:
                     break
                 if ev[0] == "text":
-                    if t_erst is None:
-                        t_erst = time.monotonic() - t0
-                    reply += ev[1]
-                    await ws.send_json({"type": "delta", "text": ev[1]})
+                    await ausgeben(marken.feed(ev[1]) if marken else [("text", ev[1])])
                 else:
                     result = ev[1]
+            if marken:
+                await ausgeben(marken.ende())
             t_in += result.usage[0]
             t_out += result.usage[1]
             if result.quellen:
@@ -1387,7 +1402,8 @@ async def ws_endpoint(ws: WebSocket, token: str = ""):
     await ws.send_json({"type": "gruss", "text": f"{gruss}, {anrede}." if anrede else f"{gruss}.",
                         "briefing": bool(b.get("text")) and not already})
     if b.get("text") and not already:
-        await ws.send_json({"type": "briefing", "text": b["text"]})
+        await ws.send_json({"type": "briefing", "text": b["text"], "text_marken": b.get("text_marken") or b["text"],
+                            "vortrag": b.get("vortrag")})
         try:
             shown.write_text(date.today().isoformat())
         except OSError:

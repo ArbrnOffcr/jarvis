@@ -179,6 +179,8 @@ Bedeutung der Zeichen:
 | Einfache Fragen beantwortet JARVIS weiter direkt | ✅ | |
 | Schnellweg für Lagefragen („Was steht heute an?“, „Bereite meine Woche vor“, Morgenbriefing): Stab startet sofort, Daten werden vorab parallel abgerufen, JARVIS trägt in einem Schritt vor | ✅ | Quaestor meldet Fristen/Zahlungen ohne Sprachmodell |
 | Geschwindigkeit mit und ohne Stab messen | ✅ | `jarvis messen` |
+| Lagevortrag als animierte Präsentation (Tagesupdate, „Was steht heute an?“, „Bereite meine Woche vor“): Lage mit Kennzahlen, Sofort-Karten, Termine als Zeitstrahl bzw. Wochenraster (Dienst/Privat farbig), Wetter, Fristen mit Countdown-Ringen, Post & Erinnerungen, Zur Kenntnis | ✅ | Grafik wechselt synchron zur Stimme; ohne Stimme automatisch |
+| Im Vortrag blättern und nachfragen: Pfeiltasten, „weiter“/„zurück“, Antippen einer Karte fragt JARVIS nach Details | ✅ | Esc oder „Vortrag schließen“ |
 | Eigenes Emblem je Agent; beim Delegieren fliegen die Embleme sichtbar aus dem Kern, Abstimmungen und Meldungen werden als Datenpakete gezeigt | ✅ | auch in der Startsequenz und in den Einstellungen |
 | Stab ein-/ausschalten | ✅ | Button STAB in der Kopfleiste, ⚙ Einstellungen → Stab oder „Schalte den Stab aus“ |
 | Alle Agenten mit Aufgaben, Rechten und Werkzeugen ansehen | ✅ | ⚙ Einstellungen → Stab |

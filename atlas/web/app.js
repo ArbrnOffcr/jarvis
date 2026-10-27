@@ -888,6 +888,7 @@ async function ttsRun() {
   play.running = true;
   while (play.queue.length) {
     const job = play.queue[0];
+    if (job.szene) { play.queue.shift(); try { window.vortragSzene?.(job.szene); } catch (e) {} continue; }   // Abschnittsmarke
     let t = 0, laeuft = false, puffer = [];
     const spiele = (f) => {
       const b = play.ctx.createBuffer(1, f.length, job.rate); b.copyToChannel(f, 0);
@@ -3517,4 +3518,270 @@ handle = function (ev) {
     else play.ctx.resume().then(() => { if (play.ctx.state === "running") los(); }).catch(() => {});
   };
   setTimeout(sagen, 700);
+};
+
+// =====================================================================
+//  LAGEVORTRAG: Tagesupdate und Wochenüberblick als animierte, klickbare Darstellung.
+//  Der Server schickt die Daten ({type:"vortrag"}), danach Abschnittsmarken ({type:"marke"}) im Textstrom.
+//  Beim Vorlesen wechselt die Grafik genau dann, wenn JARVIS den Abschnitt zu sprechen beginnt.
+// =====================================================================
+const VT = { el: null, d: null, szenen: [], i: -1, auto: null, ruhe: null, gesprochen: false };
+const VT_TITEL = { AUFTAKT: "LAGE", SOFORT: "SOFORT", TERMINE: "TERMINE", WETTER: "WETTER", FRISTEN: "FRISTEN & ZAHLUNGEN",
+  POST: "POST & ERINNERUNGEN", KENNTNIS: "ZUR KENNTNIS" };
+const VT_MARKE = /\[(SOFORT|TERMINE|WETTER|FRISTEN|POST|KENNTNIS)\][ \t]*\n?/g;
+const VT_WT = ["SO", "MO", "DI", "MI", "DO", "FR", "SA"];
+const VT_WT_LANG = ["SONNTAG", "MONTAG", "DIENSTAG", "MITTWOCH", "DONNERSTAG", "FREITAG", "SAMSTAG"];
+const VT_MON = ["JANUAR", "FEBRUAR", "MÄRZ", "APRIL", "MAI", "JUNI", "JULI", "AUGUST", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DEZEMBER"];
+function vtDatum(iso) { const [j, m, t] = iso.split("-").map(Number); return new Date(j, m - 1, t); }
+function vtTage(von, bis) { const out = []; for (let d = vtDatum(von); d <= vtDatum(bis); d.setDate(d.getDate() + 1)) out.push(new Date(d)); return out; }
+function vtIso(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function vtOhneMarken(t) { return String(t || "").replace(VT_MARKE, ""); }
+function vtZeilen(meldung) {
+  return String(meldung || "").split("\n").map((z) => z.replace(/^\s*[-•·*]\s*/, "").replace(/^(Lage|Punkte|Empfehlung):\s*/i, (m) => /empfehlung/i.test(m) ? "→ " : "").trim())
+    .filter((z) => z && !/^(DRINGLICHKEIT|WICHTIGKEIT)\b/i.test(z));
+}
+function vtSofort(d) { const m = (d.meldungen || []).filter((x) => x.gewicht >= 60).slice(0, 3); return m; }
+function vtKenntnis(d) { const s = new Set(vtSofort(d)); return (d.meldungen || []).filter((x) => !s.has(x)); }
+
+// ---------- Szenen ----------
+function vtAuftakt(d) {
+  const v = vtDatum(d.von), b = vtDatum(d.bis), woche = d.von !== d.bis;
+  const zr = woche ? `${v.getDate()}. ${VT_MON[v.getMonth()]} – ${b.getDate()}. ${VT_MON[b.getMonth()]} ${b.getFullYear()}`
+                   : `${VT_WT_LANG[v.getDay()]} · ${v.getDate()}. ${VT_MON[v.getMonth()]} ${v.getFullYear()}`;
+  const ag = (d.meldungen || []).map((m, i) => `<div class="vt-ag" style="--i:${i}">${stabLogo(m.agent)}<b>${esc(STAB_NAMEN[m.agent] || m.name)}</b>
+    <span class="vt-g ${m.gewicht >= 60 ? "hoch" : m.gewicht >= 20 ? "mittel" : ""}">G ${m.gewicht}</span></div>`).join("");
+  const zahl = (n, l) => `<div class="vt-kz"><b data-zahl="${n}">0</b><span>${l}</span></div>`;
+  return `<div class="vt-auftakt"><div class="vt-gross">${esc(d.titel || "LAGE")}</div><div class="vt-datum">${zr}</div>
+    <div class="vt-kennzahlen">${zahl((d.termine || []).length, "TERMINE")}${zahl(vtSofort(d).length, "SOFORT")}
+      ${zahl((d.fristen || []).length + (d.zahlungen || []).length, "FRISTEN")}${d.mails ? zahl(d.mails.ungelesen || 0, "MAILS NEU") : ""}</div>
+    <div class="vt-agenten">${ag}</div></div>`;
+}
+function vtSofortSzene(d) {
+  return `<div class="vt-karten">${vtSofort(d).map((m, i) => {
+    const z = vtZeilen(m.meldung).slice(0, 5);
+    return `<button type="button" class="vt-karte" style="--i:${i}" data-frage="${esc(`Mehr Details zu ${STAB_NAMEN[m.agent] || m.name}: ${z[0] || ""}`)}">
+      <header>${stabLogo(m.agent)}<div><b>${esc(STAB_NAMEN[m.agent] || m.name)}</b><span>GEWICHT ${m.gewicht} / 125</span></div></header>
+      <div class="vt-balken"><i style="--w:${Math.min(1, m.gewicht / 125)}"></i></div>
+      <ul>${z.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><em>FÜR DETAILS ANTIPPEN</em></button>`;
+  }).join("")}</div>`;
+}
+function vtTermineSzene(d) {
+  const termine = d.termine || [], heute = vtIso(new Date());
+  const pill = (t, i) => `<button type="button" class="vt-pill ${t.dienst ? "dienst" : ""}" style="--i:${i}" data-frage="${esc(`Erzähl mir mehr zum Termin „${t.titel}“ am ${t.datum.split("-").reverse().join(".")}`)}">
+      <b>${t.ganztag ? "GANZTÄGIG" : esc(t.zeit || "")}${t.ende ? "–" + esc(t.ende) : ""}</b><span>${esc(t.titel)}</span>${t.ort ? `<i>${esc(t.ort)}</i>` : ""}</button>`;
+  const legende = `<div class="vt-legende"><span class="privat">PRIVAT</span><span class="dienst">DIENST</span></div>`;
+  if (d.von !== d.bis) {
+    let n = 0;
+    const spalten = vtTage(d.von, d.bis).map((tg, si) => {
+      const iso = vtIso(tg), liste = termine.filter((t) => t.datum === iso);
+      return `<div class="vt-tag ${iso === heute ? "heute" : ""} ${tg.getDay() % 6 === 0 ? "we" : ""}" style="--s:${si}">
+        <header><b>${VT_WT[tg.getDay()]}</b><span>${tg.getDate()}.</span><em>${liste.length || ""}</em></header>
+        <div class="vt-tag-inhalt">${liste.map((t) => pill(t, n++)).join("") || "<p class='vt-frei'>frei</p>"}</div></div>`;
+    }).join("");
+    return `<div class="vt-woche">${spalten}</div>${legende}`;
+  }
+  // Tagesansicht: Zeitstrahl
+  const tagT = termine.filter((t) => t.datum === d.von);
+  const mitZeit = tagT.filter((t) => !t.ganztag && t.zeit), ganz = tagT.filter((t) => t.ganztag || !t.zeit);
+  const min = (s) => { const [h, m] = String(s).split(":").map(Number); return h * 60 + (m || 0); };
+  let von = 7 * 60, bis = 20 * 60;
+  mitZeit.forEach((t) => { von = Math.min(von, Math.floor(min(t.zeit) / 60) * 60); bis = Math.max(bis, Math.ceil(min(t.ende || t.zeit) / 60 + 1) * 60); });
+  const H = Math.round(Math.max(240, Math.min(470, innerHeight * 0.52 - (ganz.length ? 110 : 70)))), y = (m) => ((m - von) / (bis - von)) * H;
+  const stunden = []; for (let h = von / 60; h <= bis / 60; h++) stunden.push(`<div class="vt-std" style="top:${y(h * 60)}px"><span>${String(h).padStart(2, "0")}:00</span></div>`);
+  const jetzt = new Date(), jm = jetzt.getHours() * 60 + jetzt.getMinutes();
+  const linie = d.von === heute && jm >= von && jm <= bis ? `<div class="vt-jetzt" style="top:${y(jm)}px"><span>JETZT</span></div>` : "";
+  // Überschneidungen nebeneinander (Spalten je Gruppe)
+  const zeiten = mitZeit.map((t) => { const a = min(t.zeit); return { t, a, e: Math.max(a + 30, t.ende ? min(t.ende) : a + 60) }; }).sort((x, z) => x.a - z.a);
+  let gruppe = [], gEnde = -1;
+  const fertig = () => { const sp = []; gruppe.forEach((x) => { let k = sp.findIndex((ende) => ende <= x.a); if (k < 0) { k = sp.length; sp.push(0); } sp[k] = x.e; x.sp = k; }); gruppe.forEach((x) => { x.n = sp.length; }); gruppe = []; };
+  zeiten.forEach((x) => { if (x.a >= gEnde && gruppe.length) fertig(); gruppe.push(x); gEnde = Math.max(gEnde, x.e); }); fertig();
+  const bloecke = zeiten.map(({ t, a, e, sp, n }, i) => {
+    return `<button type="button" class="vt-block ${t.dienst ? "dienst" : ""}" style="--i:${i};top:${y(a)}px;height:${Math.max(26, y(e) - y(a) - 3)}px;left:calc(6px + (100% - 12px) * ${sp / n});width:calc((100% - 12px) / ${n} - 4px);right:auto"
+      data-frage="${esc(`Erzähl mir mehr zum Termin „${t.titel}“`)}"><b>${esc(t.zeit)}${t.ende ? "–" + esc(t.ende) : ""}</b> ${esc(t.titel)}${t.ort ? ` · <i>${esc(t.ort)}</i>` : ""}</button>`;
+  }).join("");
+  return `${ganz.length ? `<div class="vt-ganz">${ganz.map((t, i) => pill(t, i)).join("")}</div>` : ""}
+    <div class="vt-strahl" style="height:${H}px">${stunden.join("")}${linie}${bloecke}</div>${legende}`;
+}
+function vtWetterIcon(code) {
+  const sonne = `<circle cx="24" cy="24" r="8" class="w-sonne"/><g class="w-strahlen">${Array.from({ length: 8 }, (_, i) => { const a = i * Math.PI / 4; return `<line x1="${24 + Math.cos(a) * 12}" y1="${24 + Math.sin(a) * 12}" x2="${24 + Math.cos(a) * 16}" y2="${24 + Math.sin(a) * 16}"/>`; }).join("")}</g>`;
+  const wolke = (dx = 0, dy = 0) => `<path class="w-wolke" transform="translate(${dx} ${dy})" d="M14 34 h22 a7 7 0 0 0 0 -14 a10 10 0 0 0 -19 -2 a6 6 0 0 0 -3 16 z"/>`;
+  let g;
+  if (code <= 1) g = sonne;
+  else if (code <= 2) g = `<g transform="translate(-6 -6) scale(.8)">${sonne}</g>${wolke(2, 4)}`;
+  else if (code <= 3 || (code >= 45 && code <= 48)) g = wolke(0, 0) + (code >= 45 ? `<path class="w-nebel" d="M10 40 h28 M14 44 h22"/>` : "");
+  else if ((code >= 71 && code <= 77) || code === 85 || code === 86) g = wolke(0, -4) + `<g class="w-flocken"><circle cx="17" cy="38" r="1.6"/><circle cx="25" cy="42" r="1.6"/><circle cx="33" cy="38" r="1.6"/></g>`;
+  else if (code >= 95) g = wolke(0, -4) + `<path class="w-blitz" d="M25 32 l-5 9 h5 l-3 8 l9 -11 h-5 l3 -6 z"/>`;
+  else g = wolke(0, -4) + `<g class="w-regen"><line x1="17" y1="36" x2="15" y2="42"/><line x1="25" y1="36" x2="23" y2="42"/><line x1="33" y1="36" x2="31" y2="42"/></g>`;
+  return `<svg viewBox="0 0 48 48" class="vt-wicon" aria-hidden="true">${g}</svg>`;
+}
+function vtWetterSzene(d) {
+  const w = d.wetter, tage = w.tage || [];
+  const lo = Math.min(...tage.map((t) => t.min)), hi = Math.max(...tage.map((t) => t.max)), sp = Math.max(1, hi - lo);
+  const karten = tage.map((t, i) => {
+    const dt = vtDatum(t.datum);
+    return `<div class="vt-wtag" style="--i:${i}"><b>${VT_WT[dt.getDay()]} ${dt.getDate()}.</b>${vtWetterIcon(t.code)}<span class="vt-wtext">${esc(t.text || "")}</span>
+      <div class="vt-temp"><em>${t.max}°</em><div class="vt-tskala"><i style="--a:${(t.min - lo) / sp};--e:${(t.max - lo) / sp}"></i></div><em class="min">${t.min}°</em></div>
+      <span class="vt-regen ${t.regen >= 50 ? "hoch" : ""}">☂ ${t.regen ?? 0} %</span></div>`;
+  }).join("");
+  const a = w.aktuell ? `<div class="vt-jetztwetter">${vtWetterIcon(w.aktuell.code)}<div><b>${w.aktuell.temp}°</b><span>${esc(w.aktuell.text || "")} · gefühlt ${w.aktuell.gefuehlt}° · Wind ${w.aktuell.wind_kmh} km/h</span></div></div>` : "";
+  return `<div class="vt-wetter-kopf">${esc(w.ort || "")}</div>${a}<div class="vt-wetter ${tage.length > 3 ? "viele" : ""}">${karten}</div>`;
+}
+function vtRing(tage, max = 30) {
+  const anteil = tage < 0 ? 1 : Math.max(.04, 1 - Math.min(tage, max) / max), u = 2 * Math.PI * 19;
+  const kl = tage <= 1 ? "krit" : tage <= 7 ? "warn" : "";
+  const txt = tage < 0 ? "!" : tage === 0 ? "HEUTE" : `${tage} T`;
+  return `<svg viewBox="0 0 48 48" class="vt-ring ${kl}"><circle cx="24" cy="24" r="19" class="r-grund"/>
+    <circle cx="24" cy="24" r="19" class="r-wert" style="--u:${u};--a:${anteil}" transform="rotate(-90 24 24)"/>
+    <text x="24" y="27.5">${txt}</text></svg>`;
+}
+function vtFristenSzene(d) {
+  let n = 0;
+  const f = (d.fristen || []).map((x) => `<button type="button" class="vt-frist" style="--i:${n++}" data-frage="${esc(`Was muss ich für „${x.titel}“ tun?`)}">${vtRing(x.tage)}
+    <div><b>${esc(x.titel)}</b><span>${x.datum.split("-").reverse().join(".")} · ${x.tage < 0 ? "überfällig" : x.tage === 0 ? "heute" : x.tage === 1 ? "morgen" : `in ${x.tage} Tagen`}</span></div></button>`).join("");
+  const z = (d.zahlungen || []).map((x) => `<button type="button" class="vt-frist zahlung" style="--i:${n++}" data-frage="${esc(`Zeig mir den Stand der ${x.titel}`)}">${vtRing(x.tage, 14)}
+    <div><b>${esc(x.titel)}</b><span>${esc(x.betrag)} · bis ${x.datum.split("-").reverse().join(".")}</span></div><em>€</em></button>`).join("");
+  return `<div class="vt-fristen">${f}${z}</div>`;
+}
+function vtPostSzene(d) {
+  const kachel = (titel, zahl, inhalt, i) => `<div class="vt-kachel" style="--i:${i}"><header><b data-zahl="${zahl}">0</b><span>${titel}</span></header>${inhalt}</div>`;
+  const out = [];
+  if (d.mails) out.push(kachel("UNGELESENE MAILS", d.mails.ungelesen || 0, `<ul>${(d.mails.neueste || []).map((m) =>
+    `<li><button type="button" data-frage="${esc(`Fasse mir die Mail „${m.betreff}“ von ${m.von} zusammen`)}"><b>${esc(m.von)}</b><span>${esc(m.betreff)}</span></button></li>`).join("")}</ul>`, 0));
+  if ((d.erinnerungen || []).length) out.push(kachel("FÄLLIGE ERINNERUNGEN", d.erinnerungen.length, `<ul>${d.erinnerungen.map((e) =>
+    `<li><b>${esc(e.titel)}</b><span>${e.faellig ? e.faellig.split("-").reverse().join(".") : ""}</span></li>`).join("")}</ul>`, 1));
+  if ((d.geburtstage || []).length) out.push(kachel("GEBURTSTAGE", d.geburtstage.length, `<ul>${d.geburtstage.map((g) =>
+    `<li><b>${esc(g.name)}</b><span>${g.in_tagen === 0 ? "heute" : g.in_tagen === 1 ? "morgen" : `in ${g.in_tagen} Tagen`}</span></li>`).join("")}</ul>`, 2));
+  return `<div class="vt-kacheln">${out.join("")}</div>`;
+}
+function vtKenntnisSzene(d) {
+  return `<div class="vt-chips">${vtKenntnis(d).map((m, i) => {
+    const z = vtZeilen(m.meldung);
+    return `<button type="button" class="vt-chip" style="--i:${i}" data-frage="${esc(`Was meldet ${STAB_NAMEN[m.agent] || m.name} genau?`)}">${stabLogo(m.agent)}
+      <div><b>${esc(STAB_NAMEN[m.agent] || m.name)} <em>G ${m.gewicht}</em></b><span>${esc(z.slice(0, 2).join(" · ") || "Keine Besonderheiten.")}</span></div></button>`;
+  }).join("")}</div>`;
+}
+const VT_RENDER = { AUFTAKT: vtAuftakt, SOFORT: vtSofortSzene, TERMINE: vtTermineSzene, WETTER: vtWetterSzene,
+  FRISTEN: vtFristenSzene, POST: vtPostSzene, KENNTNIS: vtKenntnisSzene };
+
+// ---------- Steuerung ----------
+function vtZaehlen(root) {
+  root.querySelectorAll("[data-zahl]").forEach((el) => {
+    const ziel = +el.dataset.zahl, t0 = performance.now(), dauer = 900;
+    (function lauf(t) { const p = Math.min(1, (t - t0) / dauer); el.textContent = Math.round(ziel * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(lauf); })(t0);
+  });
+}
+function vtZeige(i) {
+  if (!VT.el || i < 0 || i >= VT.szenen.length) return;
+  if (i === VT.i) return;
+  const name = VT.szenen[i], buehne = VT.el.querySelector(".vt-buehne"), alt = buehne.querySelector(".vt-szene:not(.weg)");
+  const neu = document.createElement("div");
+  neu.className = `vt-szene vt-s-${name.toLowerCase()} ${i < VT.i ? "zurueck" : ""}`;
+  try { neu.innerHTML = VT_RENDER[name](VT.d); } catch (e) { neu.innerHTML = `<p class="vt-leer">Darstellung nicht möglich.</p>`; uiLog?.(`Vortrag ${name}: ${e}`); }
+  if (alt) { alt.classList.add("weg"); setTimeout(() => alt.remove(), 650); }
+  buehne.appendChild(neu);
+  VT.i = i;
+  VT.el.querySelector(".vt-kapitel").textContent = VT_TITEL[name] || name;
+  VT.el.querySelectorAll(".vt-nav button").forEach((b, k) => { b.classList.toggle("an", k === i); b.classList.toggle("gesehen", k < i); });
+  vtZaehlen(neu);
+  sfx?.("tick");
+}
+function vortragStart(d) {
+  vortragZu(true);
+  if (!d) return;
+  VT.d = d; VT.i = -1; VT.gesprochen = false;
+  VT.szenen = ["AUFTAKT", ...(d.szenen || [])];
+  const el = VT.el = document.createElement("div");
+  el.className = "vortrag";
+  el.innerHTML = `<div class="vt-rahmen" role="dialog" aria-label="Lagevortrag">
+      <header class="vt-kopf"><span class="vt-marke">◢ ${esc(d.titel || "LAGE")}</span><span class="vt-kapitel"></span>
+        <button type="button" class="vt-zu" title="Vortrag schließen (Esc)">✕</button></header>
+      <div class="vt-buehne"></div>
+      <nav class="vt-nav">${VT.szenen.map((s, k) => `<button type="button" data-k="${k}" title="${esc(VT_TITEL[s] || s)}"><i></i><span>${esc(VT_TITEL[s] || s)}</span></button>`).join("")}</nav>
+    </div>`;
+  document.body.appendChild(el);
+  body.classList.add("mit-vortrag");
+  requestAnimationFrame(() => el.classList.add("an"));
+  vtZeige(0);
+}
+function vortragZu(sofort = false) {
+  clearInterval(VT.auto); clearTimeout(VT.ruhe); VT.auto = null;
+  const el = VT.el; VT.el = null; VT.i = -1;
+  body.classList.remove("mit-vortrag");
+  if (!el) return;
+  if (sofort) { el.remove(); return; }
+  el.classList.remove("an"); el.classList.add("aus"); setTimeout(() => el.remove(), 600);
+}
+window.vortragSzene = (name) => { if (!VT.el) return; VT.gesprochen = true; const i = VT.szenen.indexOf(name); if (i >= 0) vtZeige(i); };
+function vtAutoplay(sek = 9) {               // ohne Sprachausgabe: Abschnitte nacheinander zeigen
+  clearInterval(VT.auto);
+  VT.auto = setInterval(() => { if (!VT.el || VT.i >= VT.szenen.length - 1) { clearInterval(VT.auto); vtRuhe(); return; } vtZeige(VT.i + 1); }, sek * 1000);
+}
+function vtRuhe(sek = 75) {                   // nach dem Vortrag offen lassen, später leise schließen
+  clearTimeout(VT.ruhe);
+  VT.ruhe = setTimeout(() => { if (VT.el && !VT.el.matches(":hover")) vortragZu(); else vtRuhe(30); }, sek * 1000);
+}
+// Abschnittsmarke in die Vorlesewarteschlange: Szene wechselt, wenn das Gesprochene dort ankommt
+function ttsMarke(name) { play.queue.push({ szene: name }); if (!play.running) ttsRun(); }
+// Text mit Marken vorlesen (Morgenbriefing)
+function vortragSprechen(text) {
+  V.turnSpeak = true; V.turnLang = ""; V.privat = false; V.buf = ""; V.ersterSatz = true;
+  const teile = String(text || "").split(/\[(SOFORT|TERMINE|WETTER|FRISTEN|POST|KENNTNIS)\][ \t]*\n?/);
+  teile.forEach((t, k) => { if (k % 2) ttsMarke(t); else if (t.trim()) { ttsFeed(t); ttsFeed("", true); } });
+}
+window.vortragSprechen = vortragSprechen;
+document.addEventListener("click", (e) => {
+  if (!VT.el || !e.target.closest(".vortrag")) return;
+  if (e.target.closest(".vt-zu")) { vortragZu(); return; }
+  const nav = e.target.closest(".vt-nav button"); if (nav) { clearInterval(VT.auto); vtZeige(+nav.dataset.k); vtRuhe(); return; }
+  const f = e.target.closest("[data-frage]");
+  if (f) { const frage = f.dataset.frage; ttsStop(); vortragZu(); sendText(frage); }
+});
+document.addEventListener("keydown", (e) => {
+  if (!VT.el || inFeld() || !$("modal").hidden || !$("einst").hidden) return;
+  if (e.key === "ArrowRight") { e.preventDefault(); clearInterval(VT.auto); vtZeige(VT.i + 1); vtRuhe(); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); clearInterval(VT.auto); vtZeige(VT.i - 1); vtRuhe(); }
+  else if (e.key === "Escape") { e.preventDefault(); vortragZu(); }
+}, true);
+// Sprachbefehle während des Vortrags; jede neue Frage schließt ihn
+const _sendTextVT = sendText;
+sendText = function (text, viaVoice = false) {
+  if (VT.el) {
+    const t = (text || "").trim().toLowerCase().replace(/[.!]+$/, "");
+    if (/^(weiter|nächste[rns]?( punkt| folie| abschnitt)?|vor)$/.test(t)) { clearInterval(VT.auto); vtZeige(VT.i + 1); vtRuhe(); return; }
+    if (/^(zurück|vorherige[rns]?( punkt| folie| abschnitt)?)$/.test(t)) { clearInterval(VT.auto); vtZeige(VT.i - 1); vtRuhe(); return; }
+    if (/^(vortrag )?(schließen|beenden|ende|zu|danke)$/.test(t)) { vortragZu(); return; }
+    vortragZu();
+  }
+  return _sendTextVT(text, viaVoice);
+};
+const _fertigVT = window.fertigGesprochen;
+window.fertigGesprochen = function () {
+  if (VT.el && VT.gesprochen && !play.queue.length) vtRuhe();
+  return _fertigVT?.apply(this, arguments);
+};
+const _handleVT = handle;
+handle = function (ev) {
+  if (ev.type === "vortrag") { vortragStart(ev.daten); if (!V.turnSpeak) vtAutoplay(); return; }
+  if (ev.type === "marke") {
+    if (!VT.el) return;
+    if (V.turnSpeak) { ttsFeed("", true); ttsMarke(ev.name); }
+    else { clearInterval(VT.auto); window.vortragSzene(ev.name); vtRuhe(); }
+    return;
+  }
+  if (ev.type === "briefing" && ev.vortrag) {
+    const el = addMsg("atlas", vtOhneMarken(ev.text)); el.querySelector(".who").textContent = "JARVIS · MORGENBRIEFING";
+    vortragStart(ev.vortrag);
+    const marken = ev.text_marken || ev.text;
+    if (V.out === "aus") { vtAutoplay(); return; }
+    if (play.ctx && play.ctx.state === "running") vortragSprechen(marken);
+    else {
+      try { unlockAudio(); } catch (e) {}
+      const los = () => vortragSprechen(marken);
+      if (play.ctx?.state === "running") los();
+      else if (play.ctx) play.ctx.resume().then(() => play.ctx.state === "running" ? los() : (pendingSpeech = "", vtAutoplay())).catch(() => vtAutoplay());
+      else vtAutoplay();
+    }
+    return;
+  }
+  _handleVT(ev);
 };

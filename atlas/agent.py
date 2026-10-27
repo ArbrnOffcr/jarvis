@@ -15,7 +15,7 @@ MAX_STEPS = 8
 def run(core, text: str, history: list[dict] | None = None, *,
         confirm: Callable[[str], bool] | None = None,
         notify: Callable[[str], None] | None = None,
-        hinweis: str = "", nur_lesen: bool = False, quelle: str = "agent") -> str:
+        hinweis: str = "", nur_lesen: bool = False, quelle: str = "agent", marken: bool = False) -> str:
     """Eine Anfrage vollständig beantworten. confirm=None heißt: alles, was
     eine Bestätigung bräuchte, wird abgelehnt."""
     c = core
@@ -99,9 +99,10 @@ def run(core, text: str, history: list[dict] | None = None, *,
                 tokens_in=t_in, tokens_out=t_out)
     if history is not None:
         history += [{"role": "user", "content": text},
-                    {"role": "assistant", "content": reply.strip() or "(erledigt)"}]
+                    {"role": "assistant", "content": __import__("atlas.stab", fromlist=["x"]).ohne_marken(reply).strip() or "(erledigt)"}]
         del history[:-20]
-    return reply.strip()
+    from atlas.stab import ohne_marken
+    return reply.strip() if marken else ohne_marken(reply).strip()
 
 
 def _tool(c, call, confirm, notify, nur_lesen) -> str:
