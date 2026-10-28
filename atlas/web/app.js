@@ -3405,6 +3405,7 @@ function stabGlyph(k) {
     AKTE: `<rect x="21" y="17" width="22" height="30" rx="1.5"/><path d="M21 27 H43 M21 37 H43"/><path d="M28.5 21.5 H35.5 M28.5 31.5 H35.5 M28.5 41.5 H35.5" class="sl-dick"/>`,
     AUFKL: `<circle cx="32" cy="32" r="13"/><circle cx="32" cy="32" r="6.5" class="sl-fein"/><path d="M32 32 L41.2 22.8"/><path d="M32 32 L41.2 22.8 A13 13 0 0 1 45 32 Z" class="sl-schwenk"/><path d="M32 15 V19 M32 45 V49 M15 32 H19 M45 32 H49" class="sl-fein"/><circle cx="37" cy="36.5" r="1.8" class="sl-voll"/>`,
     LOG: `<path d="M32 45 C27 38.5 24.5 34.5 24.5 30 A7.5 7.5 0 0 1 39.5 30 C39.5 34.5 37 38.5 32 45 Z"/><circle cx="32" cy="30" r="2.8"/><path d="M16 47 Q22 41 27 46 M37 46 Q42 41 48 47" class="sl-weg"/>`,
+    IMMO: `<path d="M17.5 31.5 L32 19 L46.5 31.5"/><path d="M21.5 28.5 V45 H42.5 V28.5"/><path d="M38.5 23.2 V18.5 H41.5 V25.8" class="sl-fein"/><path d="M32 43 C27 40.2 27 35.6 30.6 31.2 C30.8 34.2 32.6 35 33.4 33.2 C36 35.8 37 40.2 32 43 Z" class="sl-voll"/><path d="M26 45 H38" class="sl-fein"/>`,
   };
   return G[k] || "";
 }
@@ -3415,7 +3416,7 @@ function stabLogo(k, cls = "") {
     <path class="sl-ecken" d="M32 0.5 V4 M32 60 V63.5 M3 16 L7.8 18 M61 16 L56.2 18 M3 48 L7.8 46 M61 48 L56.2 46"/>
     <g class="sl-glyph">${stabGlyph(k)}</g></svg>`;
 }
-const STAB_NAMEN = { JARVIS: "JARVIS", ZEIT: "CHRONOS", KOM: "HERMES", DIENST: "ADJUTANT", FIN: "QUAESTOR", AKTE: "ARCHIVAR", AUFKL: "SCOUT", LOG: "QUARTIERMEISTER" };
+const STAB_NAMEN = { JARVIS: "JARVIS", ZEIT: "CHRONOS", KOM: "HERMES", DIENST: "ADJUTANT", FIN: "QUAESTOR", AKTE: "ARCHIVAR", AUFKL: "SCOUT", LOG: "QUARTIERMEISTER", IMMO: "HESTIA" };
 
 // ---------- Stab: Animation beim Delegieren (Kern → Agenten → Meldung zurück) ----------
 const SA = { el: null, svg: null, ag: {}, c: [0, 0], weg: null, ruhig: false };
@@ -3873,21 +3874,26 @@ function teslaHTML(d) {
         <div class="ts-chips"><span class="${d.verriegelt ? "ok" : "warn"}">${d.verriegelt ? "🔒 verriegelt" : "🔓 offen"}</span>
           ${d.waechter ? `<span>◉ Wächter an</span>` : ""}${o.faehrt ? `<span class="ok">▶ fährt ${o.geschwindigkeit_kmh ?? ""} km/h</span>` : ""}
           ${d.kilometerstand ? `<span>${d.kilometerstand.toLocaleString("de-DE")} km</span>` : ""}</div>
-        <div class="ts-ort">⌖ <b>${esc(o.name || "Standort unbekannt")}</b>${o.name ? `<button type="button" data-t="karte">AUF KARTE</button>` : ""}</div>
+        <div class="ts-ort">⌖ <b>${esc(o.name || "Standort unbekannt")}</b>${o.lat != null || o.name ? `<button type="button" data-t="karte">LIVE-KARTE</button>` : ""}</div>
         <div class="ts-stand">${d.online ? "Stand " + esc(stand) : `<b>${esc(d.zustand || "schläft")}</b> · letzter Stand ${esc(stand)}`}</div></section>
+      ${teslaTermineHTML(d.termine || [])}
     </div></div><div class="ts-status"></div>`;
 }
-function teslaZeigen(d) {
-  TS.d = d;
+function fzFenster() {
   if (!TS.el) {
     TS.el = document.createElement("div"); TS.el.className = "tesla";
     TS.el.innerHTML = `<div class="ts-rahmen" role="dialog" aria-label="Fahrzeug"><header class="vt-kopf"><span class="vt-marke">◢ FAHRZEUG</span>
+      <nav class="fz-tabs"><button type="button" data-t="tab-tesla">TESLA</button><button type="button" data-t="tab-ford">FORD</button></nav>
       <span class="vt-kapitel ts-titel"></span><button type="button" class="ts-neu" data-t="foto" title="Eigenes Foto deines Autos verwenden (Hintergrund wird automatisch entfernt)">BILD ÄNDERN</button>
       <button type="button" class="ts-neu" data-t="neu" title="Aktuelle Werte holen (weckt das Auto)">AKTUALISIEREN</button><input type="file" accept="image/*,.heic" hidden class="ts-datei">
       <button type="button" class="vt-zu" data-t="zu" title="Schließen (Esc)">✕</button></header><div class="ts-inhalt"></div></div>`;
     document.body.appendChild(TS.el);
     requestAnimationFrame(() => TS.el.classList.add("an"));
   }
+  TS.el.querySelectorAll(".fz-tabs button").forEach((b) => b.classList.toggle("an", b.dataset.t === "tab-" + TS.fz));
+}
+function teslaZeigen(d) {
+  TS.d = d; TS.fz = "tesla"; fzFenster();
   TS.el.querySelector(".ts-titel").textContent = `${(d.name || "Tesla").toUpperCase()}${d.modell ? " · " + d.modell.toUpperCase() : ""}${d.baujahr ? " · " + d.baujahr : ""}`;
   TS.el.querySelector(".ts-inhalt").innerHTML = teslaHTML(d);
   if (typeof vtZaehlen === "function") vtZaehlen(TS.el);
@@ -3911,6 +3917,9 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-t]"); if (!b) return;
   const t = b.dataset.t, f = (n) => TS.el.querySelector(`[data-f="${n}"]`);
   if (t === "zu") return teslaZu();
+  if (t === "tab-ford") return fordLaden();
+  if (t === "tab-tesla") return teslaLaden(false);
+  if (TS.fz === "ford" && t !== "foto") return fordKlick(t);
   if (t === "neu") return teslaLaden(true);
   if (t === "foto") { TS.el.querySelector(".ts-datei").click(); return; }
   if (t === "klima-an") return teslaBefehl("klima", { an: true }, "Klima wird eingeschaltet");
@@ -3928,7 +3937,7 @@ document.addEventListener("click", (e) => {
     return teslaBefehl("ladeplan", { modus, uhrzeit, vorklimatisieren: f("vorklima").checked },
       modus === "aus" ? "Ladeplan wird ausgeschaltet" : `Ladeplan: ${modus === "abfahrt" ? "Abfahrt" : "Ladestart"} ${uhrzeit}`);
   }
-  if (t === "karte" && TS.d?.ort?.name) { teslaZu(); sendText(`Zeig ${TS.d.ort.name} auf der Karte`); }
+  if (t === "karte") { teslaZu(); window.teslaKarteOeffnen(); }
 });
 document.addEventListener("input", (e) => { if (TS.el && e.target.matches('.tesla [data-f="limit"]')) TS.el.querySelector("[data-limit]").textContent = e.target.value + " %"; });
 document.addEventListener("keydown", (e) => { if (TS.el && e.key === "Escape" && !inFeld()) teslaZu(); });
@@ -4002,11 +4011,1440 @@ document.addEventListener("change", async (e) => {
   const f = e.target.files[0], st = TS.el.querySelector(".ts-status");
   st.textContent = "Bild wird übernommen und freigestellt …"; st.className = "ts-status";
   try {
-    const r = await fetch("/tesla/bild", { method: "POST", body: f, headers: { "x-dateiname": encodeURIComponent(f.name).replace(/%20/g, " "),
+    const r = await fetch(`/${TS.fz === "ford" ? "ford" : "tesla"}/bild`, { method: "POST", body: f, headers: { "x-dateiname": encodeURIComponent(f.name).replace(/%20/g, " "),
       ...(TOKEN ? { "x-atlas-token": TOKEN } : {}) } });
     const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.status);
-    TS.bildV = Date.now(); if (TS.d) { TS.d.eigenes_bild = true; teslaZeigen(TS.d); }
+    TS.bildV = Date.now();
+    if (TS.fz === "ford") { TS.fd.eigenes_bild = true; fordZeigen(TS.fd); } else if (TS.d) { TS.d.eigenes_bild = true; teslaZeigen(TS.d); }
     const st2 = TS.el.querySelector(".ts-status"); st2.textContent = j.text; st2.className = "ts-status ok";
   } catch (err) { st.textContent = "⚠ " + err.message; st.className = "ts-status fehler"; }
   e.target.value = "";
+});
+
+// =====================================================================
+//  TESLA LIVE-KARTE: 3D-Fahrzeugsymbol, Fahrt-Animation, Minimieren an den Rand (schwebend, ohne Kanten)
+// =====================================================================
+const TL = { an: false, mini: false, marke: null, pos: null, anzeige: null, timer: null, raf: 0, spur: [], folgen: true };
+function tlAutoSVG(farbe = "#e9ecef") {
+  // Draufsicht mit Licht und Schatten – liegt dank pitchAlignment flach auf der Straße und kippt mit der Karte
+  return `<svg viewBox="0 0 60 110" class="tl-auto-svg" aria-hidden="true">
+    <defs><linearGradient id="tl-lack" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${farbe}" stop-opacity=".72"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity=".95"/><stop offset="1" stop-color="${farbe}" stop-opacity=".72"/></linearGradient>
+      <linearGradient id="tl-lack2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${farbe}"/><stop offset="1" stop-color="${farbe}" stop-opacity=".82"/></linearGradient>
+      <linearGradient id="tl-glas" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b2733"/><stop offset=".5" stop-color="#0e3a4c"/><stop offset="1" stop-color="#061820"/></linearGradient>
+      <radialGradient id="tl-kegel" cx=".5" cy="1" r="1"><stop offset="0" stop-color="#e9fbff" stop-opacity=".85"/><stop offset="1" stop-color="#9ff4ff" stop-opacity="0"/></radialGradient></defs>
+    <path class="tl-kegel" d="M18 6 L2 -46 L58 -46 L42 6 Z" fill="url(#tl-kegel)"/>
+    <rect x="8" y="10" width="44" height="92" rx="16" class="tl-schatten"/>
+    <rect x="3" y="20" width="6" height="16" rx="2.5" class="tl-rad"/><rect x="51" y="20" width="6" height="16" rx="2.5" class="tl-rad"/>
+    <rect x="3" y="74" width="6" height="16" rx="2.5" class="tl-rad"/><rect x="51" y="74" width="6" height="16" rx="2.5" class="tl-rad"/>
+    <path d="M30 4 C44 4 52 10 53 24 L54 84 C54 98 46 104 30 104 C14 104 6 98 6 84 L7 24 C8 10 16 4 30 4 Z" fill="url(#tl-lack2)" class="tl-karosse"/>
+    <path d="M30 6 C41 6 47 11 48 22 L49 40 L11 40 L12 22 C13 11 19 6 30 6 Z" fill="url(#tl-lack)" opacity=".55"/>
+    <path d="M13 34 C18 30 42 30 47 34 L45 50 C38 48 22 48 15 50 Z" fill="url(#tl-glas)"/>
+    <path d="M15 52 C22 50 38 50 45 52 L45 80 C38 82 22 82 15 80 Z" fill="url(#tl-glas)" opacity=".9"/>
+    <path d="M16 84 C22 86 38 86 44 84 L43 92 C36 94 24 94 17 92 Z" fill="url(#tl-glas)"/>
+    <path d="M10 10 Q14 6 20 6" class="tl-licht v"/><path d="M50 10 Q46 6 40 6" class="tl-licht v"/>
+    <path d="M10 100 Q16 104 24 104" class="tl-licht h"/><path d="M50 100 Q44 104 36 104" class="tl-licht h"/>
+  </svg>`;
+}
+function tlMarke(pos) {
+  const e = document.createElement("div");
+  e.className = "tl-marke tl-3d-marke";
+  e.innerHTML = `<div class="tl-3d"></div><b class="tl-schild"></b>`;
+  return e;
+}
+// Echtes 3D-Modell (Three.js, wird erst bei Bedarf geladen); ohne WebGL bleibt die flache Grafik
+let auto3dLaden = null;
+function tlAuto3D() {
+  if (window.Auto3D) return Promise.resolve();
+  if (!auto3dLaden) auto3dLaden = new Promise((res, rej) => {
+    const s = document.createElement("script"); s.src = "auto3d.bundle.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s);
+  });
+  return auto3dLaden;
+}
+async function tl3DStarten(el, pos) {
+  const ziel = el.querySelector(".tl-3d");
+  try {
+    await tlAuto3D();
+    TL.modell?.entfernen();
+    TL.modell = window.Auto3D.erzeugen(ziel, { farbe: pos.farbe || "#e9ecef", typ: pos.typ || "limousine" });
+    tlAusrichten();
+  } catch (e) {
+    el.classList.remove("tl-3d-marke");
+    ziel.innerHTML = `<div class="tl-ring"></div><div class="tl-auto">${tlAutoSVG(pos.farbe)}</div>`;
+    TL.marke?.setRotationAlignment("map").setPitchAlignment("map");
+    TL.flach = true;
+  }
+}
+function tlAusrichten() {
+  const m = KARTE.map, h = TL.anzeige?.heading || 0;
+  if (TL.flach) { TL.marke?.setRotation(h); return; }
+  if (!TL.modell || !m) return;
+  TL.modell.ausrichten(h - m.getBearing(), m.getPitch());
+}
+function tlSchild() {
+  const p = TL.pos; if (!TL.marke || !p) return;
+  const s = TL.marke.getElement().querySelector(".tl-schild");
+  s.textContent = p.faehrt ? `${p.geschwindigkeit_kmh || 0} KM/H` : (p.online ? "GEPARKT" : "SCHLÄFT");
+  TL.marke.getElement().classList.toggle("faehrt", !!p.faehrt);
+  TL.modell?.fahrt(!!p.faehrt);
+}
+function tlInfo() {
+  const p = TL.pos; if (!p || !KARTE.el) return;
+  const stand = p.stand ? new Date(p.stand).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "–";
+  $("kh-info").innerHTML = `<div class="kh-werte">
+      <div><small>STATUS</small><b>${p.faehrt ? "FÄHRT" : p.online ? "GEPARKT" : "SCHLÄFT"}</b></div>
+      <div><small>TEMPO</small><b>${p.faehrt ? (p.geschwindigkeit_kmh || 0) + " km/h" : "–"}</b></div>
+      <div><small>RICHTUNG</small><b>${["N", "NO", "O", "SO", "S", "SW", "W", "NW"][Math.round(((p.heading || 0) % 360) / 45) % 8]}</b></div></div>
+    <div class="kh-weg"><span>⌖ ${esc(p.ort_name || "Standort")}</span><span>Stand ${esc(stand)}${p.online ? "" : " · letzter bekannter"}</span></div>
+    <div class="tl-knoepfe"><button type="button" class="tl-mini-knopf ${p.faehrt ? "an" : ""}" data-tl="mini">◱ MINIMIEREN – LIVE AM RAND VERFOLGEN</button>
+      <button type="button" data-tl="folgen" class="${TL.folgen ? "an" : ""}">${TL.folgen ? "◎ KAMERA FOLGT" : "◎ KAMERA FREI"}</button></div>
+    <p class="kh-mittel">${p.demo ? "VORSCHAU MIT BEISPIELDATEN" : p.faehrt ? "LIVE · AKTUALISIERUNG ALLE 12 S" : p.online ? "LIVE · AKTUALISIERUNG JEDE MINUTE" : "DAS AUTO SCHLÄFT – ES WIRD NICHT GEWECKT"}</p>`;
+}
+async function teslaKarte(pos) {
+  if (TL.mini) tlMaximieren(true);
+  const el = karteGeruest();
+  el.hidden = false; void el.offsetWidth; el.classList.add("da", "tl-live"); document.body.classList.add("karte-offen");
+  TL.quelle = pos.quelle || "tesla";
+  $("kh-titel").textContent = `${(pos.name || "TESLA").toUpperCase()} · ${pos.demo ? "VORSCHAU" : "LIVE"}`;
+  el.dataset.apple = pos.lat != null ? `https://maps.apple.com/?ll=${pos.lat},${pos.lon}&q=${encodeURIComponent(pos.name || "Auto")}` : "";
+  TL.an = true; TL.pos = pos; TL.spur = pos.lat != null ? [[pos.lon, pos.lat]] : [];
+  tlInfo(); sfx?.("ok");
+  try { await karteLib(); } catch (e) { return; }
+  const ml = window.maplibregl;
+  if (!KARTE.map) {
+    KARTE.map = new ml.Map({ container: "kh-map", style: "https://tiles.openfreemap.org/styles/dark",
+      center: [pos.lon - 30, 25], zoom: 1.2, attributionControl: { compact: true }, fadeDuration: 0 });
+    KARTE.map.on("style.load", () => { try { KARTE.map.setProjection({ type: "globe" }); } catch (e) {} karteEinfaerben(KARTE.map); });
+    await new Promise((r) => { KARTE.map.once("load", r); setTimeout(r, 6000); });
+  } else KARTE.map.resize();
+  const m = KARTE.map;
+  KARTE.marker.forEach((x) => x.remove()); KARTE.marker = [];
+  for (const id of ["route-glut", "route-linie", "route-fluss"]) if (m.getLayer(id)) m.removeLayer(id);
+  if (m.getSource("route")) m.removeSource("route");
+  tlSpurLayer();
+  TL.marke?.remove(); TL.modell?.entfernen(); TL.modell = null; TL.flach = false;
+  const markeEl = tlMarke(pos);
+  TL.marke = new ml.Marker({ element: markeEl, anchor: "center" }).setLngLat([pos.lon, pos.lat]).addTo(m);
+  TL.anzeige = { lon: pos.lon, lat: pos.lat, heading: pos.heading || 0 };
+  tl3DStarten(markeEl, pos);
+  if (!TL.kameraHook) { TL.kameraHook = true; m.on("move", () => { if (TL.an) tlAusrichten(); }); }
+  tlSchild();
+  m.jumpTo({ center: [pos.lon - 20, Math.max(-60, Math.min(60, pos.lat - 8))], zoom: 1.6, pitch: 0, bearing: 0 });
+  m.flyTo({ center: [pos.lon, pos.lat], zoom: 16.4, pitch: 62, bearing: (pos.heading || 0) - 20, duration: 4200, essential: true, curve: 1.6 });
+  tlPlanen();
+}
+function tlSpurLayer() {
+  const m = KARTE.map; if (!m) return;
+  if (!m.getSource("tl-spur")) {
+    m.addSource("tl-spur", { type: "geojson", lineMetrics: true, data: { type: "Feature", geometry: { type: "LineString", coordinates: [] } } });
+    m.addLayer({ id: "tl-spur-glut", type: "line", source: "tl-spur", layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": "#00e5ff", "line-width": 14, "line-blur": 10, "line-opacity": .35 } });
+    m.addLayer({ id: "tl-spur", type: "line", source: "tl-spur", layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-width": 4, "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, "rgba(0,229,255,0)", 1, "#9ff4ff"] } });
+  }
+  tlSpurSetzen();
+}
+function tlSpurSetzen(extra) {
+  const q = KARTE.map?.getSource("tl-spur"); if (!q) return;
+  const c = extra ? [...TL.spur, extra] : TL.spur;
+  q.setData({ type: "Feature", geometry: { type: "LineString", coordinates: c.length > 1 ? c : [] } });
+}
+function tlPlanen() {
+  clearTimeout(TL.timer);
+  if (!TL.an) return;
+  TL.timer = setTimeout(tlAbruf, TL.pos?.faehrt ? 12000 : 60000);
+}
+async function tlAbruf() {
+  if (!TL.an) return;
+  try {
+    const r = await fetch(`/${TL.quelle || "tesla"}/position`, { headers: TOKEN ? { "x-atlas-token": TOKEN } : {} });
+    if (r.ok) tlNeu(await r.json());
+  } catch (e) {}
+  tlPlanen();
+}
+function tlNeu(p) {
+  if (!TL.an || p.lat == null) return;
+  const vorher = TL.anzeige || { lon: p.lon, lat: p.lat, heading: p.heading || 0 };
+  const warFahrt = TL.pos?.faehrt;
+  TL.pos = p; tlSchild(); if (!TL.mini) tlInfo();
+  const ziel = { lon: p.lon, lat: p.lat, heading: p.heading || vorher.heading };
+  const letzte = TL.spur[TL.spur.length - 1];
+  if (!letzte || Math.abs(letzte[0] - p.lon) + Math.abs(letzte[1] - p.lat) > 0.00002) { TL.spur.push([p.lon, p.lat]); TL.spur = TL.spur.slice(-80); }
+  // weiche Fahrt: das Symbol gleitet in der Abrufzeit zur neuen Position, Kamera folgt
+  cancelAnimationFrame(TL.raf);
+  const dauer = p.faehrt ? 11500 : 1200, t0 = performance.now();
+  let dh = ((ziel.heading - vorher.heading + 540) % 360) - 180;
+  const lauf = (t) => {
+    if (!TL.an || !TL.marke) return;
+    const k = Math.min(1, (t - t0) / dauer), e = p.faehrt ? k : 1 - Math.pow(1 - k, 3);
+    const lon = vorher.lon + (ziel.lon - vorher.lon) * e, lat = vorher.lat + (ziel.lat - vorher.lat) * e;
+    const hd = vorher.heading + dh * Math.min(1, k * 3);
+    TL.anzeige = { lon, lat, heading: hd };
+    TL.marke.setLngLat([lon, lat]); tlAusrichten();
+    tlSpurSetzen([lon, lat]);
+    if (TL.folgen || TL.mini) KARTE.map.jumpTo({ center: [lon, lat], ...(TL.mini && p.faehrt ? { bearing: hd } : {}) });
+    if (k < 1) TL.raf = requestAnimationFrame(lauf);
+  };
+  TL.raf = requestAnimationFrame(lauf);
+  if (p.faehrt && !warFahrt && !TL.mini) toast("Das Auto fährt – „Minimieren“ verfolgt es live am Rand");
+}
+function tlStop() {
+  TL.an = false; clearTimeout(TL.timer); cancelAnimationFrame(TL.raf);
+  TL.modell?.entfernen(); TL.modell = null;
+  TL.marke?.remove(); TL.marke = null;
+  const m = KARTE.map;
+  if (m) for (const id of ["tl-spur", "tl-spur-glut"]) if (m.getLayer(id)) m.removeLayer(id);
+  if (m?.getSource("tl-spur")) m.removeSource("tl-spur");
+  KARTE.el?.classList.remove("tl-live", "tl-mini", "tl-wandel");
+  document.querySelector(".tl-halo")?.remove();
+  TL.mini = false;
+}
+
+// ---------- Minimieren / Maximieren (FLIP: Karte schrumpft schwebend an den Rand und wächst zurück) ----------
+function tlMiniRect() {
+  const g = Math.round(Math.min(300, Math.max(200, innerWidth * 0.2)));
+  return { w: g, h: g, x: innerWidth - g - 26, y: Math.round(innerHeight * 0.5 - g / 2) };
+}
+function tlMinimieren() {
+  const el = KARTE.el, m = KARTE.map; if (!el || TL.mini) return;
+  const von = el.getBoundingClientRect(), nach = tlMiniRect();
+  el.classList.add("tl-wandel");
+  el.style.transformOrigin = "0 0";
+  el.style.transition = "none";
+  // Endlage setzen, dann aus der Startlage hineinanimieren
+  el.classList.add("tl-mini"); TL.mini = true; document.body.classList.remove("karte-offen");
+  Object.assign(el.style, { left: nach.x + "px", top: nach.y + "px", width: nach.w + "px", height: nach.h + "px", right: "auto", bottom: "auto" });
+  m?.resize();
+  const sx = von.width / nach.w, sy = von.height / nach.h;
+  el.style.transform = `translate(${von.left - nach.x}px, ${von.top - nach.y}px) scale(${sx}, ${sy})`;
+  el.style.setProperty("--tl-maske", "300%");
+  void el.offsetWidth;
+  el.style.transition = "transform .85s cubic-bezier(.65,0,.25,1), --tl-maske .85s cubic-bezier(.65,0,.25,1), opacity .5s";
+  el.style.transform = "none";
+  el.style.setProperty("--tl-maske", "100%");
+  const halo = document.createElement("div"); halo.className = "tl-halo";
+  Object.assign(halo.style, { left: nach.x + "px", top: nach.y + "px", width: nach.w + "px", height: nach.h + "px" });
+  document.body.appendChild(halo);
+  setTimeout(() => { el.classList.remove("tl-wandel"); el.style.transition = ""; halo.classList.add("da"); }, 880);
+  if (m) { m.dragPan.disable(); m.scrollZoom.disable(); m.easeTo({ zoom: 15.2, pitch: 55, duration: 900 }); }
+  sfx?.("tick");
+}
+function tlMaximieren(sofort = false) {
+  const el = KARTE.el, m = KARTE.map; if (!el || !TL.mini) return;
+  const von = el.getBoundingClientRect();
+  document.querySelector(".tl-halo")?.remove();
+  el.classList.add("tl-wandel"); el.style.transition = "none";
+  el.classList.remove("tl-mini"); TL.mini = false;
+  for (const k of ["left", "top", "width", "height", "right", "bottom"]) el.style[k] = "";
+  document.body.classList.add("karte-offen");
+  m?.resize();
+  const nach = el.getBoundingClientRect();
+  el.style.transformOrigin = "0 0";
+  el.style.transform = `translate(${von.left - nach.left}px, ${von.top - nach.top}px) scale(${von.width / nach.width}, ${von.height / nach.height})`;
+  el.style.setProperty("--tl-maske", "100%");
+  void el.offsetWidth;
+  if (sofort) { el.style.transform = ""; el.style.removeProperty("--tl-maske"); el.classList.remove("tl-wandel"); }
+  else {
+    el.style.transition = "transform .8s cubic-bezier(.65,0,.25,1), --tl-maske .8s cubic-bezier(.65,0,.25,1)";
+    el.style.transform = "none"; el.style.setProperty("--tl-maske", "300%");
+    setTimeout(() => { el.classList.remove("tl-wandel"); el.style.transition = ""; el.style.transform = ""; el.style.removeProperty("--tl-maske"); }, 840);
+  }
+  if (m) { m.dragPan.enable(); m.scrollZoom.enable(); m.easeTo({ zoom: 16.4, pitch: 62, duration: 900 }); }
+  tlInfo(); sfx?.("ok");
+}
+document.addEventListener("click", (e) => {
+  if (TL.an && e.target.closest("#kh-zu")) { const mini = TL.mini; tlStop(); if (mini) KARTE.el.style.cssText = ""; return; }
+  const b = e.target.closest("[data-tl]");
+  if (b) { e.preventDefault(); if (b.dataset.tl === "mini") tlMinimieren(); if (b.dataset.tl === "folgen") { TL.folgen = !TL.folgen; tlInfo(); } return; }
+  if (TL.mini && e.target.closest(".karte-hud.tl-mini")) { e.preventDefault(); e.stopPropagation(); tlMaximieren(); }
+}, true);
+addEventListener("resize", () => {
+  if (!TL.mini || !KARTE.el) return;
+  const r = tlMiniRect(); Object.assign(KARTE.el.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+  const h = document.querySelector(".tl-halo"); if (h) Object.assign(h.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+  KARTE.map?.resize();
+});
+// Schließen beendet die Live-Verfolgung; andere Karten (Routen) übernehmen das Fenster wieder normal
+const _karteZuTL = karteZu;
+karteZu = function () { if (TL.an) { const mini = TL.mini; tlStop(); if (mini) { KARTE.el.style.cssText = ""; } } return _karteZuTL(); };
+const _karteZeigenTL = karteZeigen;
+karteZeigen = function (d) { if (TL.an) { if (TL.mini) tlMaximieren(true); tlStop(); } return _karteZeigenTL(d); };
+const _handleTL = handle;
+handle = function (ev) {
+  if (ev.type === "tesla_karte") { teslaKarte(ev.position); return; }
+  _handleTL(ev);
+};
+window.teslaKarteOeffnen = async () => {
+  try { const r = await fetch("/tesla/position", { headers: TOKEN ? { "x-atlas-token": TOKEN } : {} }); const j = await r.json();
+    if (!r.ok || j.lat == null) throw new Error(j.detail || "Keine Position"); teslaKarte(j); }
+  catch (e) { toast("Tesla: " + e.message); }
+};
+
+// ---------- TÜV und Versicherung im Fahrzeugfenster ----------
+function teslaTermineHTML(t) {
+  const hu = t.find((x) => x.rolle === "hu"), vs = t.find((x) => x.rolle === "versicherung"), kd = t.find((x) => x.rolle === "kuendigung");
+  const datum = (iso) => iso.split("-").reverse().join(".");
+  const monat = (iso) => { const [j, m] = iso.split("-"); return `${m}/${j}`; };
+  const ring = (x, max) => typeof vtRing === "function" ? vtRing(x.tage, max) : `<b class="ts-tage">${x.tage} T</b>`;
+  const wann = (n) => n < 0 ? `seit ${-n} Tagen überfällig` : n === 0 ? "heute" : n === 1 ? "morgen" : n < 60 ? `in ${n} Tagen` : `in ${Math.round(n / 30.4)} Monaten`;
+  const zeile = (x, titel, text, max) => `<div class="ts-termin ${x.tage <= 30 ? "bald" : ""}">${ring(x, max)}<div><b>${titel}</b><span>${text}</span></div></div>`;
+  const leer = !hu && !vs;
+  const zeilen = [hu ? zeile(hu, "TÜV / HU", `${monat(hu.datum)} · ${wann(hu.tage)}`, 365) : "",
+    vs ? zeile(vs, "VERSICHERUNG", `${vs.versicherer ? esc(vs.versicherer) + " · " : ""}Hauptfälligkeit ${datum(vs.datum)} · ${wann(vs.tage)}`, 365) : "",
+    kd ? zeile(kd, "KÜNDBAR BIS", `${datum(kd.datum)} · ${wann(kd.tage)}${kd.tage <= 45 ? " – jetzt Tarife vergleichen" : ""}`, 60) : ""].join("");
+  const huWert = hu ? hu.datum.slice(0, 7) : "", vsWert = vs ? vs.datum : "";
+  return `<section class="ts-kachel ts-termine"><h5>TERMINE <button type="button" class="ts-mini" data-tt="bearbeiten">${leer ? "EINTRAGEN" : "ÄNDERN"}</button></h5>
+    ${leer ? `<p class="ts-hinweis">Noch nicht hinterlegt – TÜV-Monat steht auf der Plakette bzw. im Fahrzeugschein, die Hauptfälligkeit im Versicherungsschein.</p>` : zeilen}
+    <div class="ts-termine-form" ${leer ? "" : "hidden"}>
+      <label>TÜV / HU fällig<input type="month" data-tf="tuev" value="${huWert}"></label>
+      <label>Versicherung – Hauptfälligkeit<input type="date" data-tf="versicherung" value="${vsWert}"></label>
+      <label>Versicherer<input type="text" data-tf="versicherer" value="${esc(vs?.versicherer || "")}" placeholder="optional"></label>
+      <button type="button" data-tt="speichern">SPEICHERN</button></div></section>`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-tt]"); if (!b || !TS.el) return;
+  const kachel = b.closest(".ts-termine");
+  if (b.dataset.tt === "bearbeiten") { const f = kachel.querySelector(".ts-termine-form"); f.hidden = !f.hidden; return; }
+  const wert = (n) => kachel.querySelector(`[data-tf="${n}"]`).value;
+  const st = TS.el.querySelector(".ts-status");
+  b.disabled = true; st.textContent = "Trage Termine ein …"; st.className = "ts-status";
+  try {
+    const r = await vbPost(`/${TS.fz === "ford" ? "ford" : "tesla"}/termine`, { tuev: wert("tuev"), versicherung: wert("versicherung"), versicherer: wert("versicherer") });
+    if (TS.fz === "ford") { TS.fd.termine = r.termine; fordZeigen(TS.fd); } else { TS.d.termine = r.termine; teslaZeigen(TS.d); }
+    const st2 = TS.el.querySelector(".ts-status"); st2.textContent = "✓ Termine eingetragen – mit Erinnerung in „Fristen“"; st2.className = "ts-status ok";
+  } catch (err) { st.textContent = "⚠ " + err.message; st.className = "ts-status fehler"; b.disabled = false; }
+});
+
+// =====================================================================
+//  FORD (Tourneo Custom): Fahrzeugfenster – nur Status (Tank, Reichweite, Reifen, Wartung, Ort, Termine)
+//  und Einrichtung unter Verbindungen. Vor der Übergabe: Profil, Foto, Termine und Vorschau mit Beispieldaten.
+// =====================================================================
+function fordVan(d) {
+  const f = d.farbe || "#eef0f1";
+  return `<svg viewBox="0 0 620 230" class="ts-svg" aria-hidden="true">
+    <defs><linearGradient id="fd-lack" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${f}" stop-opacity=".95"/>
+      <stop offset=".6" stop-color="${f}" stop-opacity=".8"/><stop offset="1" stop-color="#000" stop-opacity=".55"/></linearGradient>
+      <linearGradient id="fd-glas" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9ff4ff" stop-opacity=".35"/><stop offset="1" stop-color="#02121a" stop-opacity=".9"/></linearGradient></defs>
+    <ellipse cx="312" cy="200" rx="275" ry="14" class="ts-boden"/>
+    <path class="ts-karosse" fill="url(#fd-lack)" d="M40 166 L44 132 Q48 116 70 110 L122 100 L176 46 Q184 36 202 36 L554 36 Q576 36 578 58 L582 158 Q582 172 568 172 L536 172 A44 44 0 0 0 448 172 L206 172 A44 44 0 0 0 118 172 L56 172 Q40 172 40 166 Z"/>
+    <path fill="url(#fd-glas)" class="ts-glas" d="M132 100 L182 50 L204 50 L204 100 Z M216 50 H300 V100 H216 Z M312 50 H424 V100 H312 Z M436 50 H546 Q562 50 564 66 L564 100 H436 Z"/>
+    <path class="ts-linie" d="M306 104 L306 168 M210 104 L210 168 M44 140 L84 136 M568 70 L578 70 M300 132 H316"/>
+    <path d="M46 124 L84 118" stroke="#e9fbff" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+    <g class="ts-rad"><circle cx="162" cy="172" r="36"/><circle cx="162" cy="172" r="22" class="ts-felge"/>
+      <path class="ts-speiche" d="M162 150 V194 M140 172 H184 M147 157 L177 187 M177 157 L147 187"/></g>
+    <g class="ts-rad"><circle cx="492" cy="172" r="36"/><circle cx="492" cy="172" r="22" class="ts-felge"/>
+      <path class="ts-speiche" d="M492 150 V194 M470 172 H514 M477 157 L507 187 M507 157 L477 187"/></g>
+  </svg>`;
+}
+function fordReifen(r = {}) {
+  const w = (k) => r[k] != null ? `${String(r[k]).replace(".", ",")}` : "–";
+  const warn = (k) => r[k] != null && r[k] < 2.3 ? "warn" : "";
+  return `<div class="fd-reifen"><span class="${warn("VL")}"><small>VL</small>${w("VL")}</span><span class="${warn("VR")}"><small>VR</small>${w("VR")}</span>
+    <i class="fd-umriss"></i><span class="${warn("HL")}"><small>HL</small>${w("HL")}</span><span class="${warn("HR")}"><small>HR</small>${w("HR")}</span></div>`;
+}
+function fordHTML(d) {
+  const o = d.ort || {}, tank = d.tank ?? 0, offen = !d.verbunden && !d.demo;
+  const stand = d.stand ? new Date(d.stand).toLocaleString("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "";
+  const bild = d.eigenes_bild ? `<img class="ts-bild" alt="" src="/ford/bild?v=${TS.bildV || 0}">` : `<div class="ts-bild-svg">${fordVan(d)}</div>`;
+  const tankFarbe = tank >= 40 ? "var(--good,#3ddc97)" : tank >= 15 ? "#ffb547" : "#ff6b4a";
+  const ok = (b) => b ? `<em class="ok">✓</em>` : `<em>–</em>`;
+  const links = offen ? `
+      <div class="fd-bereit"><h6>BEREIT ZUR ANBINDUNG${d.erwartet ? " · ÜBERGABE " + esc(d.erwartet) : ""}</h6>
+        <ul><li>${ok(true)} Fahrzeugprofil (${esc(d.name)}${d.kennzeichen ? " · " + esc(d.kennzeichen) : ""})</li>
+          <li>${ok(d.eigenes_bild)} Eigenes Foto</li>
+          <li>${ok((d.termine || []).length)} TÜV &amp; Versicherung</li>
+          <li>${ok(false)} Ford-Zugang – nach der Übergabe, ca. 10 Minuten</li></ul>
+        <div class="ts-reihe"><button type="button" data-t="einrichten">ANBINDUNG EINRICHTEN</button><button type="button" data-t="vorschau">VORSCHAU ANSEHEN</button></div></div>`
+    : `<div class="ts-akku">
+        <div class="ts-akku-zahl"><b data-zahl="${tank}">${tank}</b><span>% TANK</span><em>${d.reichweite_km ?? "–"} km</em></div>
+        <div class="ts-akku-balken"><i style="--p:${tank / 100};--f:${tankFarbe}"></i></div>
+        <div class="ts-akku-text">Diesel · Reichweite laut Bordcomputer${d.aussen != null ? ` · außen <b>${Math.round(d.aussen)}°</b>` : ""}</div></div>`;
+  const warnungen = (d.warnungen || []).map((w) => `<span class="warn">⚠ ${esc(w)}</span>`).join("");
+  const rechts = offen ? "" : `
+      <section class="ts-kachel ts-info"><h5>FAHRZEUG ${d.demo ? `<em class="fd-demo">VORSCHAU</em>` : ""}</h5>
+        <div class="ts-chips">${d.verriegelt == null ? "" : `<span class="${d.verriegelt ? "ok" : "warn"}">${d.verriegelt ? "🔒 verriegelt" : "🔓 offen"}</span>`}
+          ${o.faehrt ? `<span class="ok">▶ fährt ${o.geschwindigkeit_kmh ?? ""} km/h</span>` : d.zuendung === "on" ? `<span>Zündung an</span>` : ""}
+          ${d.kilometerstand != null ? `<span>${d.kilometerstand.toLocaleString("de-DE")} km</span>` : ""}
+          ${d.kennzeichen ? `<span>${esc(d.kennzeichen)}</span>` : ""}</div>
+        <div class="ts-ort">⌖ <b>${esc(o.name || (o.lat != null ? "Position bekannt" : "Standort unbekannt"))}</b>${o.lat != null ? `<button type="button" data-t="karte">LIVE-KARTE</button>` : ""}</div>
+        <div class="ts-stand">${d.hinweis ? `<b>${esc(d.hinweis)}</b>` : "Stand " + esc(stand)}</div></section>
+      <section class="ts-kachel"><h5>REIFEN &amp; WARTUNG <em>BAR</em></h5>
+        ${fordReifen(d.reifen)}
+        <div class="ts-chips fd-wartung">${d.oel != null ? `<span class="${d.oel < 15 ? "warn" : ""}">Öl ${d.oel} %</span>` : ""}
+          ${d.adblue != null ? `<span>AdBlue ${esc(String(d.adblue))}</span>` : ""}
+          ${d.batterie_v != null ? `<span class="${d.batterie_v < 12.2 ? "warn" : ""}">12 V: ${String(d.batterie_v).replace(".", ",")} V</span>` : ""}${warnungen}</div></section>`;
+  return `<div class="ts-grid">
+    <div class="ts-links">
+      <div class="ts-buehne">${bild}
+        ${d.eigenes_bild ? "" : `<button type="button" class="ts-foto-hinweis" data-t="foto">＋ EIGENES FOTO</button>`}<div class="ts-scan"></div></div>
+      ${links}
+    </div>
+    <div class="ts-rechts">${rechts}
+      ${teslaTermineHTML(d.termine || [])}
+      <p class="fd-nur">Nur Status – Ford erlaubt über diese Schnittstelle keine Fernsteuerung (kein Öffnen, Starten, Heizen).</p>
+    </div></div><div class="ts-status"></div>`;
+}
+function fordZeigen(d) {
+  TS.fd = d; TS.fz = "ford"; fzFenster();
+  TS.el.querySelector(".ts-titel").textContent = `${(d.name || "Ford").toUpperCase()} · ${(d.modell || "Ford Tourneo Custom").toUpperCase()}${d.baujahr ? " · " + d.baujahr : ""}`;
+  TS.el.querySelector(".ts-inhalt").innerHTML = fordHTML(d);
+  if (typeof vtZaehlen === "function") vtZaehlen(TS.el);
+}
+async function fordLaden() {
+  const st = TS.el?.querySelector(".ts-status"); if (st) { st.textContent = "Lade …"; st.className = "ts-status"; }
+  try { fordZeigen(await fdGet("/ford")); }
+  catch (e) { if (st) { st.textContent = "⚠ " + e.message; st.className = "ts-status fehler"; } else toast("Ford: " + e.message); }
+}
+async function fdGet(pfad) {
+  const r = await fetch(pfad, { headers: TOKEN ? { "x-atlas-token": TOKEN } : {} });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || `Fehler ${r.status}`);
+  return j;
+}
+function fordEinrichtungOeffnen() {
+  window.einstellungenOeffnen();
+  setTimeout(() => { const z = document.querySelector('#einst-vb details[data-id="ford"]'); if (z) { z.open = true; z.scrollIntoView({ behavior: "smooth", block: "start" }); } }, 900);
+}
+async function fordKlick(t) {
+  if (t === "neu") return fordLaden();
+  if (t === "karte") { teslaZu(); return window.fordKarteOeffnen(); }
+  if (t === "einrichten") { teslaZu(); return fordEinrichtungOeffnen(); }
+  if (t === "vorschau") { try { await vbPost("/verbindungen/ford/demo", { an: true }); } catch (e) {} return fordLaden(); }
+}
+const _handleFord = handle;
+handle = function (ev) {
+  if (ev.type === "ford") { fordZeigen(ev.daten || {}); return; }
+  if (ev.type === "ford_verbunden") { toast((ev.ok ? "✓ " : "⚠ ") + ev.text); if (!$("einst").hidden) fordVbAufbauen(); return; }
+  _handleFord(ev);
+};
+window.fordAnzeigen = () => fordLaden();
+window.fordKarteOeffnen = async () => {
+  try { const j = await fdGet("/ford/position"); if (j.lat == null) throw new Error("Keine Position bekannt"); teslaKarte(j); }
+  catch (e) { toast("Ford: " + e.message); }
+};
+
+// ---------- Einrichtung (Einstellungen → Verbindungen → Ford) ----------
+const FORD_FARBEN = [["Frozen White", "#eef0f1"], ["Agate Black", "#15171a"], ["Magnetic (Grau)", "#4b5056"], ["Moondust Silver", "#a9aeb3"],
+  ["Chrome Blue", "#1f3e6e"], ["Race Red", "#b3121f"]];
+async function fordVbAufbauen() {
+  const box = $("einst-vb"); if (!box) return;
+  let z; try { z = await api("/verbindungen/ford"); } catch (e) { return; }
+  const p = z.profil, fertig = z.angemeldet && z.fahrzeug_id;
+  const schritt = (n, ok, titel, inhalt, aktiv) => `<div class="ts-schritt ${ok ? "ok" : aktiv ? "aktiv" : ""}"><b>${ok ? "✓" : n}</b><div><h6>${titel}</h6>${ok && !aktiv ? "" : inhalt}</div></div>`;
+  const farbe = FORD_FARBEN.map(([n, h]) => `<option value="${h}" ${p.farbe === h ? "selected" : ""}>${n}</option>`).join("");
+  const autos = (z.fahrzeuge || []).map((a) => `<option value="${esc(a.id)}" ${a.id === z.fahrzeug_id ? "selected" : ""}>${esc(a.name)} · ${esc(a.vin || a.modell)}</option>`).join("");
+  const u = z.urls || {};
+  const inhalt = `<p class="vb-hilfe">Offizielle Ford-Schnittstelle (FordConnect Query) mit deinem eigenen Zugang – <b>nur Lesen</b>: Tank, Reichweite,
+      Kilometerstand, Standort, Reifendruck, Wartung. Eine Fernsteuerung bietet Ford darüber nicht an.</p>
+    ${schritt("A", false, "Schon jetzt: Fahrzeugprofil", `<p class="vb-hilfe">Name, Farbe (für die 3D-Karte und die Grafik) und Kennzeichen. TÜV und Versicherung
+      trägst du im Fahrzeugfenster unter „Termine“ ein.</p>
+      <div class="vb-feld"><label>Name</label><input type="text" data-ff="name" value="${esc(p.name)}" placeholder="z. B. Bus"></div>
+      <div class="vb-feld"><label>Farbe</label><select data-ff="farbe">${farbe}</select></div>
+      <div class="vb-feld"><label>Kennzeichen</label><input type="text" data-ff="kennzeichen" value="${esc(p.kennzeichen)}" placeholder="optional"></div>
+      <div class="vb-feld"><label>Übergabe</label><input type="text" data-ff="erwartet" value="${esc(p.erwartet || "März 2027")}"></div>
+      <div class="vb-reihe"><button type="button" class="primary" data-fa="profil">SPEICHERN</button>
+        <button type="button" data-fa="demo" data-an="${z.demo ? 0 : 1}">${z.demo ? "VORSCHAU AUSSCHALTEN" : "VORSCHAU MIT BEISPIELDATEN"}</button>
+        <button type="button" data-fa="zeigen">FAHRZEUG ANZEIGEN</button></div>`, true)}
+    ${schritt(1, z.app, "Nach der Übergabe: Ford-Entwickler-App anlegen", `<p class="vb-hilfe">1. Den Ford in der <b>FordPass-App</b> zu deinem Konto hinzufügen.<br>
+      2. Auf <a data-link="${esc(z.portal)}">developer.ford.com/developer-eu</a> mit demselben FordPass-Konto anmelden → App anlegen:<br>
+      · Verwendung: <b>Persönliche Nutzung</b> · Fahrzeugtypen und Datenkategorien: <b>alle</b><br>
+      · Redirect-URL: <code>${esc(z.redirect)}</code><br>
+      3. Client-ID und Client-Secret erscheinen <b>nur einmal</b> – sofort hier eintragen. Danach kann es bis zu 2 Stunden dauern, bis Ford die App freischaltet.</p>
+      <div class="vb-feld"><label>Client-ID</label><input type="text" data-ff="client_id" autocomplete="off"></div>
+      <div class="vb-feld"><label>Client-Secret</label><input type="password" data-ff="client_secret" autocomplete="off"></div>
+      <div class="vb-reihe"><button type="button" class="primary" data-fa="app">SPEICHERN</button></div>`, !z.app)}
+    ${schritt(2, z.angemeldet, "Mit dem FordPass-Konto anmelden", `<p class="vb-hilfe">Öffnet die Ford-Anmeldung im Browser; danach meldet sich JARVIS automatisch.
+      Schlägt es fehl, 1–2 Stunden nach dem Anlegen der App erneut versuchen.</p>
+      <div class="vb-reihe"><button type="button" class="primary" data-fa="anmelden" ${z.app ? "" : "disabled"}>${z.angemeldet ? "NEU ANMELDEN" : "ANMELDEN"}</button></div>`, z.app && !z.angemeldet)}
+    ${schritt(3, !!fertig, "Fahrzeug auswählen", `${autos ? `<div class="vb-feld"><label>Fahrzeug</label><select data-ff="fahrzeug">${autos}</select></div>` : `<p class="vb-hilfe">Noch keine Fahrzeuge geladen.</p>`}
+      <div class="vb-reihe"><button type="button" data-fa="garage" ${z.angemeldet ? "" : "disabled"}>LISTE LADEN</button>
+        ${autos ? `<button type="button" class="primary" data-fa="waehlen">ÜBERNEHMEN</button>` : ""}</div>`, z.angemeldet && !fertig)}
+    ${z.fehler ? `<p class="vb-hilfe" style="color:var(--crit,#ff6b4a)">${esc(z.fehler)}</p>` : ""}
+    <details class="fd-experten"><summary>EXPERTEN – falls Ford Adressen ändert</summary>
+      <p class="vb-hilfe">Leer lassen = Standard. Pfade dürfen <code>{id}</code> (Fahrzeug-ID) oder <code>{vin}</code> enthalten.${z.letzter_abruf ? " Letzter Abruf: " + esc(z.letzter_abruf.replace("T", " ")) : ""}</p>
+      ${[["auth_url", "Anmelde-Adresse"], ["token_url", "Token-Adresse"], ["api", "API-Basis"], ["garage", "Pfad Fahrzeugliste"], ["telemetrie", "Pfad Fahrzeugdaten"]]
+        .map(([k, n]) => `<div class="vb-feld"><label>${n}</label><input type="text" data-fu="${k}" value="${u[k] !== z.standard[k] ? esc(u[k]) : ""}" placeholder="${esc(z.standard[k])}"></div>`).join("")}
+      <div class="vb-feld"><label>Kopfzeilen (JSON)</label><input type="text" data-fu="kopfzeilen" value="${Object.keys(u.kopfzeilen || {}).length ? esc(JSON.stringify(u.kopfzeilen)) : ""}" placeholder='{"Application-Id":"…"}'></div>
+      <div class="vb-reihe"><button type="button" data-fa="urls">SPEICHERN</button><button type="button" data-fa="urls_standard">STANDARD</button>
+        <button type="button" data-fa="rohdaten">EMPFANGENE FELDER</button>${z.angemeldet ? `<button type="button" data-fa="trennen">TRENNEN</button>` : ""}</div>
+      <pre class="fd-roh" hidden></pre></details>`;
+  let zeile = box.querySelector('details[data-id="ford"]');
+  const zust = fertig ? { ok: true, text: `✓ ${z.fahrzeug || p.name} · nur Status` } : z.demo ? { warn: true, text: "Vorschau aktiv" }
+    : z.app ? { text: "Einrichtung läuft" } : { text: `vorbereitet – Übergabe ${p.erwartet || "März"}` };
+  const html = vbZeile("ford", "Ford Tourneo Custom", zust, inhalt, zeile?.open);
+  if (zeile) zeile.outerHTML = html; else box.insertAdjacentHTML("beforeend", html);
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-fa]"); if (!b || !b.closest('details[data-id="ford"]')) return;
+  const zeile = b.closest(".vb-zeile"), st = zeile.querySelector(".vb-status");
+  const melde = (t, art = "") => { st.textContent = t; st.className = "vb-status " + art; };
+  const wert = (n) => zeile.querySelector(`[data-ff="${n}"]`)?.value || "";
+  const a = b.dataset.fa;
+  if (a === "zeigen") { einstZu(); fordLaden(); return; }
+  let pfad = a, daten = {};
+  if (a === "profil") { const sel = zeile.querySelector('[data-ff="farbe"]'); daten = { name: wert("name"), farbe: sel.value, kennzeichen: wert("kennzeichen"), erwartet: wert("erwartet") }; }
+  if (a === "app") daten = { client_id: wert("client_id"), client_secret: wert("client_secret") };
+  if (a === "demo") daten = { an: b.dataset.an === "1" };
+  if (a === "waehlen") daten = { id: wert("fahrzeug") };
+  if (a === "urls") zeile.querySelectorAll("[data-fu]").forEach((i) => daten[i.dataset.fu] = i.value.trim());
+  if (a === "urls_standard") pfad = "urls";
+  b.disabled = true; melde("Einen Moment …");
+  try {
+    const r = await vbPost(`/verbindungen/ford/${pfad}`, daten);
+    if (a === "rohdaten") { const pre = zeile.querySelector(".fd-roh"); pre.hidden = false;
+      pre.textContent = r.leer ? "Noch nichts empfangen." : `Felder: ${r.felder.join(", ")}\n\n${JSON.stringify(r.roh, null, 1).slice(0, 6000)}`; melde(""); b.disabled = false; return; }
+    melde(r.text || "✓", "ok");
+    setTimeout(fordVbAufbauen, a === "anmelden" ? 10000 : 800);
+  } catch (err) { melde(err.message, "fehler"); b.disabled = false; }
+});
+const _vbAufbauenFord = vbAufbauen;
+vbAufbauen = async function (...a) { await _vbAufbauenFord(...a); fordVbAufbauen(); };
+
+// =====================================================================
+//  EINSTELLUNGEN: Reiter (Allgemein, Stimme, Stab, Konten, Daten, Fahrzeuge, Immobilien, iPhone) und Suche
+//  Die Verbindungszeilen bleiben in einem Container (#einst-vb) und werden je Reiter ein-/ausgeblendet.
+// =====================================================================
+const EINST_ZEILEN = { profil: "allgemein", elevenlabs: "stimme", anthropic: "konten", serper: "konten", youtube: "konten",
+  telegram: "konten", lokal: "konten", icloud: "daten", archiv: "daten", tesla: "fahrzeuge", ford: "fahrzeuge" };
+const EINST_VB_TITEL = { allgemein: "ÜBER DICH", stimme: "STIMME (ELEVENLABS)", konten: "KONTEN & SCHLÜSSEL", daten: "KALENDER, MAIL & ARCHIV",
+  fahrzeuge: "FAHRZEUGE", immobilien: "IMMOBILIEN" };
+let einstAktiv = (() => { try { return localStorage.getItem("jarvis-einst-reiter") || "allgemein"; } catch (e) { return "allgemein"; } })();
+function einstFiltern() {
+  const box = $("einst"); if (!box) return;
+  const such = ($("einst-suche")?.value || "").trim().toLowerCase();
+  box.querySelectorAll("#einst-reiter [data-reiter]").forEach((b) => {
+    const an = !such && b.dataset.reiter === einstAktiv; b.classList.toggle("an", an); b.setAttribute("aria-selected", an ? "true" : "false"); });
+  box.querySelectorAll("#einst-vb > details[data-id]").forEach((z) => {
+    const r = EINST_ZEILEN[z.dataset.id] || "konten";
+    z.hidden = such ? !z.textContent.toLowerCase().includes(such) : r !== einstAktiv;
+  });
+  box.querySelectorAll(".einst-inhalt > section[data-reiter]").forEach((s) => {
+    if (s.querySelector("#einst-vb")) {
+      s.hidden = ![...s.querySelectorAll("#einst-vb > details")].some((z) => !z.hidden);
+      const t = $("einst-vb-titel"); if (t) t.textContent = such ? "VERBINDUNGEN" : (EINST_VB_TITEL[einstAktiv] || "VERBINDUNGEN");
+      return;
+    }
+    if (such) {
+      const zeilen = s.querySelectorAll(".einst-zeile");
+      if (zeilen.length) { let eins = false; zeilen.forEach((z) => { const t = z.textContent.toLowerCase().includes(such) || s.querySelector("h4").textContent.toLowerCase().includes(such); z.hidden = !t; eins ||= t; }); s.hidden = !eins; }
+      else s.hidden = !s.textContent.toLowerCase().includes(such);
+    } else { s.hidden = !s.dataset.reiter.split(" ").includes(einstAktiv); s.querySelectorAll(".einst-zeile").forEach((z) => z.hidden = false); }
+  });
+}
+window.einstReiter = function (name, oeffnen = true) {
+  einstAktiv = name; try { localStorage.setItem("jarvis-einst-reiter", name); } catch (e) {}
+  const s = $("einst-suche"); if (s) s.value = "";
+  if (oeffnen && $("einst").hidden) window.einstellungenOeffnen();
+  einstFiltern(); $("einst").querySelector(".einst-box").scrollTop = 0;
+  $("einst-reiter")?.querySelector(".an")?.scrollIntoView({ block: "nearest", inline: "center" });
+};
+$("einst-reiter")?.addEventListener("click", (e) => { const b = e.target.closest("[data-reiter]"); if (b) { window.einstReiter(b.dataset.reiter, false); sfx?.("tick"); } });
+$("einst-suche")?.addEventListener("input", einstFiltern);
+$("einst-suche")?.addEventListener("keydown", (e) => { if (e.key === "Escape" && e.target.value) { e.stopPropagation(); e.target.value = ""; einstFiltern(); } });
+new MutationObserver(() => einstFiltern()).observe($("einst-vb"), { childList: true });
+const _einstOeffnenReiter = window.einstellungenOeffnen;
+window.einstellungenOeffnen = function () { _einstOeffnenReiter(); einstFiltern(); };
+einstFiltern();
+// Ford/Tesla: „Anbindung einrichten“ springt direkt in den Reiter Fahrzeuge
+fordEinrichtungOeffnen = function () {
+  window.einstReiter("fahrzeuge");
+  setTimeout(() => { const z = document.querySelector('#einst-vb details[data-id="ford"]'); if (z) { z.open = true; z.scrollIntoView({ behavior: "smooth", block: "start" }); } }, 900);
+};
+
+// =====================================================================
+//  HESTIA – IMMOBILIENFENSTER: Karte, Haupt­bild + Galerie (5), Kennzahlen mit Ampel, Mieter, Darlehen,
+//  Mieterhöhungen; Assistent „＋ IMMOBILIE“ (4 Schritte) mit lokalem Einlesen des Mietvertrags.
+// =====================================================================
+const IM = { el: null, d: null, aktiv: null, map: null, form: null };
+const imEuro = (v, nk = 0) => v == null ? "–" : v.toLocaleString("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: nk, minimumFractionDigits: nk });
+const imZahl = (v, nk = 1, e = "") => v == null ? "–" : v.toLocaleString("de-DE", { maximumFractionDigits: nk, minimumFractionDigits: nk }) + e;
+const imDatum = (iso) => iso ? iso.slice(0, 10).split("-").reverse().join(".") : "–";
+const imH = () => (TOKEN ? { "x-atlas-token": TOKEN } : {});
+function imObjekt() { return (IM.d?.objekte || []).find((o) => o.id === IM.aktiv) || (IM.d?.objekte || [])[0]; }
+function imBildUrl(o, datei) { return `/immobilien/${o.id}/bild/${encodeURIComponent(datei)}`; }
+async function imBildLaden(img) {             // Bilder mit Token holen (img-src kann keinen Header senden)
+  try { const r = await fetch(img.dataset.src, { headers: imH() }); if (!r.ok) throw 0; img.src = URL.createObjectURL(await r.blob()); }
+  catch (e) { img.closest(".im-bild, .im-thumb")?.classList.add("fehlt"); }
+}
+function imKachel(titel, inhalt, extra = "") { return `<section class="ts-kachel im-kachel"><h5>${titel}${extra}</h5>${inhalt}</section>`; }
+function imKennzahlen(o) {
+  const k = o.kennzahlen || {}, a = k.ampel || {}, mi = o.miete || {};
+  const z = (label, wert, amp = "", tip = "") => `<div class="im-kz ${amp}" title="${esc(tip)}"><i></i><b>${wert}</b><span>${label}</span></div>`;
+  return `<div class="im-kz-grid">
+    ${z("KALTMIETE", imEuro(mi.kalt), "", "pro Monat")}${z("WARMMIETE", imEuro(k.warm), "", "Kalt + Nebenkostenvorauszahlung")}
+    ${z("BRUTTORENDITE", imZahl(k.brutto, 2, " %"), a.brutto, "Jahreskaltmiete / Kaufpreis")}${z("NETTORENDITE", imZahl(k.netto, 2, " %"), "", "(Jahreskaltmiete − nicht umlagefähige Kosten) / (Kaufpreis + Nebenkosten)")}
+    ${z("CASHFLOW / MONAT", imEuro(k.cashflow), a.cashflow, "Kaltmiete − Darlehensraten − nicht umlagefähige Kosten")}${z("BELEIHUNG", imZahl(k.beleihung, 1, " %"), a.beleihung, "Restschuld / Marktwert (sonst Kaufpreis)")}
+    ${z("KAPITALDIENSTDECKUNG", imZahl(k.dscr, 2), a.dscr, "Jahreskaltmiete / Jahreskapitaldienst – Banken meist ≥ 1,2")}${z("KALT JE M²", k.kalt_qm == null ? "–" : imEuro(k.kalt_qm, 2), "", "für den Mietspiegel-Vergleich")}
+    ${z("EK-RENDITE", imZahl(k.ek_rendite, 1, " %"), "", "Überschuss vor Steuern / Eigenkapital")}${z("TILGUNG", imZahl(k.tilgung, 1, " %"), "", "bereits getilgt vom Darlehensbetrag")}</div>`;
+}
+function imHTML(o) {
+  if (!o) return `<div class="im-leer">${stabLogo("IMMO", "im-leer-logo")}<h4>NOCH KEINE IMMOBILIE</h4>
+      <p>HESTIA verwaltet Objekte, Mieter, Darlehen und Kennzahlen. Der Mietvertrag kann dabei lokal auf dem Mac ausgelesen werden.</p>
+      <button type="button" class="primary" data-im="neu">＋ IMMOBILIE ANLEGEN</button></div>`;
+  const k = o.kennzahlen || {}, m = o.mieter || {}, mi = o.miete || {}, b = o.bilder || {};
+  const gal = b.galerie || [];
+  const slots = Array.from({ length: 5 }, (_, i) => gal[i]
+    ? `<div class="im-thumb ${gal[i] === b.haupt ? "haupt" : ""}"><img alt="" data-src="${imBildUrl(o, gal[i])}">
+        <span><button type="button" data-im="bild-haupt" data-datei="${esc(gal[i])}" title="Als Hauptbild">★</button><button type="button" data-im="bild-weg" data-datei="${esc(gal[i])}" title="Entfernen">✕</button></span></div>`
+    : `<button type="button" class="im-thumb leer" data-im="bild-neu" title="Bild hinzufügen">＋</button>`).join("");
+  const dl = (o.darlehen || []).map((x, i) => {
+    const kd = (k.darlehen || [])[i] || {}, p = x.betrag ? Math.max(0, Math.min(1, 1 - kd.rest_heute / x.betrag)) : 0;
+    return `<div class="im-dl"><div class="im-dl-kopf"><b>${esc(x.bank || "Darlehen " + (i + 1))}</b><em>${imZahl(x.zins, 2, " %")} · Rate ${imEuro(x.rate)}</em></div>
+      <div class="im-dl-balken"><i style="--p:${p}"></i></div>
+      <div class="im-dl-fuss"><span>Restschuld <b>${imEuro(kd.rest_heute)}</b> von ${imEuro(x.betrag)}</span>
+        <span>Zinsbindung bis <b>${imDatum(x.zinsbindung_bis)}</b>${kd.rest_ende != null ? ` · dann ${imEuro(kd.rest_ende)}` : ""}</span></div></div>`;
+  }).join("") || `<p class="ts-hinweis">Kein Darlehen hinterlegt.</p>`;
+  const erh = (k.erhoehungen || []).map((e) => `<div class="im-erh ${e.hinweis ? "warn" : ""}"><b>${imDatum(e.datum)}</b><span>${imEuro(e.kalt_neu)} kalt${e.prozent != null ? ` (${e.prozent > 0 ? "+" : ""}${imZahl(e.prozent, 1, " %")})` : ""}</span>${e.hinweis ? `<em>${esc(e.hinweis)}</em>` : ""}</div>`).join("");
+  const zeile = (l, v) => v ? `<div class="im-zeile"><span>${l}</span><b>${v}</b></div>` : "";
+  return `<div class="ts-grid im-grid">
+    <div class="im-links">
+      <div class="im-bild">${b.haupt ? `<img alt="" data-src="${imBildUrl(o, b.haupt)}">` : `<button type="button" data-im="bild-neu-haupt" class="im-platzhalter">＋ BILD DER IMMOBILIE EINFÜGEN<small>JPG, PNG oder HEIC vom iPhone</small></button>`}
+        <div class="im-bild-schild"><b>${esc(o.name || o.adresse)}</b><span>${esc(o.adresse || "")}</span></div></div>
+      <div class="im-galerie">${slots}</div>
+      <div class="im-karte"><div class="im-karte-map"></div>${o.lat == null ? `<p class="ts-hinweis">Adresse nicht auf der Karte gefunden.</p>` : ""}</div>
+      <div class="ts-reihe im-werkzeuge"><button type="button" data-im="grundriss">⬚ GRUNDRISS → 3D</button></div>
+    </div>
+    <div class="ts-rechts">
+      <section class="ts-kachel im-kachel im-nk-kachel" data-im="nk"><h5>NEBENKOSTEN <em>ÖFFNEN ›</em></h5><div class="im-nk-kurz">…</div></section>
+      ${imKachel("KENNZAHLEN", imKennzahlen(o))}
+      ${imKachel("MIETER &amp; MIETE", `${zeile("Mieter", esc(m.name || "–"))}${zeile("seit", m.seit ? imDatum(m.seit) + (k.mietdauer ? " · " + esc(k.mietdauer) : "") : "")}
+        ${zeile("Miete kalt / NK / warm", `${imEuro(mi.kalt)} / ${imEuro(mi.nk)} / ${imEuro(k.warm)}`)}${zeile("Kaution", m.kaution ? imEuro(m.kaution) : "")}
+        ${zeile("Mietart", { vergleichsmiete: "Vergleichsmiete (§ 558)", staffelmiete: "Staffelmiete", indexmiete: "Indexmiete" }[m.mietart] || "")}`)}
+      ${imKachel("MIETERHÖHUNGEN", `${k.erhoehung_ab ? `<p class="ts-hinweis">Nächste Erhöhung auf Vergleichsmiete frühestens wirksam ab <b>${imDatum(k.erhoehung_ab)}</b> (15 Monate, Kappungsgrenze ${imZahl(IM.d?.grenzen?.kappung, 0, " %")} in 3 Jahren).</p>` : ""}
+        ${erh || `<p class="ts-hinweis">Keine geplant.</p>`}
+        <div class="im-erh-form" hidden><input type="date" data-ef="datum"><input type="number" step="10" data-ef="kalt_neu" placeholder="neue Kaltmiete €"><button type="button" data-im="erh-speichern">EINTRAGEN</button></div>`,
+        ` <button type="button" class="ts-mini" data-im="erh-neu">＋ PLANEN</button>`)}
+      ${imKachel("DARLEHEN", dl)}
+      ${imKachel("OBJEKT", `${zeile("Art", esc(o.art || ""))}${zeile("Baujahr", o.baujahr ? String(o.baujahr) : "")}${zeile("Wohnfläche", o.wohnflaeche ? imZahl(o.wohnflaeche, 1, " m²") : "")}
+        ${zeile("Grundstück", o.grundstueck ? imZahl(o.grundstueck, 0, " m²") : "")}${zeile("Kauf", o.kaufpreis ? `${imEuro(o.kaufpreis)}${o.kaufdatum ? " · " + imDatum(o.kaufdatum) : ""}` : "")}
+        ${zeile("Marktwert", o.marktwert ? imEuro(o.marktwert) : "")}${zeile("Heizung", esc(o.heizung || ""))}${zeile("Eigentümer", esc(o.eigentuemer || ""))}`)}
+    </div></div><div class="ts-status"></div>`;
+}
+function imZeigen(d, aktiv) {
+  IM.d = d; if (aktiv) IM.aktiv = aktiv;
+  if (!imObjekt() && d.objekte?.length) IM.aktiv = d.objekte[0].id;
+  if (!IM.el) {
+    IM.el = document.createElement("div"); IM.el.className = "tesla immo";
+    IM.el.innerHTML = `<div class="ts-rahmen" role="dialog" aria-label="Immobilien"><header class="vt-kopf"><span class="vt-marke im-marke">${stabLogo("IMMO", "klein")} IMMOBILIEN</span>
+      <nav class="fz-tabs im-tabs"></nav><span class="vt-kapitel ts-titel"></span>
+      <button type="button" class="ts-neu" data-im="nk">NEBENKOSTEN</button><button type="button" class="ts-neu" data-im="bearbeiten">BEARBEITEN</button><button type="button" class="ts-neu" data-im="neu">＋ IMMOBILIE</button>
+      <input type="file" accept="image/*,.heic,.heif" multiple hidden class="im-datei"><button type="button" class="vt-zu" data-im="zu" title="Schließen (Esc)">✕</button></header>
+      <div class="ts-inhalt"></div></div>`;
+    document.body.appendChild(IM.el);
+    requestAnimationFrame(() => IM.el.classList.add("an"));
+  }
+  const o = imObjekt();
+  IM.el.querySelector(".im-tabs").innerHTML = (d.objekte || []).map((x) => `<button type="button" data-im="tab" data-id="${esc(x.id)}" class="${x.id === o?.id ? "an" : ""}">${esc((x.name || x.adresse || "Objekt").toUpperCase())}</button>`).join("");
+  IM.el.querySelector(".ts-titel").textContent = o ? [o.art, o.wohnflaeche ? imZahl(o.wohnflaeche, 0, " m²") : "", o.baujahr].filter(Boolean).join(" · ").toUpperCase() : "";
+  IM.el.querySelector('[data-im="bearbeiten"]').hidden = !o;
+  IM.el.querySelector(".ts-inhalt").innerHTML = imHTML(o);
+  IM.el.querySelectorAll("img[data-src]").forEach(imBildLaden);
+  if (o) imKarte(o);
+  if (o) nkKurz(o.id);
+}
+function imZu() { if (!IM.el) return; const el = IM.el; IM.el = null; if (typeof NK !== "undefined") { NK.el = null; IM.form = null; } if (typeof GR !== "undefined" && GR.el) { try { GR.m3d?.entfernen(); } catch (e) {} GR.m3d = null; GR.el = null; } try { IM.map?.remove(); } catch (e) {} IM.map = null; el.classList.remove("an"); setTimeout(() => el.remove(), 500); }
+async function imLaden(aktiv) {
+  try { const r = await fetch("/immobilien", { headers: imH() }); const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.status); imZeigen(j, aktiv); }
+  catch (e) { toast("Immobilien: " + e.message); }
+}
+async function imKarte(o) {
+  const box = IM.el?.querySelector(".im-karte-map"); if (!box || o.lat == null) return;
+  try { await karteLib(); } catch (e) { return; }
+  try { IM.map?.remove(); } catch (e) {}
+  const ml = window.maplibregl;
+  const m = IM.map = new ml.Map({ container: box, style: "https://tiles.openfreemap.org/styles/dark", center: [o.lon, o.lat], zoom: 13, pitch: 0,
+    attributionControl: { compact: true }, fadeDuration: 0, interactive: true });
+  m.on("style.load", () => {
+    try { karteEinfaerben(m); } catch (e) {}
+    try {
+      const quelle = Object.keys(m.getStyle().sources).find((s) => m.getStyle().sources[s].type === "vector");
+      if (quelle && !m.getLayer("im-3d")) m.addLayer({ id: "im-3d", type: "fill-extrusion", source: quelle, "source-layer": "building", minzoom: 14,
+        paint: { "fill-extrusion-color": "#0b4a6e", "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6], "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0], "fill-extrusion-opacity": .7 } });
+    } catch (e) {}
+  });
+  const pin = document.createElement("div"); pin.className = "im-pin"; pin.innerHTML = `<i></i>${stabLogo("IMMO")}`;
+  new ml.Marker({ element: pin, anchor: "bottom" }).setLngLat([o.lon, o.lat]).addTo(m);
+  m.once("load", () => m.flyTo({ center: [o.lon, o.lat], zoom: 17, pitch: 58, bearing: -25, duration: 3200, essential: true }));
+}
+function imStatus(t, art = "") { const st = IM.el?.querySelector(".ts-status"); if (st) { st.textContent = t; st.className = "ts-status " + art; } }
+async function imBilderHoch(files, haupt) {
+  const o = imObjekt(); if (!o) return;
+  let n = 0;
+  for (const f of files) {
+    imStatus(`Bild ${++n} von ${files.length} wird übernommen …`);
+    const r = await fetch(`/immobilien/${o.id}/bild?haupt=${haupt && n === 1 ? 1 : 0}`, { method: "POST", body: f,
+      headers: { "x-dateiname": encodeURIComponent(f.name), ...imH() } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { imStatus("⚠ " + (j.detail || r.status), "fehler"); return; }
+  }
+  await imLaden(o.id); imStatus("✓ Bilder übernommen", "ok");
+}
+document.addEventListener("click", async (e) => {
+  if (!IM.el || !e.target.closest(".immo")) return;
+  const b = e.target.closest("[data-im]"); if (!b) return;
+  const a = b.dataset.im, o = imObjekt();
+  if (a === "zu") return imZu();
+  if (a === "tab") { IM.aktiv = b.dataset.id; return imZeigen(IM.d); }
+  if (a === "neu") return imFormular(null);
+  if (a === "bearbeiten") return o && imFormular(o);
+  if (a === "nk") return o && nkOeffnen(o.id);
+  if (a === "grundriss") return o && grOeffnen(o.id);
+  if (a === "bild-neu" || a === "bild-neu-haupt") { const inp = IM.el.querySelector(".im-datei"); inp.dataset.haupt = a === "bild-neu-haupt" ? "1" : ""; inp.click(); return; }
+  if (a === "bild-haupt" || a === "bild-weg") {
+    try { await vbPost(`/immobilien/${o.id}/bild/${encodeURIComponent(b.dataset.datei)}/${a === "bild-haupt" ? "haupt" : "entfernen"}`, {}); await imLaden(o.id); }
+    catch (err) { imStatus("⚠ " + err.message, "fehler"); } return;
+  }
+  if (a === "erh-neu") { const f = IM.el.querySelector(".im-erh-form"); f.hidden = !f.hidden; return; }
+  if (a === "erh-speichern") {
+    const f = IM.el.querySelector(".im-erh-form"), datum = f.querySelector('[data-ef="datum"]').value, kalt = f.querySelector('[data-ef="kalt_neu"]').value;
+    if (!datum || !kalt) return imStatus("Datum und neue Kaltmiete angeben", "fehler");
+    try { const r = await vbPost(`/immobilien/${o.id}`, { ...o, erhoehungen: [...(o.erhoehungen || []), { datum, kalt_neu: +kalt }] });
+      await imLaden(o.id); imStatus("✓ Mieterhöhung geplant – Frist zum Ankündigen steht unter „Fristen“", "ok"); }
+    catch (err) { imStatus("⚠ " + err.message, "fehler"); }
+  }
+});
+document.addEventListener("change", (e) => {
+  if (!e.target.matches(".immo .im-datei") || !e.target.files.length) return;
+  imBilderHoch([...e.target.files].slice(0, 5), e.target.dataset.haupt === "1"); e.target.value = "";
+});
+document.addEventListener("keydown", (e) => { if (IM.el && e.key === "Escape" && !inFeld()) { if (IM.form) imFormZu(); else imZu(); } });
+
+// ---------- Assistent „＋ IMMOBILIE“ / Bearbeiten (4 Schritte) ----------
+const IM_SCHRITTE = ["OBJEKT", "KAUF", "DARLEHEN", "MIETER & MIETE"];
+function imWert(o, pfad) { return pfad.split(".").reduce((x, k) => (x == null ? x : x[k]), o) ?? ""; }
+function imFeld(o, pfad, label, typ = "text", extra = "") {
+  return `<label class="im-f"><span>${label}</span><input type="${typ}" data-if="${pfad}" value="${esc(String(imWert(o, pfad)))}" ${typ === "number" ? 'step="any"' : ""} ${extra}></label>`;
+}
+function imDlZeile(x = {}, i = 0) {
+  return `<div class="im-dl-form" data-dl="${i}">
+    <label class="im-f"><span>Bank</span><input data-df="bank" value="${esc(x.bank || "")}"></label>
+    <label class="im-f"><span>Darlehensbetrag €</span><input type="number" step="any" data-df="betrag" value="${x.betrag ?? ""}"></label>
+    <label class="im-f"><span>Sollzins %</span><input type="number" step="any" data-df="zins" value="${x.zins ?? ""}"></label>
+    <label class="im-f"><span>Monatsrate €</span><input type="number" step="any" data-df="rate" value="${x.rate ?? ""}"></label>
+    <label class="im-f"><span>Zinsbindung bis</span><input type="date" data-df="zinsbindung_bis" value="${esc(x.zinsbindung_bis || "")}"></label>
+    <label class="im-f"><span>Restschuld € (laut Auszug)</span><input type="number" step="any" data-df="restschuld" value="${x.restschuld ?? ""}"></label>
+    <label class="im-f"><span>Stand der Restschuld</span><input type="date" data-df="restschuld_stand" value="${esc(x.restschuld_stand || "")}"></label>
+    <button type="button" class="im-dl-weg" data-imf="dl-weg" title="Darlehen entfernen">✕</button></div>`;
+}
+function imFormular(o) {
+  const neu = !o; o = o || { mieter: { mietart: "vergleichsmiete" }, miete: {}, darlehen: [] };
+  IM.formObj = o;
+  const f = document.createElement("div"); f.className = "im-form";
+  f.innerHTML = `<div class="im-form-box"><header><b>${neu ? "＋ NEUE IMMOBILIE" : "IMMOBILIE BEARBEITEN"}</b>
+      <nav>${IM_SCHRITTE.map((s, i) => `<button type="button" data-imf="schritt" data-n="${i}" class="${i ? "" : "an"}"><i>${i + 1}</i>${s}</button>`).join("")}</nav>
+      <button type="button" class="vt-zu" data-imf="zu">✕</button></header>
+    <div class="im-mv"><button type="button" data-imf="mv">⇪ MIETVERTRAG LOKAL EINLESEN</button>
+      <span>Text und Felder werden nur auf diesem Mac erkannt (lokales Modell) – nichts geht an Claude. Die Datei wird nicht gespeichert.</span>
+      <input type="file" accept=".pdf,image/*" hidden class="im-mv-datei"></div>
+    <form class="im-schritte" onsubmit="return false">
+      <fieldset data-n="0">${imFeld(o, "name", "Kurzname (z. B. Straße)")}${imFeld(o, "adresse", "Adresse (Straße Nr, PLZ Ort)", "text", "required")}
+        ${imFeld(o, "art", "Objektart (Einfamilienhaus, Wohnung …)")}${imFeld(o, "baujahr", "Baujahr", "number")}${imFeld(o, "wohnflaeche", "Wohnfläche m²", "number")}
+        ${imFeld(o, "grundstueck", "Grundstück m²", "number")}${imFeld(o, "heizung", "Heizung")}${imFeld(o, "energieklasse", "Energieklasse")}
+        ${imFeld(o, "eigentuemer", "Eigentümer (z. B. GbR)")}${imFeld(o, "ordner", "Ordner im DATENARCHIV (vorhandener Ordner)")}</fieldset>
+      <fieldset data-n="1" hidden>${imFeld(o, "kaufdatum", "Kaufdatum / Fertigstellung", "date")}${imFeld(o, "kaufpreis", "Kaufpreis bzw. Gesamtkosten €", "number")}
+        ${imFeld(o, "kaufnebenkosten", "Kaufnebenkosten €", "number")}${imFeld(o, "marktwert", "Geschätzter Marktwert € (optional)", "number")}
+        ${imFeld(o, "nicht_umlagefaehig_jahr", "Nicht umlagefähige Kosten € pro Jahr (Verwaltung, Rücklage …)", "number")}</fieldset>
+      <fieldset data-n="2" hidden><div class="im-dl-liste">${(o.darlehen || []).map(imDlZeile).join("")}</div>
+        <button type="button" data-imf="dl-neu">＋ DARLEHEN</button></fieldset>
+      <fieldset data-n="3" hidden>${imFeld(o, "mieter.name", "Mieter")}${imFeld(o, "mieter.seit", "Mietbeginn", "date")}${imFeld(o, "mieter.kaution", "Kaution €", "number")}
+        <label class="im-f"><span>Mietart</span><select data-if="mieter.mietart">${["vergleichsmiete", "staffelmiete", "indexmiete"].map((v) => `<option value="${v}" ${imWert(o, "mieter.mietart") === v ? "selected" : ""}>${{ vergleichsmiete: "Vergleichsmiete", staffelmiete: "Staffelmiete", indexmiete: "Indexmiete" }[v]}</option>`).join("")}</select></label>
+        ${imFeld(o, "miete.kalt", "Kaltmiete € / Monat", "number")}${imFeld(o, "miete.nk", "Nebenkostenvorauszahlung € / Monat", "number")}
+        ${imFeld(o, "miete.letzte_erhoehung", "Letzte Mieterhöhung wirksam ab", "date")}${imFeld(o, "mieter.kontakt", "Kontakt (Telefon/Mail, optional)")}
+        <div class="im-bk" ${(o.betriebskosten || []).length ? "" : "hidden"}><span>Vereinbarte Betriebskosten</span><p>${esc((o.betriebskosten || []).join(" · "))}</p></div></fieldset>
+    </form>
+    <footer><button type="button" data-imf="zurueck">‹ ZURÜCK</button><span class="im-form-status"></span>
+      ${neu ? "" : `<button type="button" data-imf="loeschen" class="gefahr">ENTFERNEN</button>`}
+      <button type="button" data-imf="weiter">WEITER ›</button><button type="button" class="primary" data-imf="speichern">SPEICHERN</button></footer></div>`;
+  (IM.el || document.body).appendChild(f); IM.form = f;
+  requestAnimationFrame(() => f.classList.add("an"));
+  imSchritt(0);
+}
+function imSchritt(n) {
+  const f = IM.form; if (!f) return; f.dataset.n = n;
+  f.querySelectorAll("fieldset").forEach((x) => x.hidden = +x.dataset.n !== n);
+  f.querySelectorAll('[data-imf="schritt"]').forEach((x) => x.classList.toggle("an", +x.dataset.n === n));
+  f.querySelector('[data-imf="zurueck"]').disabled = n === 0; f.querySelector('[data-imf="weiter"]').hidden = n === 3;
+}
+function imFormZu() { const f = IM.form; IM.form = null; if (f) { f.classList.remove("an"); setTimeout(() => f.remove(), 300); } }
+function imFormDaten() {
+  const f = IM.form, o = JSON.parse(JSON.stringify(IM.formObj || {}));
+  f.querySelectorAll("[data-if]").forEach((i) => {
+    const p = i.dataset.if.split("."); let z = o;
+    p.slice(0, -1).forEach((k) => { z[k] = z[k] || {}; z = z[k]; });
+    z[p.at(-1)] = i.type === "number" ? (i.value === "" ? null : +i.value) : i.value.trim();
+  });
+  o.darlehen = [...f.querySelectorAll(".im-dl-form")].map((r) => Object.fromEntries([...r.querySelectorAll("[data-df]")].map((i) => [i.dataset.df, i.type === "number" ? (i.value === "" ? null : +i.value) : i.value.trim()])));
+  return o;
+}
+function imFormStatus(t, art = "") { const s = IM.form?.querySelector(".im-form-status"); if (s) { s.textContent = t; s.className = "im-form-status " + art; } }
+function imVorschlag(v) {
+  const setz = (pfad, wert) => { if (wert == null || wert === "" || (Array.isArray(wert) && !wert.length)) return 0;
+    const i = IM.form.querySelector(`[data-if="${pfad}"]`); if (!i) return 0; i.value = wert; i.closest(".im-f")?.classList.add("vorschlag"); return 1; };
+  let n = 0;
+  n += setz("adresse", v.adresse); n += setz("art", v.art); n += setz("wohnflaeche", v.wohnflaeche); n += setz("eigentuemer", v.eigentuemer);
+  n += setz("mieter.name", v.mieter?.name); n += setz("mieter.seit", v.mieter?.seit); n += setz("mieter.kaution", v.mieter?.kaution);
+  n += setz("mieter.mietart", v.mieter?.mietart); n += setz("miete.kalt", v.miete?.kalt); n += setz("miete.nk", v.miete?.nk);
+  if (!IM.form.querySelector('[data-if="name"]').value && v.adresse) { IM.form.querySelector('[data-if="name"]').value = v.adresse.split(",")[0]; }
+  if ((v.betriebskosten || []).length) { IM.formObj.betriebskosten = v.betriebskosten; const bk = IM.form.querySelector(".im-bk"); bk.hidden = false; bk.querySelector("p").textContent = v.betriebskosten.join(" · "); }
+  return n;
+}
+document.addEventListener("click", async (e) => {
+  if (!IM.form || !e.target.closest(".im-form")) return;
+  const b = e.target.closest("[data-imf]"); if (!b) { if (e.target === IM.form) imFormZu(); return; }
+  const a = b.dataset.imf, n = +(IM.form.dataset.n || 0);
+  if (a === "zu") return imFormZu();
+  if (a === "schritt") return imSchritt(+b.dataset.n);
+  if (a === "weiter") return imSchritt(Math.min(3, n + 1));
+  if (a === "zurueck") return imSchritt(Math.max(0, n - 1));
+  if (a === "dl-neu") { const l = IM.form.querySelector(".im-dl-liste"); l.insertAdjacentHTML("beforeend", imDlZeile({}, l.children.length)); return; }
+  if (a === "dl-weg") { b.closest(".im-dl-form").remove(); return; }
+  if (a === "mv") { IM.form.querySelector(".im-mv-datei").click(); return; }
+  if (a === "loeschen") {
+    if (b.dataset.sicher !== "1") { b.dataset.sicher = "1"; b.textContent = "WIRKLICH ENTFERNEN?"; return; }
+    try { await fetch(`/immobilien/${IM.formObj.id}`, { method: "DELETE", headers: imH() }); imFormZu(); IM.aktiv = null; imLaden(); } catch (err) { imFormStatus("⚠ " + err.message, "fehler"); }
+    return;
+  }
+  if (a === "speichern") {
+    const o = imFormDaten();
+    if (!o.adresse) { imSchritt(0); return imFormStatus("Bitte die Adresse angeben", "fehler"); }
+    b.disabled = true; imFormStatus("Speichere …");
+    try { const r = await vbPost(o.id ? `/immobilien/${o.id}` : "/immobilien", o);
+      imFormZu(); await imLaden(r.id); imStatus(r.text || "✓ Gespeichert", "ok"); sfx?.("ok");
+      if (!$("einst").hidden) imEinstAufbauen(); }
+    catch (err) { imFormStatus("⚠ " + err.message, "fehler"); b.disabled = false; }
+  }
+});
+document.addEventListener("change", async (e) => {
+  if (!e.target.matches(".im-mv-datei") || !e.target.files.length) return;
+  const f = e.target.files[0]; e.target.value = "";
+  const knopf = IM.form.querySelector('[data-imf="mv"]'); knopf.disabled = true;
+  imFormStatus("Lese den Mietvertrag lokal – Texterkennung und lokales Modell, das kann 1–2 Minuten dauern …");
+  try {
+    const r = await fetch("/immobilien/mietvertrag", { method: "POST", body: f, headers: { "x-dateiname": encodeURIComponent(f.name), ...imH() } });
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.detail || r.status);
+    const n = imVorschlag(j.vorschlag || {});
+    imSchritt(3); imFormStatus(n ? `✓ ${n} Felder lokal erkannt (markiert) – bitte jeden Wert prüfen` : "Keine Felder sicher erkannt – bitte von Hand eintragen", n ? "ok" : "fehler");
+  } catch (err) { imFormStatus("⚠ " + err.message, "fehler"); }
+  knopf.disabled = false;
+});
+const _handleImmo = handle;
+handle = function (ev) { if (ev.type === "immobilien") { imZeigen(ev.daten || {}, ev.aktiv); return; } _handleImmo(ev); };
+window.immobilienAnzeigen = (id) => imLaden(id);
+
+// ---------- Einstellungen → Reiter Immobilien ----------
+async function imEinstAufbauen() {
+  const s = document.querySelector('#einst section[data-reiter="immobilien"]'); if (!s) return;
+  let d; try { const r = await fetch("/immobilien", { headers: imH() }); d = await r.json(); if (!r.ok) throw 0; } catch (e) { return; }
+  const g = d.grenzen || {};
+  const liste = (d.objekte || []).map((o) => `<div class="einst-zeile"><span>${esc(o.name || o.adresse)}<small class="im-einst-sub">${esc(o.adresse || "")}${o.miete?.kalt ? " · " + imEuro(o.miete.kalt) + " kalt" : ""}</small></span>
+      <span class="vb-reihe"><button type="button" data-ime="zeigen" data-id="${esc(o.id)}">ANZEIGEN</button><button type="button" data-ime="bearbeiten" data-id="${esc(o.id)}">BEARBEITEN</button></span></div>`).join("");
+  const gf = (k, l) => `<label class="im-f"><span>${l}</span><input type="number" step="any" data-ig="${k}" value="${g[k] ?? ""}"></label>`;
+  s.innerHTML = `<h4>IMMOBILIEN · HESTIA</h4>
+    ${liste || `<p class="vb-hilfe einst-leer">Noch keine Immobilien angelegt.</p>`}
+    <div class="einst-zeile"><span>Neue Immobilie (Assistent, Mietvertrag lokal einlesbar)</span><button type="button" class="primary" data-ime="neu">＋ IMMOBILIE</button></div>
+    <details class="vb-zeile"><summary><span>Ampel-Grenzen der Kennzahlen</span><em>${imZahl(g.brutto_gruen, 1, " %")} Rendite · Kappung ${imZahl(g.kappung, 0, " %")}</em></summary>
+      <div class="vb-inhalt im-grenzen">${gf("brutto_gruen", "Bruttorendite grün ab %")}${gf("brutto_gelb", "Bruttorendite gelb ab %")}${gf("cashflow_gruen", "Cashflow grün ab € / Monat")}
+        ${gf("cashflow_gelb", "Cashflow gelb ab € / Monat")}${gf("beleihung_gruen", "Beleihung grün bis %")}${gf("beleihung_gelb", "Beleihung gelb bis %")}
+        ${gf("dscr_gruen", "Kapitaldienstdeckung grün ab")}${gf("dscr_gelb", "Kapitaldienstdeckung gelb ab")}${gf("kappung", "Kappungsgrenze % (15 in Orten mit Verordnung, sonst 20)")}
+        <div class="vb-reihe"><button type="button" class="primary" data-ime="grenzen">SPEICHERN</button></div><div class="vb-status"></div></div></details>`;
+  if (typeof einstFiltern === "function") einstFiltern();
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-ime]"); if (!b) return;
+  const a = b.dataset.ime;
+  if (a === "zeigen") { einstZu(); return imLaden(b.dataset.id); }
+  if (a === "bearbeiten" || a === "neu") { einstZu(); await imLaden(b.dataset.id); const o = a === "neu" ? null : imObjekt(); return imFormular(o); }
+  if (a === "grenzen") {
+    const box = b.closest(".im-grenzen"), daten = Object.fromEntries([...box.querySelectorAll("[data-ig]")].map((i) => [i.dataset.ig, i.value]));
+    const st = box.querySelector(".vb-status");
+    try { const r = await vbPost("/immobilien/grenzen", daten); st.textContent = r.text; st.className = "vb-status ok"; } catch (err) { st.textContent = err.message; st.className = "vb-status fehler"; }
+  }
+});
+const _einstOeffnenImmo = window.einstellungenOeffnen;
+window.einstellungenOeffnen = function () { _einstOeffnenImmo(); imEinstAufbauen(); };
+
+// =====================================================================
+//  HESTIA – NEBENKOSTEN: Belegliste, Ablage-Vorschläge (Bestätigung), Anfragen (Billigung), Entwurf, Billigung,
+//  Versand an den Mieter, Zugang. Alles Abgelegte/Gesendete nur per Klick.
+// =====================================================================
+const NK = { el: null, oid: null, jahr: null, u: null, pdfUrl: null };
+const NK_STATUS = { fehlt: ["FEHLT", "rot"], angefragt: ["ANGEFRAGT", "gelb"], vorhanden: ["DA", "gruen"], entfaellt: ["ENTFÄLLT", ""] };
+const NK_JSTATUS = { sammeln: "Belege sammeln", anfragen: "Belege angefragt", vollstaendig: "Belege vollständig", entwurf: "Entwurf zur Billigung",
+  gebilligt: "Gebilligt – Versand an den Mieter", versendet: "Beim Mieter", abgeschlossen: "Abgeschlossen" };
+const NK_ARTEN = { grundsteuer: "Grundsteuer", wasser: "Wasserversorgung", abwasser: "Entwässerung", heizung: "Heizung – Wartung Wärmepumpe",
+  muell: "Müllbeseitigung", strassenreinigung: "Straßenreinigung / Winterdienst", garten: "Gartenpflege", schornstein: "Schornsteinfeger",
+  versicherung: "Sach- und Haftpflichtversicherung", rauchmelder: "Rauchwarnmelder – Wartung", sonstige: "Sonstige Betriebskosten" };
+const nkPost = (aktion, daten) => vbPost(`/hestia/${aktion}`, daten);
+async function nkKurz(oid) {
+  const box = IM.el?.querySelector(".im-nk-kurz"); if (!box) return;
+  try {
+    const u = await fdGet(`/hestia?objekt=${encodeURIComponent(oid)}`), j = u.jahre[0];
+    const v = u.vorschlaege.length, a = j ? j.anfragen.filter((x) => x.status === "entwurf").length : 0;
+    box.innerHTML = j ? `<div class="im-zeile"><span>Abrechnung ${j.jahr}</span><b>${esc(NK_JSTATUS[j.status] || j.status)}</b></div>
+      <div class="im-zeile"><span>Belege</span><b>${j.posten.length - j.offen} von ${j.posten.length}</b></div>
+      <div class="im-zeile"><span>An den Mieter bis</span><b>${imDatum(j.abrechnen_bis)} <small>(gesetzlich ${imDatum(j.gesetzlich_bis)})</small></b></div>
+      ${v || a ? `<p class="nk-hinweis">${v ? `${v} Beleg(e) zur Ablage-Bestätigung` : ""}${v && a ? " · " : ""}${a ? `${a} Anfrage(n) zur Billigung` : ""}</p>` : ""}`
+      : `<p class="ts-hinweis">Noch kein Abrechnungsjahr angelegt.${v ? ` ${v} Beleg(e) warten auf Bestätigung.` : ""}</p>`;
+  } catch (e) { box.textContent = "–"; }
+}
+async function nkOeffnen(oid, jahr) {
+  if (!IM.el || imObjekt()?.id !== oid) await imLaden(oid);
+  NK.oid = oid; NK.jahr = jahr || NK.jahr;
+  if (!NK.el) {
+    NK.el = document.createElement("div"); NK.el.className = "im-form nk";
+    NK.el.innerHTML = `<div class="im-form-box nk-box"><header><b>${stabLogo("IMMO", "klein")} NEBENKOSTEN</b><nav class="nk-jahre"></nav>
+      <button type="button" data-nk="pruefen" title="Immobilien-Postfach und Nebenkosten-Ordner jetzt prüfen">⟳ PRÜFEN</button>
+      <button type="button" data-nk="hoch">⇪ BELEG</button><input type="file" accept=".pdf,image/*" multiple hidden class="nk-datei">
+      <button type="button" class="vt-zu" data-nk="zu">✕</button></header><div class="nk-inhalt"></div>
+      <footer><span class="im-form-status nk-status"></span></footer></div>`;
+    IM.el.appendChild(NK.el); requestAnimationFrame(() => NK.el.classList.add("an"));
+  }
+  await nkLaden();
+}
+function nkZu() { const el = NK.el; NK.el = null; if (NK.pdfUrl) URL.revokeObjectURL(NK.pdfUrl); NK.pdfUrl = null; if (el) { el.classList.remove("an"); setTimeout(() => el.remove(), 300); } if (IM.el) nkKurz(NK.oid); }
+function nkMeldung(t, art = "") { const s = NK.el?.querySelector(".nk-status"); if (s) { s.textContent = t; s.className = "im-form-status nk-status " + art; } }
+async function nkLaden() {
+  try { NK.u = await fdGet(`/hestia?objekt=${encodeURIComponent(NK.oid)}`); }
+  catch (e) { return nkMeldung("⚠ " + e.message, "fehler"); }
+  const jahre = NK.u.jahre;
+  if (!jahre.find((j) => j.jahr === NK.jahr)) NK.jahr = jahre[0]?.jahr || null;
+  const vorschlagJahr = new Date().getMonth() < 6 ? new Date().getFullYear() - 1 : new Date().getFullYear();
+  NK.el.querySelector(".nk-jahre").innerHTML = jahre.map((j) => `<button type="button" data-nk="jahr" data-jahr="${j.jahr}" class="${j.jahr === NK.jahr ? "an" : ""}">${j.jahr}</button>`).join("")
+    + `<span class="nk-neu"><input type="number" min="2000" max="2100" value="${jahre.length ? Math.max(...jahre.map((j) => j.jahr)) + 1 : vorschlagJahr}" class="nk-neu-jahr">
+       <button type="button" data-nk="anlegen">＋ JAHR</button></span>`;
+  const j = jahre.find((x) => x.jahr === NK.jahr);
+  NK.el.querySelector(".nk-inhalt").innerHTML = nkHTML(j);
+  if (j?.entwurf || j?.final) nkPdf(j);
+}
+function nkHTML(j) {
+  const u = NK.u, o = imObjekt();
+  const vors = u.vorschlaege.filter((v) => !v.objekt || v.objekt === NK.oid);
+  const vorschlaege = vors.length ? `<section class="nk-teil"><h5>ZUR ABLAGE – BITTE BESTÄTIGEN <em>${vors.length}</em></h5>${vors.map(nkVorschlag).join("")}</section>` : "";
+  if (!j) return `${vorschlaege}<section class="nk-teil"><h5>ABRECHNUNG</h5><p class="ts-hinweis">Noch kein Abrechnungsjahr angelegt. Oben das Jahr wählen und „＋ JAHR“ –
+      HESTIA legt die Belegliste aus dem Mietvertrag an und trägt die Fristen ein. Ab dem 2. Januar passiert das für das Vorjahr automatisch.</p></section>${nkVersorger(o)}${nkProtokoll()}`;
+  const r = j.rechnung;
+  const fertig = j.posten.length - j.offen;
+  const kopf = `<section class="nk-teil nk-kopf">
+      <div><small>ZEITRAUM</small><b>${imDatum(j.von)} – ${imDatum(j.bis)}</b></div>
+      <div><small>STATUS</small><b>${esc(NK_JSTATUS[j.status] || j.status)}</b></div>
+      <div><small>BELEGE</small><b>${fertig} / ${j.posten.length}</b><i class="nk-balken"><u style="--p:${j.posten.length ? fertig / j.posten.length : 0}"></u></i></div>
+      <div><small>BELEGE BIS</small><b>${imDatum(j.zielfrist)}</b></div><div><small>AN MIETER BIS</small><b>${imDatum(j.abrechnen_bis)}</b></div>
+      <div><small>GESETZLICH</small><b>${imDatum(j.gesetzlich_bis)}</b></div></section>`;
+  const zeilen = j.posten.map((p) => {
+    const z = r.zeilen.find((x) => x.id === p.id) || {}, [st, farbe] = NK_STATUS[p.status] || [p.status, ""];
+    const belege = p.belege.map((b, i) => `<div class="nk-beleg"><span title="${esc(b.datei)}">${esc((b.datei || "").split("/").pop())}</span>
+        <input type="number" step="0.01" value="${b.betrag ?? ""}" data-nkb="${p.id}" data-i="${i}" title="Gesamtbetrag laut Beleg"> €</div>`).join("");
+    return `<tr class="${p.status}"><td><b>${esc(p.bezeichnung)}</b><small>${esc(z.schluessel || "")}</small></td>
+      <td><span class="nk-chip ${farbe}">${st}</span></td><td>${belege || `<span class="nk-leer">kein Beleg</span>`}</td>
+      <td class="z">${z.anteil != null ? imEuro(z.anteil, 2) : "–"}</td>
+      <td class="nk-akt">${p.status === "fehlt" || p.status === "angefragt" ? `<button type="button" data-nk="anfrage" data-p="${p.id}" title="Anfrage an den Versorger vorbereiten">ANFRAGEN</button>` : ""}
+        <button type="button" data-nk="entfaellt" data-p="${p.id}" title="${p.status === "entfaellt" ? "wieder aufnehmen" : "für dieses Jahr nicht abrechnen"}">${p.status === "entfaellt" ? "AUFNEHMEN" : "ENTFÄLLT"}</button>
+        <button type="button" data-nk="verteilung" data-p="${p.id}" title="Zeitanteilig nach Mietdauer oder voll umlegen">${p.verteilung === "voll" ? "VOLL" : "ZEITANT."}</button>
+        <input type="number" step="0.01" placeholder="Verbrauch €" value="${p.betrag_manuell ?? ""}" data-nkm="${p.id}" title="Mieteranteil laut Zählerständen (überschreibt die Berechnung)"></td></tr>`;
+  }).join("");
+  const liste = `<section class="nk-teil"><h5>BELEGLISTE <button type="button" class="ts-mini" data-nk="posten-neu">＋ KOSTENART</button></h5>
+    <table class="nk-tab"><tr><th>Kostenart</th><th>Status</th><th>Beleg · Gesamtbetrag</th><th class="z">Mieteranteil</th><th></th></tr>${zeilen}</table>
+    <div class="nk-posten-neu" hidden><select class="nk-art">${Object.entries(NK_ARTEN).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
+      <button type="button" data-nk="posten-anlegen">HINZUFÜGEN</button></div>
+    ${j.offen ? `<div class="vb-reihe"><button type="button" data-nk="anfragen-alle">ANFRAGEN FÜR ALLE FEHLENDEN VORBEREITEN</button></div>` : ""}</section>`;
+  const anfr = j.anfragen.filter((a) => a.status !== "erledigt");
+  const anfragen = anfr.length ? `<section class="nk-teil"><h5>ANFRAGEN AN VERSORGER</h5>${anfr.map(nkAnfrage).join("")}</section>` : "";
+  const abr = `<section class="nk-teil nk-abr"><h5>ABRECHNUNG</h5>
+    <div class="nk-summe"><div><small>KOSTEN MIETER</small><b>${imEuro(r.summe, 2)}</b></div><div><small>VORAUSZAHLUNGEN (${r.monate} × ${imEuro(r.vorauszahlung_bisher, 2)})</small>
+      <b>${imEuro(r.vorauszahlungen, 2)}</b></div><div class="${r.ergebnis > 0 ? "nach" : "gut"}"><small>${esc(r.art.toUpperCase())}</small><b>${imEuro(Math.abs(r.ergebnis), 2)}</b></div>
+      ${r.vorschlag_vorauszahlung ? `<div><small>NEUE VORAUSZAHLUNG (VORSCHLAG)</small><b>${imEuro(r.vorschlag_vorauszahlung)}</b></div>` : ""}</div>
+    <label class="im-f nk-vz"><span>Tatsächlich gezahlte Vorauszahlungen (leer = ${r.monate} × Monatsbetrag)</span><input type="number" step="0.01" data-nkvz value="${j.vorauszahlungen_manuell ?? ""}"></label>
+    ${nkAbrAktionen(j)}<div class="nk-pdf"></div></section>`;
+  return `${kopf}${vorschlaege}${liste}${anfragen}${abr}${nkVersorger(o)}${nkProtokoll()}`;
+}
+function nkAbrAktionen(j) {
+  const m = imObjekt()?.mieter || {};
+  if (["sammeln", "anfragen"].includes(j.status)) return `<p class="ts-hinweis">Der Entwurf entsteht automatisch, sobald alle Belege da sind.${j.offen ? "" : ""}</p>
+    <div class="vb-reihe"><button type="button" data-nk="entwurf">ENTWURF TROTZDEM ERSTELLEN</button></div>`;
+  if (["vollstaendig", "entwurf"].includes(j.status)) return `<div class="vb-reihe"><button type="button" data-nk="entwurf">ENTWURF NEU ERSTELLEN</button>
+    ${j.entwurf ? `<button type="button" class="primary" data-nk="billigen">ABRECHNUNG BILLIGEN</button>` : ""}</div>
+    ${j.entwurf ? `<p class="ts-hinweis">Billigen erzeugt das endgültige PDF und legt es im Nebenkosten-Ordner der Immobilie ab.</p>` : ""}`;
+  if (j.status === "gebilligt") return `<div class="nk-versand"><label class="im-f"><span>Mail des Mieters</span><input type="email" class="nk-mail" value="${esc(/@/.test(m.kontakt || "") ? m.kontakt : "")}"></label>
+      <button type="button" class="primary" data-nk="mieter-mail">PER MAIL SENDEN (MIT BELEGEN)</button><button type="button" data-nk="mieter-brief">ALS BRIEF DRUCKEN</button>
+      <label class="im-f"><span>Zugegangen am</span><input type="date" class="nk-zugang" value="${new Date().toISOString().slice(0, 10)}"></label>
+      <button type="button" data-nk="zugang">ZUGANG VERMERKEN</button></div>${j.final?.archiv ? `<p class="ts-hinweis">Abgelegt: ${esc(j.final.archiv)}</p>` : ""}`;
+  return `<p class="ts-hinweis">Zugegangen am <b>${imDatum(j.zugang)}</b>${j.final?.archiv ? ` · abgelegt: ${esc(j.final.archiv)}` : ""}. Zahlungsfrist steht unter „Fristen“.</p>`;
+}
+function nkVorschlag(v) {
+  const q = v.quelle || {};
+  return `<div class="nk-vor" data-v="${esc(v.id)}"><div class="nk-vor-kopf"><b>${esc(v.original || "Beleg")}</b>
+      <span>${q.art === "mail" ? `Mail · ${esc((q.von || "").replace(/<.*>/, "").trim())} · „${esc(q.betreff || "")}“` : q.art === "ordner" ? "liegt im Nebenkosten-Ordner" : "hochgeladen"}</span>
+      <button type="button" data-nk="ansehen" data-v="${esc(v.id)}">ANSEHEN</button></div>
+    <div class="nk-vor-felder">
+      <label class="im-f"><span>Kostenart</span><select data-vf="kostenart">${Object.entries(NK_ARTEN).map(([k, n]) => `<option value="${k}" ${k === v.kostenart ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+      <label class="im-f"><span>Jahr</span><input type="number" data-vf="jahr" value="${v.jahr}"></label>
+      <label class="im-f"><span>Gesamtbetrag €</span><input type="number" step="0.01" data-vf="betrag" value="${v.betrag ?? ""}"></label>
+      <label class="im-f"><span>Zeitraum von</span><input type="date" data-vf="von" value="${esc(v.von || "")}"></label>
+      <label class="im-f"><span>bis</span><input type="date" data-vf="bis" value="${esc(v.bis || "")}"></label>
+      <label class="im-f nk-breit"><span>Ordner im DATENARCHIV${v.ordner_neu ? " – wird angelegt" : ""}</span><input data-vf="ordner" value="${esc(v.ordner || "")}" placeholder="Ordner der Immobilie unter „Bearbeiten“ eintragen"></label>
+      <label class="im-f nk-breit"><span>Dateiname</span><input data-vf="dateiname" value="${esc(v.dateiname || "")}"></label></div>
+    ${(v.gruende || []).length ? `<p class="nk-hinweis">Erkannt: ${esc(v.gruende.join(", "))}</p>` : ""}
+    <div class="vb-reihe"><button type="button" class="primary" data-nk="ablegen" data-v="${esc(v.id)}">ABLEGEN &amp; ZUORDNEN</button>
+      <button type="button" data-nk="verwerfen" data-v="${esc(v.id)}">KEIN NEBENKOSTENBELEG</button></div></div>`;
+}
+function nkAnfrage(a) {
+  const st = { entwurf: "ZUR BILLIGUNG", gebilligt: "BRIEF DRUCKEN & VERSCHICKEN", versendet: `VERSENDET ${imDatum(a.versendet)}` }[a.status] || a.status.toUpperCase();
+  const edit = a.status === "entwurf";
+  return `<div class="nk-anf ${a.status}" data-a="${esc(a.id)}"><div class="nk-vor-kopf"><b>${esc(a.bezeichnung)}${a.art === "erinnerung" ? " · ERINNERUNG" : ""}</b><span class="nk-chip ${a.status === "entwurf" ? "gelb" : a.status === "versendet" ? "gruen" : ""}">${st}</span></div>
+    ${edit ? `<div class="nk-vor-felder">
+      <label class="im-f"><span>Weg</span><select data-af="weg"><option value="mail" ${a.weg === "mail" ? "selected" : ""}>Mail</option><option value="brief" ${a.weg === "brief" ? "selected" : ""}>Brief</option></select></label>
+      <label class="im-f"><span>Empfänger</span><input data-af="empfaenger" value="${esc(a.empfaenger || "")}"></label>
+      <label class="im-f"><span>Mail</span><input data-af="email" value="${esc(a.email || "")}"></label>
+      <label class="im-f"><span>Anschrift (Zeilen mit ; trennen)</span><input data-af="anschrift" value="${esc(a.anschrift || "")}"></label>
+      <label class="im-f nk-breit"><span>Betreff</span><input data-af="betreff" value="${esc(a.betreff)}"></label>
+      <label class="im-f nk-breit"><span>Text</span><textarea data-af="text" rows="7">${esc(a.text)}</textarea></label></div>
+      <div class="vb-reihe"><button type="button" class="primary" data-nk="anf-billigen" data-a="${esc(a.id)}">BILLIGEN &amp; ${a.weg === "mail" ? "SENDEN" : "DRUCKEN"}</button>
+        <button type="button" data-nk="anf-weg" data-a="${esc(a.id)}">VERWERFEN</button></div>`
+    : a.status === "gebilligt" ? `<div class="vb-reihe"><button type="button" class="primary" data-nk="anf-verschickt" data-a="${esc(a.id)}">VERSCHICKT</button></div>` : ""}</div>`;
+}
+function nkVersorger(o) {
+  const v = o?.versorger || [];
+  const zeile = (x = {}) => `<tr><td><select data-vs="kostenart">${Object.entries(NK_ARTEN).map(([k, n]) => `<option value="${k}" ${k === x.kostenart ? "selected" : ""}>${n}</option>`).join("")}</select></td>
+    <td><input data-vs="name" value="${esc(x.name || "")}" placeholder="z. B. Stadtwerke"></td><td><input data-vs="email" value="${esc(x.email || "")}" placeholder="Mail für Anfragen"></td>
+    <td><input data-vs="anschrift" value="${esc(x.anschrift || "")}" placeholder="Straße; PLZ Ort"></td><td><input data-vs="kundennummer" value="${esc(x.kundennummer || "")}"></td>
+    <td><button type="button" class="nk-x" data-nk="vs-weg">✕</button></td></tr>`;
+  return `<details class="nk-teil nk-vs" ${v.length ? "" : "open"}><summary><h5>VERSORGER &amp; BEHÖRDEN <em>${v.length}</em></h5></summary>
+    <p class="ts-hinweis">Für Anfragen und zum Erkennen eingehender Belege (Name, Kundennummer). Bleibt lokal.</p>
+    <table class="nk-tab nk-vs-tab"><tr><th>Kostenart</th><th>Name</th><th>Mail</th><th>Anschrift</th><th>Kundennr.</th><th></th></tr>${v.map(zeile).join("")}</table>
+    <template class="nk-vs-vorlage">${zeile()}</template>
+    <div class="vb-reihe"><button type="button" data-nk="vs-neu">＋ VERSORGER</button><button type="button" class="primary" data-nk="vs-speichern">SPEICHERN</button></div></details>`;
+}
+function nkProtokoll() {
+  const p = (NK.u.protokoll || []).slice().reverse();
+  return p.length ? `<details class="nk-teil"><summary><h5>VERLAUF</h5></summary>${p.map((x) => `<div class="im-zeile"><span>${esc(x.zeit.replace("T", " "))}</span><b>${esc(x.text)}</b></div>`).join("")}</details>` : "";
+}
+async function nkPdf(j) {
+  const box = NK.el?.querySelector(".nk-pdf"); if (!box) return;
+  try {
+    const r = await fetch(`/hestia-datei?objekt=${encodeURIComponent(NK.oid)}&jahr=${j.jahr}`, { headers: imH() }); if (!r.ok) throw 0;
+    if (NK.pdfUrl) URL.revokeObjectURL(NK.pdfUrl);
+    NK.pdfUrl = URL.createObjectURL(await r.blob());
+    box.innerHTML = `<iframe src="${NK.pdfUrl}#toolbar=1&view=FitH" title="Abrechnung"></iframe>`;
+  } catch (e) { box.innerHTML = ""; }
+}
+async function nkTun(aktion, daten, ok) {
+  nkMeldung("Einen Moment …");
+  try { const r = await nkPost(aktion, daten); await nkLaden(); nkMeldung(r.text || ok || "✓", "ok"); return r; }
+  catch (e) { nkMeldung("⚠ " + e.message, "fehler"); }
+}
+document.addEventListener("click", async (e) => {
+  if (!NK.el || !e.target.closest(".nk")) return;
+  const b = e.target.closest("[data-nk]"); if (!b) return;
+  const a = b.dataset.nk, base = { objekt: NK.oid, jahr: NK.jahr };
+  const vfeld = (id) => { const c = NK.el.querySelector(`.nk-vor[data-v="${id}"]`); return Object.fromEntries([...c.querySelectorAll("[data-vf]")].map((i) => [i.dataset.vf, i.value])); };
+  if (a === "zu") return nkZu();
+  if (a === "jahr") { NK.jahr = +b.dataset.jahr; return nkLaden(); }
+  if (a === "anlegen") { const y = +NK.el.querySelector(".nk-neu-jahr").value; NK.jahr = y; return nkTun("jahr", { objekt: NK.oid, jahr: y }); }
+  if (a === "pruefen") return nkTun("pruefen", {});
+  if (a === "hoch") return NK.el.querySelector(".nk-datei").click();
+  if (a === "posten-neu") { const f = NK.el.querySelector(".nk-posten-neu"); f.hidden = !f.hidden; return; }
+  if (a === "posten-anlegen") return nkTun("posten", { ...base, posten: "neu", daten: { kostenart: NK.el.querySelector(".nk-art").value } });
+  if (a === "entfaellt") { const p = NK.u.jahre.find((j) => j.jahr === NK.jahr).posten.find((x) => x.id === b.dataset.p);
+    return nkTun("posten", { ...base, posten: p.id, daten: { status: p.status === "entfaellt" ? (p.belege.length ? "vorhanden" : "fehlt") : "entfaellt" } }); }
+  if (a === "verteilung") { const p = NK.u.jahre.find((j) => j.jahr === NK.jahr).posten.find((x) => x.id === b.dataset.p);
+    return nkTun("posten", { ...base, posten: p.id, daten: { verteilung: p.verteilung === "voll" ? "zeitanteil" : "voll" } }); }
+  if (a === "anfrage") return nkTun("anfragen", base).then(() => {});
+  if (a === "anfragen-alle") return nkTun("anfragen", base);
+  if (a === "ansehen") { try { const r = await fetch(`/hestia-datei?vorschlag=${encodeURIComponent(b.dataset.v)}`, { headers: imH() }); if (!r.ok) throw 0;
+    window.open(URL.createObjectURL(await r.blob()), "_blank"); } catch (err) { nkMeldung("Datei nicht verfügbar", "fehler"); } return; }
+  if (a === "ablegen") return nkTun("bestaetigen", { id: b.dataset.v, aenderung: vfeld(b.dataset.v) });
+  if (a === "verwerfen") return nkTun("verwerfen", { id: b.dataset.v }, "✓ Verworfen");
+  if (a === "anf-billigen" || a === "anf-weg") {
+    const c = NK.el.querySelector(`.nk-anf[data-a="${b.dataset.a}"]`);
+    const daten = Object.fromEntries([...c.querySelectorAll("[data-af]")].map((i) => [i.dataset.af, i.value]));
+    if (a === "anf-weg") return nkTun("anfrage_verwerfen", { id: b.dataset.a }, "✓ Verworfen");
+    try { await nkPost("anfrage_aendern", { id: b.dataset.a, daten }); } catch (err) { return nkMeldung("⚠ " + err.message, "fehler"); }
+    return nkTun("anfrage_billigen", { id: b.dataset.a });
+  }
+  if (a === "anf-verschickt") return nkTun("anfrage_verschickt", { id: b.dataset.a });
+  if (a === "entwurf") return nkTun("entwurf", base);
+  if (a === "billigen") {
+    if (b.dataset.sicher !== "1") { b.dataset.sicher = "1"; b.textContent = "WIRKLICH BILLIGEN?"; return; }
+    return nkTun("billigen", base);
+  }
+  if (a === "mieter-mail") {
+    if (b.dataset.sicher !== "1") { b.dataset.sicher = "1"; b.textContent = "JETZT AN DEN MIETER SENDEN?"; return; }
+    return nkTun("mieter", { ...base, weg: "mail", email: NK.el.querySelector(".nk-mail").value });
+  }
+  if (a === "mieter-brief") return nkTun("mieter", { ...base, weg: "brief" });
+  if (a === "zugang") return nkTun("zugang", { ...base, datum: NK.el.querySelector(".nk-zugang").value });
+  if (a === "vs-neu") { const t = NK.el.querySelector(".nk-vs-vorlage"); NK.el.querySelector(".nk-vs-tab tbody, .nk-vs-tab").insertAdjacentHTML("beforeend", t.innerHTML); return; }
+  if (a === "vs-weg") { b.closest("tr").remove(); return; }
+  if (a === "vs-speichern") {
+    const liste = [...NK.el.querySelectorAll(".nk-vs-tab tr")].filter((tr) => tr.querySelector("[data-vs]"))
+      .map((tr) => Object.fromEntries([...tr.querySelectorAll("[data-vs]")].map((i) => [i.dataset.vs, i.value.trim()])));
+    try { const r = await nkPost("versorger", { objekt: NK.oid, liste }); IM.d.objekte = IM.d.objekte.map((x) => x.id === NK.oid ? r.objekt : x); await nkLaden(); nkMeldung("✓ Versorger gespeichert", "ok"); }
+    catch (err) { nkMeldung("⚠ " + err.message, "fehler"); }
+  }
+});
+document.addEventListener("change", async (e) => {
+  if (!NK.el) return;
+  const t = e.target, base = { objekt: NK.oid, jahr: NK.jahr };
+  if (t.matches(".nk-datei") && t.files.length) {
+    let n = 0;
+    for (const f of [...t.files].slice(0, 10)) {
+      nkMeldung(`Lese Beleg ${++n} lokal …`);
+      try { const r = await fetch("/hestia-beleg", { method: "POST", body: f, headers: { "x-dateiname": encodeURIComponent(f.name), ...imH() } });
+        const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.detail || r.status); }
+      catch (err) { nkMeldung("⚠ " + err.message, "fehler"); }
+    }
+    t.value = ""; await nkLaden(); nkMeldung("✓ Erkannt – bitte die Ablage bestätigen", "ok"); return;
+  }
+  if (t.matches("[data-nkb]")) return nkTun("posten", { ...base, posten: t.dataset.nkb, daten: { beleg_index: +t.dataset.i, beleg_betrag: t.value } });
+  if (t.matches("[data-nkm]")) return nkTun("posten", { ...base, posten: t.dataset.nkm, daten: { betrag_manuell: t.value } });
+  if (t.matches("[data-nkvz]")) { const p = NK.u.jahre.find((j) => j.jahr === NK.jahr)?.posten[0]; if (p) return nkTun("posten", { ...base, posten: p.id, daten: { vorauszahlungen_manuell: t.value } }); }
+});
+document.addEventListener("keydown", (e) => { if (NK.el && e.key === "Escape" && !inFeld()) { e.stopImmediatePropagation(); nkZu(); } }, true);
+const _handleHestia = handle;
+handle = function (ev) {
+  if (ev.type === "hestia") {
+    if (ev.ereignis === "zeigen") { nkOeffnen(ev.objekt, ev.jahr); return; }
+    if (NK.el) nkLaden(); else if (IM.el && imObjekt()) nkKurz(imObjekt().id);
+    if (ev.ereignis === "vorschlag" && !NK.el) toast("HESTIA: neuer Beleg – bitte die Ablage bestätigen");
+    return;
+  }
+  _handleHestia(ev);
+};
+
+// ---------- Einstellungen: Immobilien-Postfach (Daten & Postfächer), Absender und Bankverbindung (Immobilien) ----------
+async function nkEinstAufbauen() {
+  const box = $("einst-vb"); if (!box) return;
+  let u; try { u = await fdGet("/hestia"); } catch (e) { return; }
+  const p = u.postfach || {};
+  const inhalt = `<p class="vb-hilfe">Ein zusätzlicher iCloud-Mail-Alias nur für Versorger, Behörden und Versicherer der Immobilien
+      (icloud.com → Mail → Einstellungen → E-Mail-Adresse hinzufügen). Mails dorthin landen im selben Postfach; HESTIA prüft sie,
+      erkennt Belege lokal und legt sie erst nach deiner Bestätigung ab. Der Werbefilter lässt sie in Ruhe.</p>
+    <div class="vb-feld"><label>Alias-Adresse</label><input type="email" data-hp="alias" value="${esc(p.alias || "")}" placeholder="immobilien.…@icloud.com"></div>
+    <div class="vb-feld"><label>Prüfen alle … Minuten</label><input type="number" min="5" max="240" data-hp="intervall_min" value="${p.intervall_min || 15}"></div>
+    <div class="vb-reihe"><button type="button" class="primary" data-hp-a="speichern">SPEICHERN</button><button type="button" data-hp-a="pruefen" ${p.alias ? "" : "disabled"}>JETZT PRÜFEN</button></div>
+    ${p.letzter_lauf ? `<p class="vb-hilfe">Zuletzt geprüft: ${esc(p.letzter_lauf.replace("T", " "))}</p>` : ""}`;
+  const zeile = box.querySelector('details[data-id="hestia-postfach"]');
+  const html = vbZeile("hestia-postfach", "Immobilien-Postfach (HESTIA)", p.alias ? { ok: true, text: "✓ " + p.alias } : { text: "– nicht eingerichtet" }, inhalt, zeile?.open);
+  if (zeile) zeile.outerHTML = html; else box.insertAdjacentHTML("beforeend", html);
+  const s = document.querySelector('#einst section[data-reiter="immobilien"]');
+  if (s && !s.querySelector(".nk-einst")) s.insertAdjacentHTML("beforeend", `<details class="vb-zeile nk-einst"><summary><span>Absender &amp; Bankverbindung für Abrechnungen</span>
+      <em>${u.bank ? "✓ Bankverbindung hinterlegt" : "– keine Bankverbindung"}</em></summary><div class="vb-inhalt">
+      <p class="vb-hilfe">Steht im Briefkopf und bei einer Nachzahlung in der Abrechnung. Die IBAN liegt im Schlüsselbund und wird nur in die
+        PDFs auf dem Mac geschrieben – nie an Claude gegeben.</p>
+      <div class="vb-feld"><label>Absenderanschrift (Zeilen mit ; trennen)</label><input data-hb="anschrift" value="${esc(u.absender_anschrift || "")}" placeholder="Straße Nr; PLZ Ort"></div>
+      <div class="vb-feld"><label>Kontoinhaber</label><input data-hb="inhaber" placeholder="z. B. Name der GbR"></div>
+      <div class="vb-feld"><label>IBAN</label><input type="password" data-hb="iban" autocomplete="off" placeholder="${u.bank ? "gespeichert – zum Ändern neu eingeben" : "DE…"}"></div>
+      <div class="vb-reihe"><button type="button" class="primary" data-hb-a="speichern">SPEICHERN</button></div><div class="vb-status"></div></div></details>`);
+  if (typeof einstFiltern === "function") einstFiltern();
+}
+EINST_ZEILEN["hestia-postfach"] = "daten";
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-hp-a],[data-hb-a]"); if (!b) return;
+  const zeile = b.closest(".vb-zeile"), st = zeile.querySelector(".vb-status");
+  const melde = (t, art = "") => { st.textContent = t; st.className = "vb-status " + art; };
+  b.disabled = true; melde("Einen Moment …");
+  try {
+    let r;
+    if (b.dataset.hpA === "speichern") r = await nkPost("postfach", { alias: zeile.querySelector('[data-hp="alias"]').value, intervall_min: +zeile.querySelector('[data-hp="intervall_min"]').value });
+    else if (b.dataset.hpA === "pruefen") r = await nkPost("pruefen", {});
+    else {
+      const w = (k) => zeile.querySelector(`[data-hb="${k}"]`).value;
+      r = await nkPost("absender", { anschrift: w("anschrift") });
+      if (w("iban") || w("inhaber")) r = await nkPost("bank", { iban: w("iban"), inhaber: w("inhaber") });
+    }
+    melde(r.text || "✓", "ok"); if (b.dataset.hpA) setTimeout(nkEinstAufbauen, 900);
+  } catch (err) { melde(err.message, "fehler"); }
+  b.disabled = false;
+});
+const _vbAufbauenHestia = vbAufbauen;
+vbAufbauen = async function (...a) { await _vbAufbauenHestia(...a); nkEinstAufbauen(); };
+const _imEinstHestia = imEinstAufbauen;
+imEinstAufbauen = async function () { await _imEinstHestia(); nkEinstAufbauen(); };
+
+// =====================================================================
+//  HESTIA – GRUNDRISS → 3D: Hochladen, Erkennen (Claude, nur mit Freigabe), Editor (Wände, Türen, Fenster, Räume,
+//  Maßstab), 3D-Puppenhaus (Three.js, lazy), Flächenabgleich mit der Wohnfläche.
+// =====================================================================
+const GR = { el: null, oid: null, plaene: [], i: 0, wz: "auswahl", sel: null, m3d: null, bilder: {}, timer: 0, zug: null, raum: [], bildAn: true, abgleich: null };
+let gr3dLaden = null;
+function gr3dLib() {
+  if (window.Grundriss3D) return Promise.resolve();
+  if (!gr3dLaden) gr3dLaden = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "grundriss3d.bundle.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+  return gr3dLaden;
+}
+const grPlan = () => GR.plaene[GR.i];
+const grLen = (w) => Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+const grFlaechePx = (poly) => Math.abs(poly.reduce((a, p, i) => { const q = poly[(i + 1) % poly.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
+function grFlaechen(p) {
+  const s = p.massstab; let summe = 0;
+  for (const r of p.raeume || []) { r.flaeche = s ? +(grFlaechePx(r.polygon) * s * s).toFixed(2) : null; summe += r.flaeche_plan || r.flaeche || 0; }
+  p.flaeche_summe = summe ? +summe.toFixed(1) : null;
+}
+async function grOeffnen(oid) {
+  GR.oid = oid; GR.i = 0; GR.sel = null; GR.wz = "auswahl";
+  if (!GR.el) {
+    GR.el = document.createElement("div"); GR.el.className = "im-form gr";
+    GR.el.innerHTML = `<div class="im-form-box gr-box"><header><b>${stabLogo("IMMO", "klein")} GRUNDRISS → 3D</b><nav class="gr-ebenen"></nav>
+      <button type="button" data-gr="hoch">⇪ GRUNDRISS</button><input type="file" accept=".pdf,image/*,.heic" hidden class="gr-datei">
+      <button type="button" class="vt-zu" data-gr="zu">✕</button></header>
+      <div class="gr-inhalt"><section class="gr-plan"><div class="gr-werkzeuge"></div><div class="gr-svg-box"></div><div class="gr-freigabe" hidden></div></section>
+        <section class="gr-3d"><div class="gr-3d-box"><p class="ts-hinweis">3D-Modell wird geladen …</p></div>
+          <div class="gr-3d-knoepfe"><button type="button" data-gr="ansicht">⟲ ANSICHT</button><button type="button" data-gr="halb">HALBHOCH</button><span class="gr-3d-ebenen"></span></div></section>
+        <aside class="gr-seite"></aside></div>
+      <footer><span class="im-form-status gr-status"></span><button type="button" class="primary" data-gr="speichern">SPEICHERN</button></footer></div>`;
+    (IM.el || document.body).appendChild(GR.el); requestAnimationFrame(() => GR.el.classList.add("an"));
+  }
+  await grLaden();
+}
+function grZu() { const el = GR.el; GR.el = null; try { GR.m3d?.entfernen(); } catch (e) {} GR.m3d = null; Object.values(GR.bilder).forEach((u) => URL.revokeObjectURL(u)); GR.bilder = {}; if (el) { el.classList.remove("an"); setTimeout(() => el.remove(), 300); } }
+function grMeldung(t, art = "") { const s = GR.el?.querySelector(".gr-status"); if (s) { s.textContent = t; s.className = "im-form-status gr-status " + art; } }
+async function grLaden() {
+  try { const r = await fdGet(`/grundriss/${encodeURIComponent(GR.oid)}`); GR.plaene = r.plaene; GR.abgleich = r.abgleich; }
+  catch (e) { return grMeldung("⚠ " + e.message, "fehler"); }
+  GR.i = Math.min(GR.i, Math.max(0, GR.plaene.length - 1));
+  grAlles();
+}
+async function grBild(p) {
+  if (GR.bilder[p.id]) return GR.bilder[p.id];
+  try { const r = await fetch(`/grundriss/${GR.oid}/${p.id}/bild`, { headers: imH() }); if (!r.ok) throw 0; GR.bilder[p.id] = URL.createObjectURL(await r.blob()); } catch (e) { GR.bilder[p.id] = ""; }
+  return GR.bilder[p.id];
+}
+function grAlles() { grKopf(); grWerkzeuge(); grZeichnen(); grSeite(); gr3d(); }
+function grKopf() {
+  GR.el.querySelector(".gr-ebenen").innerHTML = GR.plaene.map((p, i) => `<button type="button" data-gr="ebene" data-i="${i}" class="${i === GR.i ? "an" : ""}">${esc(p.stockwerk || "Ebene " + (i + 1))}</button>`).join("");
+  GR.el.querySelector(".gr-3d-ebenen").innerHTML = GR.plaene.length > 1 ? `<button type="button" data-gr="3d-alle">ALLE EBENEN</button>${GR.plaene.map((p, i) => `<button type="button" data-gr="3d-ebene" data-i="${i}">${esc(p.stockwerk)}</button>`).join("")}` : "";
+}
+function grWerkzeuge() {
+  const p = grPlan(), w = (k, t, tip) => `<button type="button" data-gr="wz" data-wz="${k}" class="${GR.wz === k ? "an" : ""}" title="${tip}">${t}</button>`;
+  GR.el.querySelector(".gr-werkzeuge").innerHTML = !p ? "" : `${w("auswahl", "↖ AUSWAHL", "Wandenden ziehen, Raum anklicken")}${w("wand", "▬ WAND", "Ziehen zeichnet eine Wand (rastet an Ecken und rechten Winkeln ein)")}
+    ${w("tuer", "◫ TÜR", "Auf eine Wand klicken")}${w("fenster", "▭ FENSTER", "Auf eine Wand klicken")}${w("raum", "⬠ RAUM", "Ecken anklicken, Doppelklick schließt")}
+    ${w("loeschen", "✕ LÖSCHEN", "Element anklicken")}${w("massstab", "↔ MASSSTAB", "Wand anklicken und echte Länge eingeben")}
+    <span class="gr-trenner"></span><button type="button" data-gr="bild" class="${GR.bildAn ? "an" : ""}">BILD</button>
+    <button type="button" class="gr-ki" data-gr="erkennen">✦ ERKENNEN</button>`;
+}
+async function grZeichnen() {
+  const box = GR.el.querySelector(".gr-svg-box"), p = grPlan();
+  if (!p) { box.innerHTML = `<div class="gr-leer"><p>Noch kein Grundriss. Lade einen Plan hoch (PDF, Foto oder HEIC) – je Stockwerk einen.</p>
+      <button type="button" class="primary" data-gr="hoch">⇪ GRUNDRISS HOCHLADEN</button></div>`; return; }
+  const url = await grBild(p);
+  const b = p.bild_b || 1000, h = p.bild_h || 700, d = Math.max(b, h) / 300;
+  const s = p.massstab;
+  const wand = (w, i) => {
+    const sel = GR.sel?.art === "wand" && GR.sel.i === i;
+    return `<line class="gr-w ${w.aussen ? "aussen" : ""} ${sel ? "sel" : ""}" data-w="${i}" x1="${w.x1}" y1="${w.y1}" x2="${w.x2}" y2="${w.y2}" stroke-width="${(w.aussen ? 3.2 : 1.8) * d}"/>`
+      + `<line class="gr-w-treffer" data-w="${i}" x1="${w.x1}" y1="${w.y1}" x2="${w.x2}" y2="${w.y2}" stroke-width="${10 * d}"/>`;
+  };
+  const oeff = (o, k) => {
+    const w = p.waende[o.wand]; if (!w) return "";
+    const L = grLen(w), bpx = s ? (o.breite_m || 0.9) / s : (o.typ === "tuer" ? 0.9 : 1.2) / 0.02, t0 = o.pos - bpx / 2 / L, t1 = o.pos + bpx / 2 / L;
+    const P = (t) => [w.x1 + (w.x2 - w.x1) * t, w.y1 + (w.y2 - w.y1) * t];
+    const [a, e] = [P(Math.max(0, t0)), P(Math.min(1, t1))];
+    return `<line class="gr-o ${o.typ}" data-o="${k}" x1="${a[0]}" y1="${a[1]}" x2="${e[0]}" y2="${e[1]}" stroke-width="${5 * d}"/>`;
+  };
+  const raum = (r, k) => {
+    const c = r.polygon.reduce((a, q) => [a[0] + q[0] / r.polygon.length, a[1] + q[1] / r.polygon.length], [0, 0]);
+    const f = r.flaeche_plan || r.flaeche, sel = GR.sel?.art === "raum" && GR.sel.i === k;
+    return `<g class="gr-r ${sel ? "sel" : ""}" data-r="${k}"><polygon points="${r.polygon.map((q) => q.join(",")).join(" ")}"/>
+      <text x="${c[0]}" y="${c[1]}" font-size="${11 * d}">${esc(r.name)}</text>${f ? `<text x="${c[0]}" y="${c[1] + 13 * d}" font-size="${9 * d}" class="m2">${String(f.toFixed(1)).replace(".", ",")} m²</text>` : ""}</g>`;
+  };
+  const griffe = GR.wz === "auswahl" ? p.waende.map((w, i) => `<circle class="gr-g" data-w="${i}" data-e="1" cx="${w.x1}" cy="${w.y1}" r="${4 * d}"/><circle class="gr-g" data-w="${i}" data-e="2" cx="${w.x2}" cy="${w.y2}" r="${4 * d}"/>`).join("") : "";
+  const raumNeu = GR.raum.length ? `<polyline class="gr-raum-neu" points="${GR.raum.map((q) => q.join(",")).join(" ")}" stroke-width="${2 * d}"/>` : "";
+  box.innerHTML = `<svg class="gr-svg wz-${GR.wz}" viewBox="0 0 ${b} ${h}" preserveAspectRatio="xMidYMid meet">
+    ${url && GR.bildAn ? `<image href="${url}" x="0" y="0" width="${b}" height="${h}" opacity=".55"/>` : `<rect width="${b}" height="${h}" class="gr-papier"/>`}
+    <g>${(p.raeume || []).map(raum).join("")}</g><g>${p.waende.map(wand).join("")}</g><g>${(p.oeffnungen || []).map(oeff).join("")}</g>${raumNeu}
+    <line class="gr-vorschau" x1="0" y1="0" x2="0" y2="0" stroke-width="${2.5 * d}" visibility="hidden"/>${griffe}</svg>`;
+}
+function grSeite() {
+  const p = grPlan(), box = GR.el.querySelector(".gr-seite");
+  if (!p) { box.innerHTML = ""; return; }
+  grFlaechen(p);
+  const o = imObjekt(), wf = o?.wohnflaeche;
+  const summe = GR.plaene.reduce((a, q) => { grFlaechen(q); return a + (q.flaeche_summe || 0); }, 0);
+  const abw = summe && wf ? (summe / wf - 1) * 100 : null;
+  let sel = "";
+  if (GR.sel?.art === "raum") {
+    const r = p.raeume[GR.sel.i];
+    sel = `<div class="gr-sel"><h6>RAUM</h6><label class="im-f"><span>Name</span><input data-grf="raum-name" value="${esc(r.name)}"></label>
+      <label class="im-f"><span>Fläche laut Plan m² (optional)</span><input type="number" step="0.01" data-grf="raum-plan" value="${r.flaeche_plan ?? ""}"></label>
+      <p class="ts-hinweis">Aus dem Modell: ${r.flaeche != null ? String(r.flaeche).replace(".", ",") + " m²" : "– (Maßstab fehlt)"}</p></div>`;
+  } else if (GR.sel?.art === "wand") {
+    const w = p.waende[GR.sel.i];
+    sel = `<div class="gr-sel"><h6>WAND</h6><p class="ts-hinweis">Länge: ${p.massstab ? (grLen(w) * p.massstab).toFixed(2).replace(".", ",") + " m" : "– (Maßstab fehlt)"}</p>
+      <label class="gr-check"><input type="checkbox" data-grf="wand-aussen" ${w.aussen ? "checked" : ""}> Außenwand (36 cm)</label></div>`;
+  } else if (GR.sel?.art === "massstab") {
+    const w = p.waende[GR.sel.i];
+    sel = `<div class="gr-sel"><h6>MASSSTAB</h6><label class="im-f"><span>Echte Länge dieser Wand in m</span><input type="number" step="0.01" data-grf="massstab-m" autofocus
+      value="${p.massstab ? (grLen(w) * p.massstab).toFixed(2) : ""}"></label><button type="button" data-gr="massstab-setzen">ÜBERNEHMEN</button></div>`;
+  }
+  box.innerHTML = `<div class="gr-info"><label class="im-f"><span>Stockwerk</span><input data-grf="stockwerk" value="${esc(p.stockwerk || "")}"></label>
+      <label class="im-f"><span>Raumhöhe m</span><input type="number" step="0.05" data-grf="wandhoehe" value="${p.wandhoehe || 2.5}"></label>
+      <p class="gr-mass ${p.massstab ? "" : "warn"}">${p.massstab ? `Maßstab: 1 m = ${(1 / p.massstab).toFixed(1)} Bildpunkte${p.masse?.length ? ` (aus ${p.masse.length} Maßketten)` : ""}` : "⚠ Maßstab fehlt – Werkzeug „MASSSTAB“: Wand anklicken, echte Länge eingeben."}</p></div>
+    ${sel}
+    <div class="gr-raeume"><h6>RÄUME ${esc(p.stockwerk || "")}</h6>${(p.raeume || []).map((r, k) => `<button type="button" data-gr="raum-sel" data-i="${k}" class="${GR.sel?.art === "raum" && GR.sel.i === k ? "an" : ""}"><span>${esc(r.name)}</span><b>${(r.flaeche_plan || r.flaeche) != null ? String((r.flaeche_plan || r.flaeche).toFixed(1)).replace(".", ",") + " m²" : "–"}</b></button>`).join("") || `<p class="ts-hinweis">Keine Räume – „ERKENNEN“ oder Werkzeug „RAUM“.</p>`}</div>
+    <div class="gr-abgleich ${abw != null && Math.abs(abw) > 10 ? "warn" : ""}"><h6>FLÄCHENABGLEICH</h6>
+      <div class="im-zeile"><span>Summe Räume (alle Ebenen)</span><b>${summe ? summe.toFixed(1).replace(".", ",") + " m²" : "–"}</b></div>
+      <div class="im-zeile"><span>Wohnfläche laut Mietvertrag</span><b>${wf ? String(wf).replace(".", ",") + " m²" : "–"}</b></div>
+      ${abw != null ? `<div class="im-zeile"><span>Abweichung</span><b>${abw > 0 ? "+" : ""}${abw.toFixed(1).replace(".", ",")} %</b></div>
+        ${Math.abs(abw) > 10 ? `<p class="nk-hinweis">Mehr als 10 % Abweichung – für die Miete rechtlich relevant. Bitte Räume und Maßstab prüfen; die Wohnflächenverordnung zählt z. B. Dachschrägen und Balkone nur anteilig.</p>` : `<p class="ts-hinweis">Innerhalb von 10 % – unkritisch.</p>`}` : ""}</div>
+    <div class="vb-reihe"><button type="button" data-gr="ebene-weg">GRUNDRISS ENTFERNEN</button></div>`;
+}
+async function gr3d() {
+  const box = GR.el.querySelector(".gr-3d-box");
+  try { await gr3dLib(); } catch (e) { box.innerHTML = `<p class="ts-hinweis">3D-Ansicht konnte nicht geladen werden.</p>`; return; }
+  if (!GR.plaene.length) { try { GR.m3d?.entfernen(); } catch (e) {} GR.m3d = null; box.innerHTML = `<p class="ts-hinweis">Das 3D-Modell erscheint, sobald Wände da sind.</p>`; return; }
+  if (!GR.m3d) { box.innerHTML = ""; try { GR.m3d = window.Grundriss3D.erzeugen(box, GR.plaene); } catch (e) { box.innerHTML = `<p class="ts-hinweis">3D braucht WebGL.</p>`; } }
+  else GR.m3d.setzen(GR.plaene);
+}
+function grGeaendert(neu3d = true) {
+  grFlaechen(grPlan()); grZeichnen(); grSeite(); if (neu3d) GR.m3d?.setzen(GR.plaene);
+  clearTimeout(GR.timer); GR.timer = setTimeout(grSpeichern, 1500); grMeldung("Änderung – wird gespeichert …");
+}
+async function grSpeichern() {
+  const p = grPlan(); if (!p) return;
+  try { const r = await vbPost(`/grundriss/${GR.oid}/${p.id}/speichern`, { waende: p.waende, oeffnungen: p.oeffnungen, raeume: p.raeume, masse: p.masse || [],
+      massstab: p.massstab, wandhoehe: p.wandhoehe, stockwerk: p.stockwerk }); grMeldung("✓ Gespeichert", "ok"); return r; }
+  catch (e) { grMeldung("⚠ " + e.message, "fehler"); }
+}
+function grPunkt(ev) { const svg = GR.el.querySelector(".gr-svg"); const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const q = pt.matrixTransform(svg.getScreenCTM().inverse()); return [q.x, q.y]; }
+function grFang(pt, ohne = -1, ausgang = null) {
+  const p = grPlan(), d = Math.max(p.bild_b, p.bild_h) / 60;
+  for (const [i, w] of p.waende.entries()) { if (i === ohne) continue;
+    for (const q of [[w.x1, w.y1], [w.x2, w.y2]]) if (Math.hypot(q[0] - pt[0], q[1] - pt[1]) < d) return q.slice(); }
+  if (ausgang) {                                           // rechte Winkel bevorzugen
+    if (Math.abs(pt[0] - ausgang[0]) < d) pt[0] = ausgang[0];
+    if (Math.abs(pt[1] - ausgang[1]) < d) pt[1] = ausgang[1];
+  }
+  return pt;
+}
+function grNaechsteWand(pt) {
+  const p = grPlan(); let best = null;
+  p.waende.forEach((w, i) => { const dx = w.x2 - w.x1, dy = w.y2 - w.y1, l2 = dx * dx + dy * dy; if (!l2) return;
+    const t = Math.max(0, Math.min(1, ((pt[0] - w.x1) * dx + (pt[1] - w.y1) * dy) / l2)), dd = Math.hypot(w.x1 + t * dx - pt[0], w.y1 + t * dy - pt[1]);
+    if (!best || dd < best.d) best = { i, t, d: dd }; });
+  return best && best.d < Math.max(p.bild_b, p.bild_h) / 40 ? best : null;
+}
+function grWandWeg(i) {
+  const p = grPlan(); p.waende.splice(i, 1);
+  p.oeffnungen = (p.oeffnungen || []).filter((o) => o.wand !== i).map((o) => ({ ...o, wand: o.wand > i ? o.wand - 1 : o.wand }));
+}
+document.addEventListener("pointerdown", (e) => {
+  if (!GR.el || !e.target.closest(".gr-svg")) return;
+  const p = grPlan(); if (!p) return;
+  const pt = grPunkt(e), t = e.target;
+  if (GR.wz === "auswahl") {
+    if (t.matches(".gr-g")) { GR.zug = { w: +t.dataset.w, e: t.dataset.e }; t.setPointerCapture?.(e.pointerId); e.preventDefault(); return; }
+    if (t.closest(".gr-w-treffer,.gr-w")) { GR.sel = { art: "wand", i: +t.closest("[data-w]").dataset.w }; grZeichnen(); grSeite(); return; }
+    if (t.closest(".gr-r")) { GR.sel = { art: "raum", i: +t.closest(".gr-r").dataset.r }; grZeichnen(); grSeite(); return; }
+    GR.sel = null; grZeichnen(); grSeite(); return;
+  }
+  if (GR.wz === "wand") { const a = grFang(pt); GR.zug = { neu: a }; e.preventDefault(); return; }
+  if (GR.wz === "tuer" || GR.wz === "fenster") {
+    const n = grNaechsteWand(pt); if (!n) return grMeldung("Bitte direkt auf eine Wand klicken", "fehler");
+    (p.oeffnungen = p.oeffnungen || []).push({ typ: GR.wz, wand: n.i, pos: +n.t.toFixed(4), breite_m: GR.wz === "tuer" ? 0.9 : 1.2 });
+    return grGeaendert();
+  }
+  if (GR.wz === "loeschen") {
+    if (t.matches("[data-o]")) { p.oeffnungen.splice(+t.dataset.o, 1); return grGeaendert(); }
+    if (t.closest("[data-w]")) { grWandWeg(+t.closest("[data-w]").dataset.w); GR.sel = null; return grGeaendert(); }
+    if (t.closest(".gr-r")) { p.raeume.splice(+t.closest(".gr-r").dataset.r, 1); GR.sel = null; return grGeaendert(); }
+    return;
+  }
+  if (GR.wz === "massstab") {
+    const n = t.closest("[data-w]") ? { i: +t.closest("[data-w]").dataset.w } : grNaechsteWand(pt);
+    if (!n) return grMeldung("Bitte eine Wand anklicken, deren Länge du kennst", "fehler");
+    GR.sel = { art: "massstab", i: n.i }; grZeichnen(); grSeite(); GR.el.querySelector('[data-grf="massstab-m"]')?.focus(); return;
+  }
+  if (GR.wz === "raum") {
+    if (e.detail >= 2 && GR.raum.length >= 3) { (p.raeume = p.raeume || []).push({ name: "Raum " + (p.raeume.length + 1), polygon: GR.raum, flaeche_plan: null });
+      GR.raum = []; GR.sel = { art: "raum", i: p.raeume.length - 1 }; return grGeaendert(); }
+    GR.raum.push(grFang(pt)); grZeichnen();
+  }
+});
+document.addEventListener("pointermove", (e) => {
+  if (!GR.el || !GR.zug) return;
+  const p = grPlan(), pt = grPunkt(e);
+  if (GR.zug.neu) { const v = GR.el.querySelector(".gr-vorschau"), q = grFang(pt, -1, GR.zug.neu);
+    Object.entries({ x1: GR.zug.neu[0], y1: GR.zug.neu[1], x2: q[0], y2: q[1] }).forEach(([k, x]) => v.setAttribute(k, x)); v.setAttribute("visibility", "visible"); return; }
+  const w = p.waende[GR.zug.w], ander = GR.zug.e === "1" ? [w.x2, w.y2] : [w.x1, w.y1], q = grFang(pt, GR.zug.w, ander);
+  if (GR.zug.e === "1") { w.x1 = q[0]; w.y1 = q[1]; } else { w.x2 = q[0]; w.y2 = q[1]; }
+  const l = GR.el.querySelectorAll(`[data-w="${GR.zug.w}"]`);
+  l.forEach((x) => { if (x.tagName === "line") { x.setAttribute("x1", w.x1); x.setAttribute("y1", w.y1); x.setAttribute("x2", w.x2); x.setAttribute("y2", w.y2); }
+    else if (x.dataset.e === GR.zug.e) { x.setAttribute("cx", q[0]); x.setAttribute("cy", q[1]); } });
+});
+document.addEventListener("pointerup", (e) => {
+  if (!GR.el || !GR.zug) return;
+  const p = grPlan(), z = GR.zug; GR.zug = null;
+  if (z.neu) { const q = grFang(grPunkt(e), -1, z.neu);
+    if (Math.hypot(q[0] - z.neu[0], q[1] - z.neu[1]) > Math.max(p.bild_b, p.bild_h) / 80) { p.waende.push({ x1: z.neu[0], y1: z.neu[1], x2: q[0], y2: q[1], aussen: false }); return grGeaendert(); }
+    return grZeichnen(); }
+  grGeaendert();
+});
+document.addEventListener("keydown", (e) => {
+  if (!GR.el) return;
+  if (e.key === "Escape" && !inFeld()) { e.stopImmediatePropagation(); if (GR.raum.length) { GR.raum = []; grZeichnen(); } else grZu(); return; }
+  if (e.key === "Enter" && GR.wz === "raum" && GR.raum.length >= 3) { const p = grPlan(); (p.raeume = p.raeume || []).push({ name: "Raum " + (p.raeume.length + 1), polygon: GR.raum, flaeche_plan: null }); GR.raum = []; grGeaendert(); }
+  if ((e.key === "Delete" || e.key === "Backspace") && !inFeld() && GR.sel) { const p = grPlan();
+    if (GR.sel.art === "wand") grWandWeg(GR.sel.i); else if (GR.sel.art === "raum") p.raeume.splice(GR.sel.i, 1); GR.sel = null; grGeaendert(); }
+}, true);
+document.addEventListener("click", async (e) => {
+  if (!GR.el || !e.target.closest(".gr")) return;
+  const b = e.target.closest("[data-gr]"); if (!b) return;
+  const a = b.dataset.gr, p = grPlan();
+  if (a === "zu") { if (GR.timer) { clearTimeout(GR.timer); await grSpeichern(); } return grZu(); }
+  if (a === "hoch") return GR.el.querySelector(".gr-datei").click();
+  if (a === "ebene") { GR.i = +b.dataset.i; GR.sel = null; GR.raum = []; return grAlles(); }
+  if (a === "wz") { GR.wz = b.dataset.wz; GR.sel = null; GR.raum = []; grWerkzeuge(); return grZeichnen(); }
+  if (a === "bild") { GR.bildAn = !GR.bildAn; grWerkzeuge(); return grZeichnen(); }
+  if (a === "ansicht") return GR.m3d?.ansicht();
+  if (a === "halb") { b.classList.toggle("an"); return GR.m3d?.halbhoch(b.classList.contains("an")); }
+  if (a === "3d-alle") return GR.m3d?.ebene(null);
+  if (a === "3d-ebene") return GR.m3d?.ebene(+b.dataset.i);
+  if (a === "speichern") { clearTimeout(GR.timer); return grSpeichern(); }
+  if (a === "raum-sel") { GR.sel = { art: "raum", i: +b.dataset.i }; GR.wz = "auswahl"; grWerkzeuge(); grZeichnen(); return grSeite(); }
+  if (a === "massstab-setzen") {
+    const m = +GR.el.querySelector('[data-grf="massstab-m"]').value, w = p.waende[GR.sel.i];
+    if (!(m > 0.2)) return grMeldung("Bitte eine Länge in Metern eingeben", "fehler");
+    p.massstab = m / grLen(w); GR.sel = null; grMeldung(`✓ Maßstab gesetzt`, "ok"); return grGeaendert();
+  }
+  if (a === "ebene-weg") {
+    if (b.dataset.sicher !== "1") { b.dataset.sicher = "1"; b.textContent = "WIRKLICH ENTFERNEN?"; return; }
+    try { await vbPost(`/grundriss/${GR.oid}/${p.id}/entfernen`, {}); GR.i = 0; GR.sel = null; await grLaden(); } catch (err) { grMeldung("⚠ " + err.message, "fehler"); }
+    return;
+  }
+  if (a === "erkennen") {
+    const f = GR.el.querySelector(".gr-freigabe");
+    f.hidden = false;
+    f.innerHTML = `<h6>FREIGABE</h6><p>Zum Erkennen wird <b>nur das Bild dieses Grundrisses</b> an Claude gesendet (Anthropic) und dort ausgewertet –
+      keine Adresse, keine Namen, keine weiteren Daten. Kosten etwa 5–20 Cent. ${p.waende.length ? "Deine bisherigen Wände dieses Stockwerks werden dabei ersetzt." : ""}</p>
+      <div class="vb-reihe"><button type="button" class="primary" data-gr="freigeben">FREIGEBEN &amp; ERKENNEN</button><button type="button" data-gr="freigabe-ab">ABBRECHEN</button></div>`;
+    return;
+  }
+  if (a === "freigabe-ab") { GR.el.querySelector(".gr-freigabe").hidden = true; return; }
+  if (a === "freigeben") {
+    const f = GR.el.querySelector(".gr-freigabe"); f.innerHTML = `<p class="gr-laeuft"><i></i>Claude liest den Grundriss … (bis zu einer Minute)</p>`;
+    try { const r = await vbPost(`/grundriss/${GR.oid}/${p.id}/erkennen`, { freigabe: true });
+      GR.plaene[GR.i] = r.plan; f.hidden = true; grAlles();
+      grMeldung(r.text + (r.hinweis ? " · " + r.hinweis : "") + (r.kosten_eur ? ` · ${String(r.kosten_eur).replace(".", ",")} €` : ""), "ok"); }
+    catch (err) { f.hidden = true; grMeldung("⚠ " + err.message, "fehler"); }
+  }
+});
+document.addEventListener("change", async (e) => {
+  if (!GR.el) return;
+  const t = e.target, p = grPlan();
+  if (t.matches(".gr-datei") && t.files.length) {
+    const f = t.files[0]; t.value = ""; grMeldung("Grundriss wird übernommen …");
+    try { const r = await fetch(`/grundriss/${GR.oid}`, { method: "POST", body: f, headers: { "x-dateiname": encodeURIComponent(f.name), ...imH() } });
+      const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.detail || r.status);
+      GR.plaene.push(j.plan); GR.i = GR.plaene.length - 1; grAlles(); grMeldung(j.text, "ok"); }
+    catch (err) { grMeldung("⚠ " + err.message, "fehler"); }
+    return;
+  }
+  if (!t.matches("[data-grf]") || !p) return;
+  const k = t.dataset.grf;
+  if (k === "stockwerk") { p.stockwerk = t.value.trim().slice(0, 30) || p.stockwerk; grKopf(); }
+  if (k === "wandhoehe") p.wandhoehe = Math.max(1.8, Math.min(5, +t.value || 2.5));
+  if (k === "raum-name") p.raeume[GR.sel.i].name = t.value.trim().slice(0, 30) || "Raum";
+  if (k === "raum-plan") p.raeume[GR.sel.i].flaeche_plan = t.value === "" ? null : +t.value;
+  if (k === "wand-aussen") p.waende[GR.sel.i].aussen = t.checked;
+  grGeaendert();
 });

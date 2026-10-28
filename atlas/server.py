@@ -122,6 +122,19 @@ class Core:
         from atlas import tesla as _tesla
         self.tesla = _tesla.Tesla(self)
         self.tools.update({t.name: t for t in _tesla.tools(self)})
+        # Ford (FordConnect Query): nur Status – vorbereitet bis zur Übergabe
+        from atlas import ford as _ford
+        self.ford = _ford.Ford(self)
+        self.tools.update({t.name: t for t in _ford.tools(self)})
+        # HESTIA (IMMO): Immobilien, Mieter, Darlehen, Kennzahlen
+        from atlas import immobilien as _immo
+        self.immobilien = _immo.Immobilien(self)
+        self.tools.update({t.name: t for t in _immo.tools(self)})
+        from atlas.grundriss import Grundriss
+        self.grundriss = Grundriss(self)
+        from atlas.workflows import nebenkosten as _nk
+        self.nebenkosten = _nk.Nebenkosten(self)
+        self.tools.update({t.name: t for t in _nk.tools(self)})
         _wetter_mod.ORT = self.standort.wetter_ort
         _wetter_mod.ZIELE = self.standort.reiseziele
         # Stab: JARVIS als Chef des Stabes mit Sachgebietsagenten (Einstellungen → Stab)
@@ -695,6 +708,25 @@ async def tesla_status(wecken: int = 0, _: None = Depends(auth)):
         raise HTTPException(400, str(e))
 
 
+@app.post("/tesla/termine")
+async def tesla_termine(data: dict, _: None = Depends(auth)):
+    from atlas.tools import ToolError
+    try:
+        return await asyncio.to_thread(get_core().tesla.termine_setzen, str(data.get("tuev") or ""),
+                                       str(data.get("versicherung") or ""), str(data.get("versicherer") or ""))
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/tesla/position")
+async def tesla_position(_: None = Depends(auth)):
+    from atlas.tools import ToolError
+    try:
+        return await asyncio.to_thread(get_core().tesla.position)
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/tesla/befehl")
 async def tesla_befehl(data: dict, _: None = Depends(auth)):
     """Knöpfe im Tesla-Fenster: ausdrücklicher Klick = Auftrag (wie ein bestätigter Sprachbefehl)."""
@@ -795,6 +827,273 @@ async def verbindungen_tesla_aktion(aktion: str, data: dict | None = None, _: No
     except ToolError as e:
         raise HTTPException(400, str(e))
     raise HTTPException(404, "unbekannt")
+
+
+# ---------------------------------------------------------------- Ford (nur Status)
+def _ford_fehler(fn, *a):
+    from atlas.tools import ToolError
+    try:
+        return fn(*a)
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/ford")
+async def ford_status(_: None = Depends(auth)):
+    return await asyncio.to_thread(_ford_fehler, get_core().ford.status)
+
+
+@app.get("/ford/position")
+async def ford_position(_: None = Depends(auth)):
+    return await asyncio.to_thread(_ford_fehler, get_core().ford.position)
+
+
+@app.post("/ford/termine")
+async def ford_termine(data: dict, _: None = Depends(auth)):
+    return await asyncio.to_thread(_ford_fehler, get_core().ford.termine_setzen, str(data.get("tuev") or ""),
+                                   str(data.get("versicherung") or ""), str(data.get("versicherer") or ""))
+
+
+@app.get("/ford/bild")
+async def ford_bild(_: None = Depends(auth)):
+    erg = await asyncio.to_thread(get_core().ford.bild)
+    if not erg:
+        raise HTTPException(404, "kein Bild")
+    return Response(erg[0], media_type=erg[1], headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/ford/bild")
+async def ford_bild_hochladen(request: Request, x_dateiname: str = Header(default="Ford.jpg"), _: None = Depends(auth)):
+    daten = await request.body()
+    return await asyncio.to_thread(_ford_fehler, get_core().ford.bild_hochladen, daten, x_dateiname)
+
+
+@app.delete("/ford/bild")
+async def ford_bild_entfernen(_: None = Depends(auth)):
+    return await asyncio.to_thread(get_core().ford.bild_entfernen)
+
+
+@app.get("/ford/rueckruf")
+async def ford_rueckruf(code: str = "", state: str = "", error: str = "", error_description: str = ""):
+    """Rücksprung nach der Ford-Anmeldung. Kommt der Code im #-Teil der Adresse, reicht ein kleines Skript ihn weiter."""
+    from fastapi.responses import HTMLResponse
+    from atlas.tools import ToolError
+    if not code and not error:
+        return HTMLResponse("<!doctype html><meta charset='utf-8'><script>var h=location.hash.slice(1);"
+                            "if(h&&!location.search){location.replace(location.pathname+'?'+h)}else{document.write("
+                            "'Keine Anmeldedaten erhalten – bitte in JARVIS erneut anmelden.')}</script>")
+    if error:
+        text, ok = f"Ford-Anmeldung abgebrochen: {error_description or error}"[:300], False
+    else:
+        try:
+            name = await asyncio.to_thread(get_core().ford.rueckruf, code, state)
+            text, ok = f"Verbunden{' mit ' + name if name else ''}. Du kannst dieses Fenster schließen.", True
+        except ToolError as e:
+            text, ok = str(e), False
+    get_core().broadcast({"type": "ford_verbunden", "ok": ok, "text": text})
+    import html as _html
+    farbe = "#3ddc97" if ok else "#ff6b4a"
+    return HTMLResponse(f"<!doctype html><meta charset='utf-8'><title>JARVIS · Ford</title>"
+                        f"<body style='background:#02090e;color:#d9faff;font:16px -apple-system,sans-serif;display:grid;"
+                        f"place-items:center;height:100vh;margin:0'><div style='text-align:center'><div style='font:600 12px "
+                        f"monospace;letter-spacing:.3em;color:#00e5ff'>JARVIS · FORD</div><p style='color:{farbe}'>"
+                        f"{'✓ ' if ok else '⚠ '}{_html.escape(text)}</p></div>")
+
+
+@app.get("/verbindungen/ford")
+def verbindungen_ford(_: None = Depends(auth)):
+    return get_core().ford.einrichtung()
+
+
+@app.post("/verbindungen/ford/{aktion}")
+async def verbindungen_ford_aktion(aktion: str, data: dict | None = None, _: None = Depends(auth)):
+    f, d = get_core().ford, data or {}
+    aufrufe = {
+        "app": lambda: f.app_setzen(d.get("client_id", ""), d.get("client_secret", "")),
+        "profil": lambda: f.profil_setzen(str(d.get("name") or ""), str(d.get("farbe") or ""),
+                                          str(d.get("kennzeichen") or ""), str(d.get("erwartet") or "")),
+        "demo": lambda: f.demo_setzen(bool(d.get("an"))),
+        "urls": lambda: f.urls_setzen(d),
+        "garage": lambda: {"ok": True, "fahrzeuge": f.garage(), "text": "✓ Fahrzeugliste geladen"},
+        "waehlen": lambda: f.waehlen(str(d.get("id") or "")),
+        "trennen": f.trennen,
+        "rohdaten": f.rohdaten,
+    }
+    if aktion == "anmelden":
+        url = _ford_fehler(f.anmelde_url)
+        await asyncio.to_thread(subprocess.run, ["open", url], capture_output=True)
+        return {"ok": True, "text": "Browser geöffnet – mit dem FordPass-Konto anmelden und Zugriff erlauben …"}
+    if aktion not in aufrufe:
+        raise HTTPException(404, "unbekannt")
+    return await asyncio.to_thread(_ford_fehler, aufrufe[aktion])
+
+
+# ---------------------------------------------------------------- Immobilien (HESTIA)
+@app.get("/immobilien")
+async def immobilien_liste(_: None = Depends(auth)):
+    return await asyncio.to_thread(get_core().immobilien.alle)
+
+
+@app.post("/immobilien")
+async def immobilien_neu(data: dict, _: None = Depends(auth)):
+    return await asyncio.to_thread(_ford_fehler, get_core().immobilien.speichern, data, "")
+
+
+@app.post("/immobilien/grenzen")
+async def immobilien_grenzen(data: dict, _: None = Depends(auth)):
+    return await asyncio.to_thread(_ford_fehler, get_core().immobilien.grenzen_setzen, data)
+
+
+@app.post("/immobilien/mietvertrag")
+async def immobilien_mietvertrag(request: Request, x_dateiname: str = Header(default="Mietvertrag.pdf"),
+                                 _: None = Depends(auth)):
+    """Mietvertrag NUR lokal lesen (Text auf dem Mac, Felder vom lokalen Modell); die Datei wird nicht gespeichert."""
+    daten = await request.body()
+    if len(daten) > 60_000_000:
+        raise HTTPException(400, "Datei zu groß")
+    from urllib.parse import unquote
+    return await asyncio.to_thread(_ford_fehler, get_core().immobilien.mietvertrag_lesen, daten, unquote(x_dateiname))
+
+
+@app.post("/immobilien/{oid}")
+async def immobilien_aendern(oid: str, data: dict, _: None = Depends(auth)):
+    return await asyncio.to_thread(_ford_fehler, get_core().immobilien.speichern, data, oid)
+
+
+@app.delete("/immobilien/{oid}")
+async def immobilien_entfernen(oid: str, _: None = Depends(auth)):
+    return await asyncio.to_thread(get_core().immobilien.entfernen, oid)
+
+
+@app.post("/immobilien/{oid}/bild")
+async def immobilien_bild_hoch(oid: str, request: Request, haupt: int = 0, x_dateiname: str = Header(default="Bild.jpg"),
+                               _: None = Depends(auth)):
+    from urllib.parse import unquote
+    daten = await request.body()
+    return await asyncio.to_thread(_ford_fehler, get_core().immobilien.bild_hochladen, oid, daten, unquote(x_dateiname), bool(haupt))
+
+
+@app.post("/immobilien/{oid}/bild/{datei}/{aktion}")
+async def immobilien_bild_aktion(oid: str, datei: str, aktion: str, _: None = Depends(auth)):
+    if aktion not in ("haupt", "entfernen"):
+        raise HTTPException(404, "unbekannt")
+    return await asyncio.to_thread(_ford_fehler, get_core().immobilien.bild_aktion, oid, datei, aktion)
+
+
+@app.get("/immobilien/{oid}/bild/{datei}")
+async def immobilien_bild(oid: str, datei: str, _: None = Depends(auth)):
+    erg = await asyncio.to_thread(get_core().immobilien.bild, oid, datei)
+    if not erg:
+        raise HTTPException(404, "kein Bild")
+    return Response(erg[0], media_type=erg[1], headers={"Cache-Control": "max-age=86400"})
+
+
+# ---------------------------------------------------------------- HESTIA: Grundriss → 3D
+@app.get("/grundriss/{oid}")
+async def grundriss_liste(oid: str, _: None = Depends(auth)):
+    g = get_core().grundriss
+    plaene = await asyncio.to_thread(_ford_fehler, g.liste, oid)
+    return {"plaene": plaene, "abgleich": await asyncio.to_thread(_ford_fehler, g.abgleich, oid)}
+
+
+@app.post("/grundriss/{oid}")
+async def grundriss_hoch(oid: str, request: Request, x_dateiname: str = Header(default="Grundriss.pdf"),
+                         x_stockwerk: str = Header(default=""), _: None = Depends(auth)):
+    from urllib.parse import unquote
+    daten = await request.body()
+    return await asyncio.to_thread(_ford_fehler, get_core().grundriss.hochladen, oid, daten, unquote(x_dateiname),
+                                   unquote(x_stockwerk))
+
+
+@app.get("/grundriss/{oid}/{gid}/bild")
+async def grundriss_bild(oid: str, gid: str, _: None = Depends(auth)):
+    daten = await asyncio.to_thread(_ford_fehler, get_core().grundriss.bild, oid, gid)
+    if not daten:
+        raise HTTPException(404, "kein Bild")
+    return Response(daten, media_type="image/png", headers={"Cache-Control": "private, max-age=600"})
+
+
+@app.post("/grundriss/{oid}/{gid}/{aktion}")
+async def grundriss_aktion(oid: str, gid: str, aktion: str, data: dict | None = None, _: None = Depends(auth)):
+    g, d = get_core().grundriss, data or {}
+    if aktion == "erkennen":           # schickt das Bild an Claude – nur mit ausdrücklicher Freigabe aus dem Dashboard
+        return await asyncio.to_thread(_ford_fehler, g.erkennen, oid, gid, bool(d.get("freigabe")))
+    if aktion == "speichern":
+        return await asyncio.to_thread(_ford_fehler, g.speichern, oid, gid, d)
+    if aktion == "entfernen":
+        return await asyncio.to_thread(_ford_fehler, g.entfernen, oid, gid)
+    raise HTTPException(404, "unbekannt")
+
+
+# ---------------------------------------------------------------- HESTIA: Nebenkosten
+@app.get("/hestia")
+async def hestia_uebersicht(objekt: str = "", _: None = Depends(auth)):
+    return await asyncio.to_thread(_ford_fehler, get_core().nebenkosten.uebersicht, objekt)
+
+
+@app.post("/hestia/{aktion}")
+async def hestia_aktion(aktion: str, data: dict | None = None, _: None = Depends(auth)):
+    nk, d = get_core().nebenkosten, data or {}
+    aufrufe = {
+        "jahr": lambda: nk.jahr_anlegen(str(d.get("objekt")), int(d.get("jahr") or 0)),
+        "posten": lambda: nk.posten_setzen(str(d.get("objekt")), int(d.get("jahr") or 0), str(d.get("posten")), d.get("daten") or {}),
+        "bestaetigen": lambda: nk.vorschlag_bestaetigen(str(d.get("id")), d.get("aenderung") or {}),
+        "verwerfen": lambda: nk.vorschlag_verwerfen(str(d.get("id"))),
+        "pruefen": lambda: {"ok": True, "text": " · ".join(x["text"] for x in (
+            nk.postfach_pruefen() if nk.alias() else {"text": "Kein Postfach eingetragen"}, nk.ordner_pruefen()))},
+        "anfragen": lambda: nk.anfragen_erstellen(str(d.get("objekt")), int(d.get("jahr") or 0)),
+        "anfrage_aendern": lambda: nk.anfrage_aendern(str(d.get("id")), d.get("daten") or {}),
+        "anfrage_billigen": lambda: nk.anfrage_billigen(str(d.get("id"))),
+        "anfrage_verschickt": lambda: nk.brief_verschickt(str(d.get("id"))),
+        "anfrage_verwerfen": lambda: nk.anfrage_verwerfen(str(d.get("id"))),
+        "entwurf": lambda: nk.entwurf(str(d.get("objekt")), int(d.get("jahr") or 0)),
+        "billigen": lambda: nk.billigen(str(d.get("objekt")), int(d.get("jahr") or 0)),
+        "mieter": lambda: nk.an_mieter(str(d.get("objekt")), int(d.get("jahr") or 0), str(d.get("weg") or "brief"),
+                                       str(d.get("email") or "")),
+        "zugang": lambda: nk.zugang(str(d.get("objekt")), int(d.get("jahr") or 0), str(d.get("datum") or ""),
+                                    str(d.get("weg") or "brief")),
+        "postfach": lambda: nk.postfach_setzen(str(d.get("alias") or ""), d.get("intervall_min")),
+        "bank": lambda: nk.bank_setzen(str(d.get("iban") or ""), str(d.get("inhaber") or "")),
+        "absender": lambda: nk.absender_setzen(str(d.get("anschrift") or "")),
+        "versorger": lambda: nk.versorger_setzen(str(d.get("objekt")), d.get("liste") or []),
+    }
+    if aktion not in aufrufe:
+        raise HTTPException(404, "unbekannt")
+    return await asyncio.to_thread(_ford_fehler, aufrufe[aktion])
+
+
+@app.post("/hestia-beleg")
+async def hestia_beleg(request: Request, x_dateiname: str = Header(default="Beleg.pdf"), _: None = Depends(auth)):
+    from urllib.parse import unquote
+    daten = await request.body()
+    if len(daten) > 40_000_000:
+        raise HTTPException(400, "Datei zu groß")
+    return await asyncio.to_thread(_ford_fehler, get_core().nebenkosten.vorschlag_aus_datei, daten, unquote(x_dateiname),
+                                   {"art": "upload", "datum": __import__("datetime").date.today().isoformat()})
+
+
+@app.get("/hestia-datei")
+async def hestia_datei(vorschlag: str = "", objekt: str = "", jahr: int = 0, _: None = Depends(auth)):
+    nk = get_core().nebenkosten
+    if vorschlag:
+        erg = await asyncio.to_thread(nk.vorschlag_datei, vorschlag)
+        if not erg:
+            raise HTTPException(404, "nicht gefunden")
+        return Response(erg[0], media_type=erg[1], headers={"Cache-Control": "no-store"})
+    daten = await asyncio.to_thread(nk.entwurf_datei, objekt, jahr)
+    if not daten:
+        raise HTTPException(404, "kein PDF")
+    return Response(daten, media_type="application/pdf", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/fahrzeuge")
+def fahrzeuge_liste(_: None = Depends(auth)):
+    c = get_core()
+    t = c.tesla.einrichtung()
+    f = c.ford.einrichtung()
+    return [{"id": "tesla", "name": t.get("fahrzeug") or "Tesla", "verbunden": bool(t.get("angemeldet") and t.get("vin"))},
+            {"id": "ford", "name": f["profil"]["name"], "verbunden": bool(f.get("angemeldet") and f.get("fahrzeug_id")),
+             "demo": f.get("demo")}]
 
 
 @app.get("/briefing")
@@ -1304,7 +1603,7 @@ async def link_oeffnen(data: dict, _: None = Depends(auth)):
     from urllib.parse import urlparse
     url = str(data.get("url", ""))
     erlaubt = ("console.anthropic.com", "elevenlabs.io", "account.apple.com", "t.me", "serper.dev", "developer.tesla.com",
-               "auth.tesla.com", "tesla.com",
+               "auth.tesla.com", "tesla.com", "developer.ford.com",
                "console.cloud.google.com", "login.tailscale.com", "tailscale.com", "apps.apple.com")
     host = urlparse(url).hostname or ""
     if urlparse(url).scheme != "https" or not any(host == h or host.endswith("." + h) for h in erlaubt):
@@ -1645,6 +1944,7 @@ def run():
         ("iMessage", lambda: c.nachrichten.start(c.proaktiv.stop)),
         ("Spracherkennung vorwärmen", lambda: threading.Thread(target=_whisper_vorwaermen, daemon=True).start()),
         ("Werbefilter", lambda: c.werbung.start(c.proaktiv.stop)),
+        ("HESTIA Nebenkosten", lambda: c.nebenkosten.start(c.proaktiv.stop)),
         ("Timer", c.timer.start),
         ("Musik", c.musik.start),
         ("Beihilfe-Workflow", lambda: c.archiv and c.beihilfe.start(c.proaktiv.stop)),

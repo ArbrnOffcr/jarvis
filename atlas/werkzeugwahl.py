@@ -30,6 +30,8 @@ GRUPPEN = {
     "musik": ["musik_", "podcast_"],
     "stab": ["stab_"],
     "tesla": ["tesla_"],
+    "ford": ["ford_"],
+    "immo": ["immobilien_", "immobilie_", "nebenkosten_"],
 }
 
 # Wortanfänge → Gruppen
@@ -39,6 +41,11 @@ SIGNALE = [
     (r"tageslage|briefing|was steht an|was liegt an|überblick|was gibt.?s", ["kalender", "erinnerungen", "wetter", "fristen", "mail", "stab"]),
     (r"tesla|mein auto|das auto|akku|reichweite|lade|ladestand|ladezustand|ladeplan|wallbox|vorklimat|vorheiz|"
      r"klimaanlage|standheizung|enteis|wo (steht|parkt) (mein|das) auto", ["tesla"]),
+    (r"ford|tourneo|\bbus\b|bulli|transporter|tank|diesel|reifendruck|ölwechsel|oelwechsel|adblue|kilometerstand|"
+     r"fahrzeug|autos\b|tüv|hauptuntersuchung|kfz-versicherung|wo (steht|parkt) (der|mein) (bus|ford)", ["ford"]),
+    (r"autos?\b|fahrzeug|tüv|kfz", ["tesla"]),
+    (r"immobilie|vermiet|mieter\b|mieterin|mietvertrag|kaltmiete|warmmiete|mieterhöhung|miete\b|rendite|nebenkosten|"
+     r"betriebskosten|abrechnung|beleg|versorger|grundsteuer|darlehen|zinsbindung|restschuld|anschlussfinanzierung|hestia|seedammweg|mein haus|das haus", ["immo", "fristen"]),
     (r"woche|bereite|vorbereit|kümmer|lage\b|lagevortrag|stab\b|agent|chronos|hermes|adjutant|quaestor|archivar|scout|"
      r"quartiermeister|kostengrenze|persönlichkeit|persona|humor|tonfall|sprich (förmlicher|lockerer)|sei (lustiger|ernster)",
      ["stab"]),

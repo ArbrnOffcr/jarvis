@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 27.10.2026 · Version 0.9
+Stand: 28.10.2026 · Version 0.14
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -149,7 +149,9 @@ Bedeutung der Zeichen:
 | Mini-Player nur während der Wiedergabe; Musik wird leiser, wenn JARVIS spricht | ✅ | |
 | Podcasts-App selbst steuern, Spotify | ❌ | |
 
-## 10. Tesla
+## 10. Fahrzeuge: Tesla und Ford
+
+### Tesla
 
 | Funktion | Stand | Hinweis |
 |---|---|---|
@@ -158,8 +160,45 @@ Bedeutung der Zeichen:
 | Eigenes Foto des Autos verwenden – Hintergrund wird auf dem Mac automatisch entfernt | ✅ | Knopf „Bild ändern“ im Fahrzeugfenster; Freistellen ab macOS 14 |
 | Klimatisierung ein/aus, Wunschtemperatur | ⚙️ | per Sprache oder Knopf; braucht den virtuellen Schlüssel im Auto |
 | Laden starten/stoppen, Ladelimit, Ladeplan (Abfahrtszeit mit Vorklimatisierung oder Ladestart) | ⚙️ | per Sprache oder Knopf |
+| Live-Karte: Auto als echtes 3D-Modell in Lackfarbe (dreht und neigt sich mit der Karte, Räder drehen sich, Licht auf der Straße), Fahrt flüssig animiert mit leuchtender Spur | ✅ | „Wo steht mein Auto?“ oder Knopf „Live-Karte“ |
+| Karte minimieren: schwebt kantenlos am Rand und verfolgt die Fahrt live; Klick öffnet sie wieder groß | ✅ | Abruf alle 12 s während der Fahrt (kostet je Abruf einen Bruchteil eines Cents), geparkt jede Minute |
+| TÜV/HU und Kfz-Versicherung im Fahrzeugfenster: Fälligkeit mit Countdown, Versicherer, Kündigungsfrist (1 Monat vor Hauptfälligkeit) | ✅ | eintragen im Fenster oder per Sprache; wird als Frist mit Erinnerung geführt |
 | Schlafendes Auto wird nur auf Wunsch geweckt | ✅ | sonst letzter Stand mit Uhrzeit |
 | Entriegeln, Türen/Kofferraum öffnen, Fahren | ❌ | bewusst nicht |
+| Fahrzeugfenster mit Reitern TESLA / FORD | ✅ | Wechsel oben im Fenster |
+
+### Ford Tourneo Custom (Übergabe März 2027 – vorbereitet)
+
+| Funktion | Stand | Hinweis |
+|---|---|---|
+| Schon jetzt: Fahrzeugprofil (Name, Farbe, Kennzeichen, Übergabetermin), eigenes Foto, TÜV und Versicherung mit Fristen | ✅ | ⚙ Einstellungen → Verbindungen → Ford Tourneo Custom; Termine im Fahrzeugfenster |
+| Vorschau mit Beispieldaten, um Fenster und Live-Karte vor der Übergabe zu sehen | ✅ | „Vorschau ansehen“ im Fahrzeugfenster; deutlich als VORSCHAU gekennzeichnet |
+| Status: Tank in %, Reichweite, Kilometerstand, verriegelt, Zündung, Reifendruck je Rad, Öl, AdBlue, 12-V-Batterie, Warnmeldungen | ⚙️ | nach der Übergabe: Ford-Entwickler-App (offizielle FordConnect Query), Anmeldung mit dem FordPass-Konto – „Wie voll ist der Tank vom Bus?“ |
+| Live-Karte mit 3D-Van in Lackfarbe | ⚙️ | „Wo steht der Bus?“ – Abruf höchstens alle 30 s |
+| Experten-Einstellungen: Anmelde-/API-Adressen, Pfade und Kopfzeilen änderbar, empfangene Felder ansehen | ✅ | falls Ford die Schnittstelle anpasst |
+| Fernsteuerung (Öffnen, Starten, Standheizung) | ❌ | bietet Ford über die offizielle Schnittstelle nicht an; die inoffizielle FordPass-Schnittstelle wird bewusst nicht genutzt (Kontosperre möglich) |
+
+## 10a. Immobilien (HESTIA)
+
+| Funktion | Stand | Hinweis |
+|---|---|---|
+| Immobiliendashboard: Karte mit 3D-Gebäuden, Hauptbild und Galerie (bis 5 Bilder, auch HEIC), Mieter, Miete kalt/NK/warm, Darlehen mit Restschuld und Zinsbindung, Objektdaten | ✅ | „Zeig mir meine Immobilie“ oder ⚙ Einstellungen → Immobilien |
+| Kennzahlen mit Ampel: Brutto-/Nettomietrendite, Cashflow, Beleihung, Kapitaldienstdeckung, Kaltmiete je m², EK-Rendite, Tilgung | ✅ | Ampel-Grenzen und Kappungsgrenze unter ⚙ Einstellungen → Immobilien |
+| Mieterhöhung planen: prüft 15-Monats-Frist und Kappungsgrenze, legt Frist zum Ankündigen an | ✅ | im Fenster „＋ PLANEN“ oder per Sprache |
+| Fristen: Zinsbindungsende und „Anschlussfinanzierung prüfen“ (12 Monate vorher) | ✅ | automatisch beim Speichern |
+| Neue Immobilie per Assistent (Objekt, Kauf, Darlehen, Mieter & Miete) | ✅ | Knopf „＋ IMMOBILIE“ |
+| Mietvertrag einlesen – ausschließlich lokal (Texterkennung und lokales Modell auf dem Mac, keine Weitergabe an Claude, Datei wird nicht gespeichert) | ⚙️ | braucht das lokale Sprachmodell; Werte werden markiert vorgeschlagen und vor dem Speichern geprüft |
+| Nebenkostenabrechnung je Jahr: Belegliste aus dem Mietvertrag, Fristen (Belege bis 31.03., an Mieter bis 30.06., gesetzlich 31.12.) | ✅ | Fenster „Nebenkosten“; ab 2. Januar automatisch für das Vorjahr, sonst „＋ JAHR“ |
+| Immobilien-Postfach (iCloud-Alias) alle 15 Min. prüfen, Anhänge lokal erkennen (Kostenart, Jahr, Betrag, Zeitraum, Objekt) | ⚙️ | Alias unter ⚙ Einstellungen → Daten & Postfächer; der Werbefilter lässt diese Mails in Ruhe |
+| Ablage im GbR-Ordner (Unterordner Nebenkosten/Jahr) – nur nach deiner Bestätigung | 🔒 | Vorschläge mit Kostenart, Betrag, Ordner und Dateinamen zum Ändern; auch Belege hochladen oder in den Ordner legen |
+| Anfragen an Versorger für fehlende Belege (Mail vom Alias oder Brief-PDF zum Ausdrucken), Erinnerung nach 3 Wochen | 🔒 | erst nach „Billigen“; Versorger mit Mail, Anschrift, Kundennummer im Fenster pflegen |
+| Abrechnungsentwurf als PDF (Kostenarten, Gesamtkosten, Verteilerschlüssel, zeitanteilig, Vorauszahlungen, Ergebnis, Vorschlag neue Vorauszahlung) | ✅ | entsteht automatisch, sobald alle Belege da sind; Verbrauchswerte und tatsächliche Vorauszahlungen von Hand anpassbar |
+| Billigen → endgültiges PDF im Nebenkosten-Ordner; Versand an den Mieter per Mail (mit Belegen) oder Brief; Zugang vermerken → Zahlungs-/Auszahlungsfrist | 🔒 | Bankverbindung für die Abrechnung liegt im Schlüsselbund (⚙ → Immobilien) |
+| Grundriss → 3D: Plan hochladen (PDF, Foto, HEIC), je Stockwerk einer | ✅ | Immobilienfenster → „GRUNDRISS → 3D“ |
+| Grundriss erkennen lassen (Wände, Türen, Fenster, Räume, Maßketten → Maßstab) | 🔒 | schickt nur das Bild an Claude – erst nach Freigabe pro Grundriss, ca. 5–20 Cent |
+| Editor: Wände ziehen und zeichnen (rastet an Ecken und rechten Winkeln ein), Türen, Fenster, Räume, Maßstab über eine bekannte Länge | ✅ | Änderungen werden automatisch gespeichert |
+| 3D-Puppenhaus zum Drehen: Wände mit Tür- und Fensteröffnungen, farbige Räume mit m², Stockwerke einzeln oder übereinander, „halbhoch“ | ✅ | |
+| Flächenabgleich: Summe der Räume gegen die Wohnfläche im Mietvertrag, Warnung ab 10 % Abweichung | ✅ | Wohnflächenverordnung (Schrägen, Balkone) beachten |
 
 ## 11. Gedächtnis und Vorausdenken
 
@@ -205,11 +244,13 @@ Bedeutung der Zeichen:
 | Kostengrenze für den Stab (Standard 20 € pro Monat), Hinweis bei 80 % | ✅ | per Befehl erhöhbar oder aufhebbar |
 | Morgenbriefing vom Stab erstellt | ✅ | automatisch wie bisher |
 | Agenten mit eigener Stimme | ❌ | bewusst nicht – nur JARVIS spricht |
+| Agent HESTIA (IMMO) für Immobilien im Stab, mit eigenem Emblem | ✅ | |
 
 ## 14. Technik und Betrieb
 
 | Funktion | Stand | Hinweis |
 |---|---|---|
+| Einstellungen in Reitern (Allgemein, Stimme & Gespräch, Stab, Konten & Schlüssel, Daten & Postfächer, Fahrzeuge, Immobilien, iPhone) mit Suche über alle Reiter | ✅ | merkt sich den letzten Reiter; auf dem iPhone wischbare Leiste |
 | Läuft als Hintergrunddienst mit Autostart | ✅ | |
 | Mehrere Macs und Benutzer, Wache-Übergabe | ✅ | |
 | Automatische Updates; startet eine neue Version nicht, kommt die vorige zurück | ✅ | |

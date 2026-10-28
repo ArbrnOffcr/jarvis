@@ -94,7 +94,7 @@ DEFAULTS: dict = {
         "complex_min_chars": 400,
         # Werkzeug-Aufgaben (Kalender, Mail ...): Claude Haiku ist schnell,
         # günstig und zuverlässig im Umgang mit Werkzeugen.
-        "tool_keywords": ["termin", "kalender", "erinner", "aufgabe", "todo", "tesla", "akku", "reichweite", "lade",
+        "tool_keywords": ["termin", "kalender", "erinner", "aufgabe", "todo", "tesla", "ford", "tourneo", "akku", "reichweite", "lade",
                           "klimaanlage", "vorklimat",
                           "einkauf", "notiz", "mail", "e-mail", "posteingang",
                           "kontakt", "telefonnummer", "adresse", "geburtstag",

@@ -62,6 +62,9 @@ DEFAULT_POLICY = {
     "steuer.schreiben": Level.MELDEN,
     # Stab (Sachgebietsagenten): Einsatz und Abstimmung untereinander ohne Rückfrage
     "tesla.lesen": Level.FREI,
+    "ford.lesen": Level.FREI,
+    "immo.lesen": Level.FREI,               # HESTIA: Immobilien lesen, Kennzahlen
+    "immo.objekt": Level.MELDEN,            # Objektdaten ändern, Mieterhöhung planen               # Ford: nur Status, keine Steuerung möglich
     "tesla.steuern": Level.MELDEN,          # Klima und Laden; Entriegeln/Öffnen gibt es bewusst nicht
     "stab.einsatz": Level.FREI,
     "stab.lesen": Level.FREI,

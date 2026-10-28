@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="JARVIS">
 <meta name="theme-color" content="#03080d">
-<link rel="stylesheet" href="style.css?v=20261027h">
+<link rel="stylesheet" href="style.css?v=20261027k">
 </head>
 <body>
 <div class="scan"></div>
@@ -142,23 +142,31 @@
 <div id="einst" class="einst" hidden>
   <div class="einst-box" role="dialog" aria-modal="true" aria-labelledby="einst-titel">
     <header><h3 id="einst-titel">⚙ EINSTELLUNGEN</h3><button type="button" id="einst-zu" aria-label="Schließen">✕</button></header>
+    <nav class="einst-reiter" id="einst-reiter" role="tablist" aria-label="Bereiche der Einstellungen">
+      <button type="button" role="tab" data-reiter="allgemein">ALLGEMEIN</button><button type="button" role="tab" data-reiter="stimme">STIMME &amp; GESPRÄCH</button>
+      <button type="button" role="tab" data-reiter="stab">STAB</button><button type="button" role="tab" data-reiter="konten">KONTEN &amp; SCHLÜSSEL</button>
+      <button type="button" role="tab" data-reiter="daten">DATEN &amp; POSTFÄCHER</button><button type="button" role="tab" data-reiter="fahrzeuge">FAHRZEUGE</button>
+      <button type="button" role="tab" data-reiter="immobilien">IMMOBILIEN</button><button type="button" role="tab" data-reiter="iphone">IPHONE</button>
+      <input type="search" id="einst-suche" placeholder="⌕ Einstellung suchen" aria-label="Einstellung suchen" autocomplete="off"></nav>
     <div class="einst-inhalt">
-      <section><h4>VERBINDUNGEN &amp; SCHLÜSSEL</h4><div id="einst-vb" class="vb">…</div></section>
-      <section><h4>STAB · AGENTEN &amp; PERSÖNLICHKEIT</h4><div id="einst-stab" class="vb stab">…</div></section>
-      <section><h4>STIMME &amp; GESPRÄCH</h4>
+      <section data-reiter="konten daten fahrzeuge allgemein stimme"><h4 id="einst-vb-titel">VERBINDUNGEN &amp; SCHLÜSSEL</h4><div id="einst-vb" class="vb">…</div></section>
+      <section data-reiter="immobilien"><h4>IMMOBILIEN · HESTIA</h4><p class="vb-hilfe einst-leer">Noch keine Immobilien angelegt. Die Immobilienverwaltung mit dem
+        Agenten HESTIA (Nebenkosten, Ablage, Dashboard) kommt mit der nächsten Ausbaustufe – das Konzept liegt im Projekt.</p></section>
+      <section data-reiter="stab"><h4>STAB · AGENTEN &amp; PERSÖNLICHKEIT</h4><div id="einst-stab" class="vb stab">…</div></section>
+      <section data-reiter="stimme"><h4>STIMME &amp; GESPRÄCH</h4>
         <div class="einst-zeile"><span>Antworten vorlesen</span><button type="button" data-proxy="outbtn"></button></div>
         <div class="einst-zeile"><span>Auf „Hey Jarvis“ hören</span><button type="button" data-proxy="wakebtn"></button></div>
         <div class="einst-zeile"><span>Gesprächsmodus und Unterbrechen</span><button type="button" data-proxy="gesprbtn"></button></div></section>
-      <section><h4>DARSTELLUNG</h4>
+      <section data-reiter="allgemein"><h4>DARSTELLUNG</h4>
         <div class="einst-zeile"><span>Stilwelt</span><button type="button" data-proxy="stilbtn"></button></div>
         <div class="einst-zeile"><span>Klänge der Oberfläche</span><button type="button" data-proxy="klangbtn"></button></div>
         <div class="einst-zeile"><span>Reduzierte Ansicht (Taste D)</span><button type="button" data-proxy="reinbtn"></button></div>
         <div class="einst-zeile"><span>Startsequenz</span><button type="button" id="einst-boot">ABSPIELEN</button></div></section>
-      <section><h4>HILFE</h4>
+      <section data-reiter="allgemein"><h4>HILFE</h4>
         <div class="einst-zeile"><span>Geführte Einführung (ca. 3 Minuten)</span><button type="button" id="einst-tour" class="primary">EINFÜHRUNG STARTEN</button></div>
         <div class="einst-zeile"><span>Was JARVIS kann – und was nicht</span><button type="button" id="einst-liste">FUNKTIONSLISTE</button></div></section>
-      <section><h4>IPHONE</h4><div id="einst-iphone" class="einst-iphone">…</div></section>
-      <section><h4>SYSTEM</h4><div id="einst-system" class="einst-system">…</div></section>
+      <section data-reiter="iphone"><h4>IPHONE</h4><div id="einst-iphone" class="einst-iphone">…</div></section>
+      <section data-reiter="allgemein"><h4>SYSTEM</h4><div id="einst-system" class="einst-system">…</div></section>
     </div>
   </div>
 </div>
@@ -178,7 +186,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20261027h"></script>
-<script type="module" src="core3d.bundle.js?v=20261027h"></script>
+<script src="app.js?v=20261027k"></script>
+<script type="module" src="core3d.bundle.js?v=20261027k"></script>
 </body>
 </html>

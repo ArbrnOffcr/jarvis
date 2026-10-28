@@ -84,6 +84,12 @@ class Proaktiv:
         if weitere:
             text = (text or "").rstrip() + "\n\nFristen & Post: " + " ".join(weitere)
         try:
+            hestia = self.c.nebenkosten.briefing_zeile()
+        except Exception:
+            hestia = ""
+        if hestia:
+            text = (text or "").rstrip() + "\n\n" + hestia
+        try:
             werbung = self.c.werbung.briefing_zeile()
         except Exception:
             werbung = ""

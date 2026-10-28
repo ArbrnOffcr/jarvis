@@ -21,7 +21,7 @@ import yaml
 
 from atlas.paths import private_dir
 
-REIHENFOLGE = ["zeit", "kom", "dienst", "fin", "akte", "aufkl", "log"]
+REIHENFOLGE = ["zeit", "kom", "dienst", "fin", "akte", "aufkl", "log", "immo"]
 EUR_JE_USD = 0.92
 MAX_TIEFE = 2            # höchstens zwei Weiterleitungen zwischen Agenten
 MAX_SCHRITTE = 5
@@ -62,6 +62,7 @@ def _vorabruf(k: str, v: date, b: date) -> list[tuple[str, dict]]:
         "akte": [("post_offen", {})],
         "aufkl": [("wetter", {"tage": min(7, max(2, tage))})],
         "log": [("einkaufsliste", {})],
+        "immo": [("immobilie_kennzahlen", {}), ("nebenkosten_status", {})],
     }.get(k, [])
 
 # ---------------------------------------------------------------- Persönlichkeit JARVIS
@@ -144,8 +145,17 @@ AGENTEN_STANDARD = {
             "darf_nicht": ["Bestellungen oder Buchungen auslösen"],
             "werkzeuge": ["einkauf", "karte"], "modell": "haiku", "datenschutz": "normal",
             "tonfall": "praktisch, denkt in Wegen, Zeiten und Mengen"},
+    "immo": {"name": "Hestia", "sachgebiet": "Immobilien, Mietverhältnisse, Nebenkosten, Darlehen der Objekte",
+             "auftrag": "Verwaltet die Immobilien der GbR: Stammdaten, Mieter, Mieten, Darlehen und Kennzahlen; plant "
+                        "Mieterhöhungen und hält Zinsbindung und Nebenkostenfristen im Blick.",
+             "darf": ["Immobiliendaten und Kennzahlen lesen", "Fristen vorschlagen", "Entwürfe vorbereiten"],
+             "darf_nicht": ["Schreiben an Mieter oder Versorger senden", "im Archiv ohne Bestätigung ablegen",
+                            "Namen oder Kontaktdaten von Mietern an die Cloud geben"],
+             "werkzeuge": ["immo", "fristen"], "modell": "haiku", "datenschutz": "hoch",
+             "tonfall": "gewissenhafte Hausverwalterin – ruhig, genau, fristbewusst, knapp"},
 }
-KUERZEL = {"zeit": "ZEIT", "kom": "KOM", "dienst": "DIENST", "fin": "FIN", "akte": "AKTE", "aufkl": "AUFKL", "log": "LOG"}
+KUERZEL = {"zeit": "ZEIT", "kom": "KOM", "dienst": "DIENST", "fin": "FIN", "akte": "AKTE", "aufkl": "AUFKL", "log": "LOG",
+           "immo": "IMMO"}
 FEST_LOKAL = {"fin"}
 RECHTE = {"auftrag", "darf", "darf_nicht"}
 TECHNIK = {"werkzeuge", "modell", "aktiv"}
@@ -934,7 +944,8 @@ class Stab:
                  "Teilaufträge PARALLEL an Sachgebietsagenten des Stabes geben und ihre gewichteten Meldungen erhalten. "
                  "Ein Aufruf mit allen nötigen Teilaufträgen. Agenten: ZEIT (Kalender/Erinnerungen/Fristen), KOM "
                  "(Mail/iMessage/Kontakte), DIENST (Dienstkalender/Dienstmails), FIN (Beihilfe/Rechnungen/Steuer/"
-                 "Verträge), AKTE (Archiv/Post/Ablage), AUFKL (Recherche/Wetter), LOG (Einkauf/Routen/Reisen).",
+                 "Verträge), AKTE (Archiv/Post/Ablage), AUFKL (Recherche/Wetter), LOG (Einkauf/Routen/Reisen), IMMO (Immobilien/Mieter/Darlehen/"
+                 "Nebenkosten).",
                  "stab.einsatz", einsatz,
                  {"auftraege": {"type": "array", "description": "Je Agent ein Teilauftrag",
                                 "items": {"type": "object", "properties": {

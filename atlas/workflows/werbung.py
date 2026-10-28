@@ -75,6 +75,12 @@ class Werbung:
         domain = adresse.split("@")[-1]
         if adresse in self._kontakte():
             return -9, "Kontakt"
+        try:                                          # Mails an das Immobilien-Postfach (HESTIA) nie als Werbung
+            alias = self.c.nebenkosten.alias()
+            if alias and alias in str(hdr["To"] or "").lower() + str(hdr["Delivered-To"] or "").lower():
+                return -9, "Immobilien-Postfach"
+        except Exception:
+            pass
         if any(a.lower() in (adresse, domain) or a.lower() in von.lower() for a in z["ausnahmen"]):
             return -9, "Ausnahme"
         if re.match(r"^\s*(re|aw|wg|fwd?):", betreff, re.I):

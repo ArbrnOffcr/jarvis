@@ -323,6 +323,27 @@ class Tesla:
         return False
 
     def status(self, wecken: bool = False) -> dict:
+        d = self._status(wecken)
+        try:
+            d["termine"] = self.termine()
+        except Exception:
+            d["termine"] = []
+        return d
+
+    # ------------------------------------------------------------ TÜV und Versicherung (aus den Fristen)
+    def _fahrzeug_kennung(self) -> str:
+        return self._zustand().get("vin") or "tesla"
+
+    def termine(self) -> list[dict]:
+        from atlas import fahrzeuge
+        return fahrzeuge.termine(self.c, self._fahrzeug_kennung())
+
+    def termine_setzen(self, tuev: str = "", versicherung: str = "", versicherer: str = "") -> dict:
+        from atlas import fahrzeuge
+        return fahrzeuge.termine_setzen(self.c, self._fahrzeug_kennung(), self._zustand().get("name") or "Tesla",
+                                        tuev, versicherung, versicherer)
+
+    def _status(self, wecken: bool = False) -> dict:
         vin = self._vin()
         zustand = self._zustand_auto()
         if zustand != "online":
@@ -342,6 +363,36 @@ class Tesla:
         except OSError:
             pass
         return d
+
+    def position(self) -> dict:
+        """Nur Standort/Fahrt (für die Live-Karte) – weckt das Auto nie. Schläft es, kommt die letzte Position."""
+        vin = self._vin()
+        c = self._cache()
+        alt = {"lat": (c.get("ort") or {}).get("lat"), "lon": (c.get("ort") or {}).get("lon"),
+               "heading": (c.get("ort") or {}).get("heading", 0), "geschwindigkeit_kmh": 0, "faehrt": False,
+               "online": False, "stand": (c.get("ort") or {}).get("stand") or c.get("stand"),
+               "name": c.get("name", "Tesla"), "farbe": c.get("farbe", "#e9ecef"), "ort_name": (c.get("ort") or {}).get("name", "")}
+        try:
+            if self._zustand_auto() != "online":
+                return {**alt, "zustand": "schläft"}
+            roh = self._get(f"/api/1/vehicles/{vin}/vehicle_data", {"endpoints": "location_data;drive_state"}).get("response") or {}
+        except _Schlaeft:
+            return {**alt, "zustand": "schläft"}
+        dr = roh.get("drive_state") or {}
+        lat, lon = dr.get("latitude"), dr.get("longitude")
+        if lat is None:
+            return {**alt, "zustand": "ohne Position"}
+        speed = dr.get("speed")
+        pos = {**alt, "lat": lat, "lon": lon, "heading": dr.get("heading") or 0, "online": True, "zustand": "online",
+               "geschwindigkeit_kmh": round(speed * MEILE) if isinstance(speed, (int, float)) else 0,
+               "faehrt": dr.get("shift_state") in ("D", "R") or (isinstance(speed, (int, float)) and speed > 0),
+               "gang": dr.get("shift_state"), "stand": datetime.now().isoformat(timespec="seconds")}
+        try:                                                 # Position im Zwischenspeicher nachführen
+            c.setdefault("ort", {}).update({"lat": lat, "lon": lon, "heading": pos["heading"], "stand": pos["stand"]})
+            (ORDNER / "cache.json").write_text(json.dumps(c, ensure_ascii=False))
+        except OSError:
+            pass
+        return pos
 
     def _cache(self) -> dict:
         try:
@@ -395,6 +446,7 @@ class Tesla:
             "klima": {"an": cl.get("is_climate_on"), "innen": cl.get("inside_temp"), "aussen": cl.get("outside_temp"),
                       "soll": cl.get("driver_temp_setting"), "vorklimatisierung": cl.get("is_preconditioning")},
             "ort": {"lat": lat, "lon": lon, "name": ort, "faehrt": dr.get("shift_state") in ("D", "R"),
+                    "heading": dr.get("heading") or 0, "stand": datetime.now().isoformat(timespec="seconds"),
                     "geschwindigkeit_kmh": km(dr.get("speed"))},
             "verriegelt": vs.get("locked"), "waechter": vs.get("sentry_mode"),
             "kilometerstand": km(vs.get("odometer")), "software": vs.get("car_version", "").split(" ")[0],
@@ -553,7 +605,27 @@ def tools(core) -> list[Tool]:
             raise ToolError("modus: abfahrt, start oder aus")
         return {"ok": True, "modus": modus, "uhrzeit": uhrzeit}
 
+    def karte():
+        pos = t.position()
+        if pos.get("lat") is None:
+            raise ToolError("Keine Position bekannt – das Auto war seit der Einrichtung noch nicht online")
+        core.broadcast({"type": "tesla_karte", "position": pos})
+        return {"angezeigt": True, "ort": pos.get("ort_name"), "faehrt": pos.get("faehrt"),
+                "geschwindigkeit_kmh": pos.get("geschwindigkeit_kmh"), "zustand": pos.get("zustand")}
+
+    def termine(tuev="", versicherung="", versicherer=""):
+        return t.termine_setzen(tuev, versicherung, versicherer)
+
     return [
+        Tool("tesla_termine_setzen",
+             "TÜV/HU-Fälligkeit (MM/JJJJ) und/oder Hauptfälligkeit der Kfz-Versicherung (Datum) des Teslas eintragen; "
+             "legt Fristen mit Erinnerung an (bei der Versicherung auch die Kündigungsfrist).", "fristen.schreiben",
+             termine, {"tuev": S("MM/JJJJ laut Plakette"), "versicherung": S("Hauptfälligkeit, TT.MM.JJJJ"),
+                       "versicherer": S("Name der Versicherung, optional")},
+             label=lambda a: "Fahrzeugtermine eintragen"),
+        Tool("tesla_karte", "Das Auto auf der Live-Karte im Dashboard zeigen (fährt es, wird die Fahrt live verfolgt). "
+             "Für „Wo steht mein Auto?“, „Zeig mir das Auto auf der Karte“, „Wo ist der Tesla gerade?“.",
+             "tesla.lesen", karte),
         Tool("tesla_status",
              "Status des Tesla: Akku in %, Reichweite, Laden (Leistung, Limit, Ladeplan), Klima (innen/außen), Standort, "
              "verriegelt. Zeigt das Auto mit Bild und Werten im Dashboard (anzeigen=true). Schläft das Auto, kommt der "
