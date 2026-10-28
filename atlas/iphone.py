@@ -31,40 +31,76 @@ def tailscale() -> str | None:
     return None
 
 
+def _ts(*args, timeout: int = 15) -> tuple[int, str]:
+    """Tailscale-Befehl ausführen; liefert (Rückgabecode, Ausgabe). Bricht nie mit einer Ausnahme ab."""
+    ts = tailscale()
+    if not ts:
+        return 127, "Tailscale fehlt"
+    try:
+        r = subprocess.run([ts, *args], capture_output=True, text=True, timeout=timeout)
+        return r.returncode, ((r.stdout or "") + (r.stderr or "")).strip()
+    except subprocess.TimeoutExpired as e:      # z. B. „Serve is not enabled … visit https://…“ – wartet auf Freigabe
+        aus = e.stdout or b""
+        aus = aus.decode(errors="ignore") if isinstance(aus, bytes) else aus
+        fehler = e.stderr or b""
+        fehler = fehler.decode(errors="ignore") if isinstance(fehler, bytes) else fehler
+        return 124, (aus + fehler).strip()
+    except OSError as e:
+        return 126, str(e)
+
+
 def tailscale_status() -> dict:
     ts = tailscale()
     if not ts:
         return {"installiert": False}
+    code, aus = _ts("status", "--json")
     try:
-        r = subprocess.run([ts, "status", "--json"], capture_output=True, text=True, timeout=15)
-        j = json.loads(r.stdout or "{}")
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return {"installiert": True, "laeuft": False}
+        j = json.loads(aus[aus.find("{"):] if "{" in aus else "{}")
+    except ValueError:
+        j = {}
+    if not j:
+        return {"installiert": True, "laeuft": False, "pfad": ts, "fehler": aus[:300]}
     selbst = j.get("Self") or {}
     name = (selbst.get("DNSName") or "").rstrip(".")
-    return {"installiert": True, "laeuft": j.get("BackendState") == "Running", "dns": name,
-            "url": f"https://{name}" if name else ""}
+    return {"installiert": True, "pfad": ts, "laeuft": j.get("BackendState") == "Running",
+            "zustand": j.get("BackendState"), "dns": name, "url": f"https://{name}" if name else "",
+            "magicdns": bool((j.get("CurrentTailnet") or {}).get("MagicDNSEnabled", bool(name))),
+            "zertifikate": bool(j.get("CertDomains")), "version": j.get("Version", "")}
 
 
-def freigeben() -> tuple[bool, str]:
-    """Dashboard per HTTPS im eigenen Tailnet freigeben (nicht im Internet)."""
-    ts = tailscale()
-    if not ts:
-        return False, "Tailscale fehlt"
-    versuche = [[ts, "serve", "--bg", "--https=443", f"http://127.0.0.1:{PORT}"],
-                [ts, "serve", "--bg", str(PORT)],
-                [ts, "serve", "https", "/", f"http://127.0.0.1:{PORT}"]]
-    letzte = ""
-    for cmd in versuche:
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        except (OSError, subprocess.SubprocessError) as e:
-            letzte = str(e)
-            continue
-        if r.returncode == 0:
-            return True, (r.stdout or r.stderr).strip()
-        letzte = (r.stderr or r.stdout).strip()
-    return False, letzte
+def _freigabe_link(text: str) -> str:
+    import re
+    m = re.search(r"https://login\.tailscale\.com/\S+", text or "")
+    return m.group(0).rstrip(".,)") if m else ""
+
+
+def freigeben() -> tuple[bool, str, str]:
+    """Dashboard per HTTPS im eigenen Tailnet freigeben (nicht im Internet). Rückgabe: (ok, Text, Freigabe-Link)."""
+    if not tailscale():
+        return False, "Tailscale fehlt", ""
+    code, aus = _ts("serve", "status", "--json")
+    if code == 0 and f"127.0.0.1:{PORT}" in aus:          # schon freigegeben
+        return True, "bereits freigegeben", ""
+    letzte, link = "", ""
+    for args in (("serve", "--bg", "--https=443", f"http://127.0.0.1:{PORT}"),
+                 ("serve", "--bg", str(PORT)),
+                 ("serve", "https", "/", f"http://127.0.0.1:{PORT}")):
+        code, aus = _ts(*args, timeout=25)
+        if code == 0:
+            return True, aus, ""
+        link = link or _freigabe_link(aus)
+        letzte = aus
+        if link:                                            # Tailnet verlangt eine Freigabe im Browser
+            break
+    return False, letzte, link
+
+
+def diagnose() -> dict:
+    st = tailscale_status()
+    d = {"tailscale": st}
+    if st.get("installiert"):
+        d["serve"] = _ts("serve", "status")[1][:400]
+    return d
 
 
 def zustand() -> dict:
@@ -155,29 +191,65 @@ def qr_terminal(text: str) -> str:
     return f.getvalue()
 
 
-def einrichten_gui(token: str) -> dict:
-    """Wie 'jarvis iphone', aber für den Knopf in den Einstellungen."""
+def _qrcode_sicherstellen() -> None:
     try:
         import qrcode  # noqa: F401
+        return
     except ImportError:
-        uv = shutil.which("uv") or "/opt/homebrew/bin/uv"
-        if not Path(uv).exists():
-            uv = str(Path.home() / ".local/bin/uv")
-        subprocess.run([uv, "pip", "install", "-q", "--python", str(LOCAL_DIR / "venv/bin/python"), "qrcode>=7.4"],
+        pass
+    for uv in (shutil.which("uv"), "/opt/homebrew/bin/uv", str(Path.home() / ".local/bin/uv")):
+        if uv and Path(uv).exists():
+            try:
+                subprocess.run([uv, "pip", "install", "-q", "--python", str(LOCAL_DIR / "venv/bin/python"), "qrcode>=7.4"],
+                               capture_output=True, timeout=300)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            return
+    try:                                         # ohne uv: pip der eigenen Umgebung
+        subprocess.run([str(LOCAL_DIR / "venv/bin/python"), "-m", "pip", "install", "-q", "qrcode>=7.4"],
                        capture_output=True, timeout=300)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def einrichten_gui(token: str) -> dict:
+    """Wie 'jarvis iphone', aber für den Knopf in den Einstellungen. Wirft nie – jeder Fehler wird erklärt."""
+    _qrcode_sicherstellen()
     st = tailscale_status()
     if not st.get("installiert"):
         return {"ok": False, "schritt": "installieren",
-                "text": "Tailscale fehlt: aus dem App Store laden (Mac und iPhone), öffnen und mit demselben Konto anmelden."}
+                "text": "Tailscale fehlt auf diesem Mac: aus dem App Store laden, öffnen und anmelden."}
     if not st.get("laeuft"):
-        return {"ok": False, "schritt": "anmelden", "text": "Tailscale ist nicht verbunden – Tailscale-App öffnen und anmelden."}
-    ok, text = freigeben()
+        zust = st.get("zustand") or ""
+        grund = {"NeedsLogin": "nicht angemeldet", "Stopped": "ausgeschaltet", "Starting": "startet noch",
+                 "NeedsMachineAuth": "Gerät wartet auf Freigabe in der Admin-Konsole"}.get(zust, zust or "keine Antwort")
+        return {"ok": False, "schritt": "anmelden", "diagnose": st,
+                "text": f"Tailscale auf dem Mac ist nicht verbunden ({grund}). In der Menüleiste auf das Tailscale-Symbol → "
+                        "„Connect“/„Anmelden“. " + (f"Meldung: {st['fehler'][:140]}" if st.get("fehler") else "")}
+    if not st.get("dns"):
+        return {"ok": False, "schritt": "magicdns", "link": "https://login.tailscale.com/admin/dns",
+                "text": "MagicDNS ist im Tailnet ausgeschaltet. Auf login.tailscale.com → DNS „MagicDNS“ einschalten, dann erneut."}
+    ok, text, link = freigeben()
     if not ok:
-        return {"ok": False, "schritt": "https",
-                "text": "Freigabe abgelehnt. Auf login.tailscale.com → DNS „MagicDNS“ und „HTTPS Certificates“ "
-                        f"einschalten, dann erneut versuchen. ({text[:120]})"}
+        if link:
+            try:
+                subprocess.run(["open", link], capture_output=True, timeout=10)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            return {"ok": False, "schritt": "serve", "link": link,
+                    "text": "Tailscale möchte einmalig die HTTPS-Freigabe („Serve“) für deinen Mac bestätigt haben. Ich habe die Seite "
+                            "im Browser geöffnet – dort bestätigen und dann hier erneut „iPhone verbinden“ drücken."}
+        if not st.get("zertifikate"):
+            return {"ok": False, "schritt": "https", "link": "https://login.tailscale.com/admin/dns",
+                    "text": "HTTPS-Zertifikate sind im Tailnet ausgeschaltet: login.tailscale.com → DNS → „HTTPS Certificates“ "
+                            "einschalten, dann erneut."}
+        return {"ok": False, "schritt": "serve", "diagnose": st,
+                "text": f"Tailscale hat die Freigabe abgelehnt: {text[:200] or 'keine Meldung'}"}
     ZUSTAND.write_text(json.dumps({"url": st["url"]}))
-    kb = kurzbefehl_bauen(st["url"], token)
+    try:
+        kb = kurzbefehl_bauen(st["url"], token)
+    except (OSError, subprocess.SubprocessError):
+        kb = None
     return {"ok": True, "url": st["url"], "kurzbefehl": bool(kb),
             "text": "✓ Bereit – QR-Code mit dem iPhone scannen." + ("" if kb else " (Siri-Kurzbefehl ließ sich nicht erstellen.)")}
 
@@ -205,10 +277,11 @@ def einrichten(token: str) -> None:
     if not st.get("laeuft"):
         c.print("[yellow]Tailscale ist nicht verbunden[/] – Tailscale-App öffnen und anmelden, dann erneut versuchen.")
         return
-    ok, text = freigeben()
+    ok, text, link = freigeben()
     if not ok:
-        c.print(f"[red]Freigabe fehlgeschlagen:[/] {text}\n"
-                "Tipp: auf login.tailscale.com unter DNS „HTTPS Certificates“ aktivieren.")
+        c.print(f"[red]Freigabe fehlgeschlagen:[/] {text}\n" + (f"Bitte im Browser bestätigen: {link}\n" if link else
+                "Tipp: auf login.tailscale.com unter DNS „MagicDNS“ und „HTTPS Certificates“ aktivieren.\n")
+                + "Danach erneut: jarvis iphone")
         return
     url = st["url"]
     ZUSTAND.write_text(json.dumps({"url": url}))

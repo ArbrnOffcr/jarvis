@@ -162,6 +162,10 @@ class Sicherheit:
         from atlas.permissions import Level
         if lvl == Level.VERBOTEN:
             return lvl, "", ""
+        nf = getattr(self.c, "notfall", None)
+        if nf and lvl > Level.FREI and tool.name != "notfall_schritt" and nf.aktiv() and nf.ist_probe():
+            return Level.VERBOTEN, "Notfall-Probe: ausgeführt wird nichts – im Ernstfall würde ich das jetzt nach " \
+                                   "Bestätigung erledigen.", ""
         if fremd:
             if tool.name in NIE_NACH_FREMD:
                 return Level.VERBOTEN, "Nach dem Lesen fremder Inhalte ist das gesperrt – bitte als eigene Anweisung " \

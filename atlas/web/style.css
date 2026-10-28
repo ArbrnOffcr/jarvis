@@ -1724,3 +1724,41 @@ body>.nachricht-karte{position:fixed;right:24px;bottom:72px;z-index:62}
 .bt-reihe input[type=checkbox]{padding:0;width:14px!important;height:14px}
 .bt-reihe input[type=number]{width:64px!important}
 .bt-reihe button{font:600 9px var(--mono);letter-spacing:.14em;padding:6px 9px;background:transparent;color:var(--accent);border:1px solid var(--line);cursor:pointer}
+.ts-chips .ts-waechter{font:inherit;font-size:11px;padding:3px 8px;background:transparent;color:var(--ink2);border:1px solid var(--line);cursor:pointer}
+.ts-chips .ts-waechter.an{color:#ff6b6b;border-color:rgba(255,107,107,.5);box-shadow:0 0 10px rgba(255,80,80,.25)}
+.im-links-knoepfe{position:absolute;right:10px;top:10px;display:flex;gap:6px;z-index:3}
+.im-links-knoepfe button{font:600 9px var(--mono);letter-spacing:.16em;padding:6px 10px;color:var(--ink);background:rgba(2,12,20,.55);
+  border:1px solid rgba(0,229,255,.28);backdrop-filter:blur(6px);cursor:pointer;transition:border-color .2s,color .2s}
+.im-links-knoepfe button:hover{border-color:var(--accent);color:var(--accent)}
+.im-links-knoepfe button.aus{color:var(--muted);border-style:dashed}
+/* ---------- Schnellleiste links (Fahrzeuge, Immobilien) ---------- */
+#schnell{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:35;display:flex;flex-direction:column;gap:6px;padding:8px 0;opacity:.38;
+  transition:opacity .35s ease}
+#schnell:hover,#schnell:focus-within{opacity:1}
+#schnell button{position:relative;display:flex;align-items:center;width:34px;height:38px;padding:0 0 0 8px;background:transparent;border:0;cursor:pointer;color:var(--accent-soft)}
+#schnell button::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:2px;background:linear-gradient(transparent,var(--accent),transparent);opacity:.35;transition:opacity .25s}
+#schnell svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 4px rgba(0,229,255,.35))}
+#schnell span{position:absolute;left:38px;white-space:nowrap;font:600 9px var(--mono);letter-spacing:.28em;color:var(--ink2);opacity:0;transform:translateX(-6px);
+  pointer-events:none;transition:opacity .25s,transform .25s}
+#schnell button:hover::before,#schnell button:focus-visible::before{opacity:1}
+#schnell button:hover span,#schnell button:focus-visible span{opacity:1;transform:none}
+#schnell button:hover svg{color:#fff}
+body.rein #schnell{opacity:.22}
+body.rein #schnell:hover{opacity:.9}
+body.mobil #schnell{top:auto;bottom:110px;transform:none}
+#nf-banner.probe{background:rgba(70,50,10,.75);border-color:rgba(255,190,90,.55);color:#ffe7b8}
+#nf-banner.probe i{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.nf-probe-band{border:1px dashed rgba(255,190,90,.55);background:rgba(255,180,70,.08);color:#ffe7b8;padding:8px 12px;font-size:12.5px;margin:4px 0 8px}
+.nf-test{list-style:none;padding:0;margin:8px 0}
+.nf-test li{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid rgba(0,229,255,.06);font-size:13px}
+.nf-test li b{flex:0 0 18px;color:var(--good)} .nf-test li.warn b{color:var(--warn)}
+.nf-test small{display:block;color:var(--muted);font-size:11.5px}
+.bt-reihe select{background:rgba(0,0,0,.3);color:var(--ink);border:1px solid var(--line);padding:5px 8px;color-scheme:dark}
+.bt-reihe select{width:auto!important;flex:0 0 auto}
+/* ---------- Avatare AURA · NOVA · MILO (zusätzliche Stilwelten) ---------- */
+#avatar-box{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:0;transition:opacity 1.2s ease}
+body[data-avatar] #avatar-box{opacity:1}
+body[data-avatar] #core3d,body[data-avatar] #core{opacity:0;transition:opacity .9s ease}
+body[data-avatar].bilder #core3d,body[data-avatar].youtube #core3d{opacity:1}
+body[data-avatar].bilder #avatar-box,body[data-avatar].youtube #avatar-box{opacity:.12}
+body.rein.zeigt[data-avatar] #avatar-box{opacity:.6;filter:blur(1px)}

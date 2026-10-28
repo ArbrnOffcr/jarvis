@@ -7,12 +7,14 @@ Datenschutz:
 - Werkzeug-Antworten an das Sprachmodell enthalten keine Namen oder Kontaktdaten der Mieter.
 """
 import json
+import os
 import re
 import secrets
 import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -158,6 +160,7 @@ class Immobilien:
         t = lambda k, n=120: str(x.get(k) or "").strip()[:n]
         d = {k: t(k) for k in ("name", "adresse", "art", "heizung", "energieklasse", "eigentuemer", "ordner", "kaufdatum",
                                "notiz")}
+        d["mietvertrag"] = t("mietvertrag", 300)
         for k in FELDER_ZAHL:
             d[k] = _zahl(x.get(k))
         m = x.get("mieter") or {}
@@ -336,7 +339,48 @@ class Immobilien:
 
     def ansicht(self, o: dict) -> dict:
         b = o.get("bilder") or {}
-        return {**o, "kennzahlen": self.kennzahlen(o), "bilder": {"haupt": b.get("haupt", ""), "galerie": b.get("galerie", [])}}
+        return {**o, "kennzahlen": self.kennzahlen(o), "bilder": {"haupt": b.get("haupt", ""), "galerie": b.get("galerie", [])},
+                "links": self.links(o)}
+
+    def links(self, o: dict) -> dict:
+        """Ordner der Immobilie im DATENARCHIV und Mietvertrag (eingetragen oder im Ordner gefunden)."""
+        a = self.c.archiv.archive if getattr(self.c, "archiv", None) else None
+        if not a:
+            return {}
+        rel = lambda p: str(p.relative_to(a))
+        out = {}
+        ordner = (o.get("ordner") or "").strip().strip("/")
+        if ordner.startswith("DATENARCHIV/"):
+            ordner = ordner[len("DATENARCHIV/"):]
+        od = (a / ordner) if ordner else None
+        if od and od.is_dir():
+            out["ordner"] = rel(od)
+        mv = (o.get("mietvertrag") or "").strip().strip("/")
+        if mv.startswith("DATENARCHIV/"):
+            mv = mv[len("DATENARCHIV/"):]
+        if mv and (a / mv).is_file():
+            out["mietvertrag"] = mv
+        elif od and od.is_dir():
+            cache = getattr(self, "_mv_cache", {})
+            self._mv_cache = cache
+            treffer = cache.get(str(od))
+            if not treffer or time.time() - treffer[0] > 600:
+                gefunden = []
+                basis = len(od.parts)
+                for dirpath, dirnames, filenames in os.walk(od):
+                    if len(Path(dirpath).parts) - basis >= 4:
+                        dirnames[:] = []
+                    dirnames[:] = [x for x in dirnames if not x.startswith(".")]
+                    for fn in filenames:
+                        if re.search(r"miet\s*-?vertrag", fn, re.I) and Path(fn).suffix.lower() in (
+                                ".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png", ".heic") and not fn.startswith("~$"):
+                            gefunden.append(Path(dirpath) / fn)
+                gefunden.sort(key=lambda p: (not re.search(r"unterschr|signiert|final", p.name, re.I), -p.stat().st_mtime))
+                treffer = (time.time(), rel(gefunden[0]) if gefunden else "")
+                cache[str(od)] = treffer
+            if treffer[1]:
+                out["mietvertrag"], out["mietvertrag_auto"] = treffer[1], True
+        return out
 
     def alle(self) -> dict:
         z = self._laden()

@@ -605,6 +605,11 @@ def tools(core) -> list[Tool]:
             raise ToolError("modus: abfahrt, start oder aus")
         return {"ok": True, "modus": modus, "uhrzeit": uhrzeit}
 
+    def waechter(an):
+        t.befehl("set_sentry_mode", on=bool(an))
+        return {"ok": True, "waechter": "an" if an else "aus",
+                "hinweis": "Die Live-Kamera gibt es nur in der Tesla-App – über die Schnittstelle nicht abrufbar."}
+
     def karte():
         pos = t.position()
         if pos.get("lat") is None:
@@ -623,6 +628,11 @@ def tools(core) -> list[Tool]:
              termine, {"tuev": S("MM/JJJJ laut Plakette"), "versicherung": S("Hauptfälligkeit, TT.MM.JJJJ"),
                        "versicherer": S("Name der Versicherung, optional")},
              label=lambda a: "Fahrzeugtermine eintragen"),
+        Tool("tesla_waechter_an", "Wächtermodus (Sentry) des Tesla einschalten. Ein Live-Kamerabild gibt die Tesla-"
+             "Schnittstelle nicht her – dafür die Tesla-App nutzen.", "tesla.steuern", lambda: waechter(True),
+             label=lambda a: "Tesla: Wächtermodus an"),
+        Tool("tesla_waechter_aus", "Wächtermodus (Sentry) des Tesla ausschalten.", "tesla.waechter_aus",
+             lambda: waechter(False), label=lambda a: "Tesla: Wächtermodus AUS"),
         Tool("tesla_karte", "Das Auto auf der Live-Karte im Dashboard zeigen (fährt es, wird die Fahrt live verfolgt). "
              "Für „Wo steht mein Auto?“, „Zeig mir das Auto auf der Karte“, „Wo ist der Tesla gerade?“.",
              "tesla.lesen", karte),

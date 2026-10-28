@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 28.10.2026 · Version 0.17
+Stand: 28.10.2026 · Version 0.19
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -25,10 +25,12 @@ Bedeutung der Zeichen:
 | Deutsch und Englisch (Antwort in der Sprache der Frage) | ✅ | |
 | Eigene Mac-App mit Dauer-Mikrofon, Fenster frei verschiebbar | ✅ | `jarvis app` |
 | Reduzierte Ansicht (nur Kern und Untertitel) und Dashboard-Ansicht | ✅ | Untertitel scrollbar |
+| Avatare AURA, NOVA und MILO als zusätzliche Stilwelten (STIL-Knopf oder „Zeig dich als NOVA“) – die bisherigen Stile bleiben | ✅ | Darstellung „Porträt“ (lebendes Hologramm: Atmen, Blick folgt der Maus, Augen und Nähte leuchten mit der Stimme, Mund bewegt sich, Warnung färbt Bernstein) oder „3D-Figur“ (Prototyp) unter ⚙ Allgemein → Darstellung |
+| Schnellleiste links: Fahrzeuge und Immobilien mit einem Klick – dezent, auch in der reduzierten Ansicht | ✅ | Name erscheint beim Darüberfahren |
 | Dokumente per Drag & Drop in den Chat | ✅ | Vor dem Lesen durch Claude wird immer gefragt |
 | Fotos/Scans vom iPhone („Ablage → Dokument/Kontakt vom iPhone“) | ✅ | Continuity Camera |
 | Unterwegs per Telegram-Bot (Text, Fotos, PDFs, Briefing) | ⚙️ | ⚙ Einstellungen → Verbindungen → Telegram |
-| iPhone-Web-App auf dem Home-Bildschirm (Sprechen, Untertitel, Karte, Player) | ⚙️ | Tailscale auf Mac und iPhone, dann ⚙ Einstellungen → iPhone → IPHONE VERBINDEN |
+| iPhone-Web-App auf dem Home-Bildschirm (Sprechen, Untertitel, Karte, Player) | ⚙️ | Tailscale auf Mac und iPhone, dann ⚙ Einstellungen → iPhone → IPHONE VERBINDEN; „VERBINDUNG PRÜFEN“ zeigt, woran es hakt (Anmeldung, MagicDNS, HTTPS, Serve-Freigabe) |
 | Siri: „Hey Siri, frag Jarvis“ – Antwort wird vorgelesen | ⚙️ | Kurzbefehl aus ⚙ Einstellungen → iPhone; Bestätigungspflichtiges nur am Mac |
 | Schnellknöpfe: TAGESLAGE, POSTEINGANG, WOCHE PLANEN, FRISTEN, VERGESSEN? | ✅ | |
 | Telefonnotiz per ⌥⌘N | ✅ | Aufnahme → Zusammenfassung → Aufgaben |
@@ -166,6 +168,8 @@ Bedeutung der Zeichen:
 | Orte bei Durchfahrt: Ortsteil und Ort werden während der Fahrt kurz eingeblendet (auch in der minimierten Karte, Ortseinfahrt hervorgehoben); Liste der durchfahrenen Orte in der großen Karte | ✅ | höchstens alle 15 s bzw. 400 m abgefragt (OpenStreetMap) |
 | TÜV/HU und Kfz-Versicherung im Fahrzeugfenster: Fälligkeit mit Countdown, Versicherer, Kündigungsfrist (1 Monat vor Hauptfälligkeit) | ✅ | eintragen im Fenster oder per Sprache; wird als Frist mit Erinnerung geführt |
 | Schlafendes Auto wird nur auf Wunsch geweckt | ✅ | sonst letzter Stand mit Uhrzeit |
+| Wächtermodus (Sentry) ein- und ausschalten | ✅ | Knopf im Fahrzeugfenster; Ausschalten nur mit Bestätigung |
+| Live-Kamerabild / Wächter-Kameras im Dashboard | ❌ | Teslas Schnittstelle (Fleet API) bietet keinen Kamerazugriff – nur in der Tesla-App |
 | Entriegeln, Türen/Kofferraum öffnen, Fahren | ❌ | bewusst nicht |
 | Fahrzeugfenster mit Reitern TESLA / FORD | ✅ | Wechsel oben im Fenster |
 
@@ -190,6 +194,7 @@ Bedeutung der Zeichen:
 | Mieterhöhung planen: prüft 15-Monats-Frist und Kappungsgrenze, legt Frist zum Ankündigen an | ✅ | im Fenster „＋ PLANEN“ oder per Sprache |
 | Fristen: Zinsbindungsende und „Anschlussfinanzierung prüfen“ (12 Monate vorher) | ✅ | automatisch beim Speichern |
 | Neue Immobilie per Assistent (Objekt, Kauf, Darlehen, Mieter & Miete) | ✅ | Knopf „＋ IMMOBILIE“ |
+| Je Immobilie: Knöpfe MIETVERTRAG (öffnet in Vorschau) und ORDNER (öffnet den Ordner im DATENARCHIV/iCloud im Finder) | ✅ | Mietvertrag wird im Ordner der Immobilie gefunden oder unter „Bearbeiten“ eingetragen; auf dem iPhone Anzeige im Fenster |
 | Mietvertrag einlesen – ausschließlich lokal (Texterkennung und lokales Modell auf dem Mac, keine Weitergabe an Claude, Datei wird nicht gespeichert) | ⚙️ | braucht das lokale Sprachmodell; Werte werden markiert vorgeschlagen und vor dem Speichern geprüft |
 | Nebenkostenabrechnung je Jahr: Belegliste aus dem Mietvertrag, Fristen (Belege bis 31.03., an Mieter bis 30.06., gesetzlich 31.12.) | ✅ | Fenster „Nebenkosten“; ab 2. Januar automatisch für das Vorjahr, sonst „＋ JAHR“ |
 | Immobilien-Postfach (iCloud-Alias) alle 15 Min. prüfen, Anhänge lokal erkennen (Kostenart, Jahr, Betrag, Zeitraum, Objekt) | ⚙️ | Alias unter ⚙ Einstellungen → Daten & Postfächer; der Werbefilter lässt diese Mails in Ruhe |
@@ -269,6 +274,8 @@ Bedeutung der Zeichen:
 | Notfallordner nur lokal: aus Archivsuche und Dateilesen ausgenommen; in der Begleitung antwortet das lokale Modell | ✅ | Kontonummern werden zusätzlich maskiert |
 | Während der Begleitung ruhen alle Befugnisse; Richards Briefing, Hinweise, Mail-Wachen und Sportblöcke pausieren | ✅ | Befugnisse kommen beim Beenden zurück |
 | Notfallordner prüfen: Richard sieht, welche Kapitel JARVIS erkennt (nur Überschriften, ohne Inhalt) | ✅ | |
+| Probe: den Ernstfall üben – mit oder ohne Code, Banner, Begleitung, lokales Modell, Telegram an Richard – aber nichts wird gesendet, abgelegt oder eingetragen; Fortschritt wird verworfen | ✅ | ⚙ Einstellungen → Notfall → Probe; endet automatisch (30 min–2 h) |
+| Selbsttest „Bereit für den Ernstfall?“: Code, Notfallordner gefunden/aktuell, Kapitel und Aufgaben erkannt, lokales Modell, Telegram | ✅ | auch per Sprache: „Ist die Notfallbegleitung bereit?“ |
 
 ## 12d. Zuhause – HomeKit und NUKI
 

@@ -11,7 +11,8 @@ import json
 import sys
 
 ERLAUBT = {"auto_conditioning_start", "auto_conditioning_stop", "set_temps", "charge_start", "charge_stop",
-           "set_charge_limit", "set_scheduled_charging", "set_scheduled_departure", "set_preconditioning_max"}
+           "set_charge_limit", "set_scheduled_charging", "set_scheduled_departure", "set_preconditioning_max",
+           "set_sentry_mode"}
 
 
 async def main(d: dict) -> dict:

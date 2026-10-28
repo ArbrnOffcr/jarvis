@@ -176,6 +176,14 @@ class Core:
             "und dem Nutzer als Karte zum Bestätigen zeigen. Danach nichts weiter tun – angelegt wird per Klick.",
             "kontakte.lesen", lambda dokument_id: kontakt_vorschlag(dokument_id),
             {"dokument_id": _S("id aus <dokument id=…>")}, ["dokument_id"])
+        self.tools["darstellung_waehlen"] = _Tool(
+            "darstellung_waehlen",
+            "Darstellung/Stilwelt des Dashboards wechseln – auch die Avatare: „Zeig dich als NOVA“, „Wechsel zu AURA“, "
+            "„Zurück zum Kern“ (= holo). Avatar-Darstellung optional 'portraet' oder 'figur' (3D-Prototyp).",
+            "anzeige", lambda stil, avatar_modus="": (self.broadcast({"type": "stil", "stil": stil, "avatar_modus": avatar_modus}),
+                                                      {"stil": stil})[1],
+            {"stil": _S("Stilwelt", enum=["plexus", "holo", "organisch", "taktisch", "minimal", "aura", "nova", "milo"]),
+             "avatar_modus": _S("portraet oder figur, optional", enum=["portraet", "figur"])}, ["stil"])
         self.tools["einfuehrung_starten"] = _Tool(
             "einfuehrung_starten",
             "Die geführte Einführung (Tutorial) im Dashboard starten – wenn der Nutzer sie sehen oder wiederholen will.",
@@ -776,6 +784,9 @@ async def notfall_aktion(aktion: str, request: Request, data: dict | None = None
         "schritt": lambda: n.schritt(str(d.get("id") or ""), str(d.get("status") or "erledigt"), str(d.get("notiz") or "")),
         "sterbedatum": lambda: n.sterbedatum(str(d.get("datum") or "")),
         "fristen": lambda: n.fristen_eintragen(d.get("auswahl")),
+        "probe": lambda: n.probe_starten(str(d.get("code") or ""), int(d.get("minuten") or 120)),
+        "probe_ende": lambda: n.probe_beenden(),
+        "selbsttest": lambda: {"selbsttest": n.selbsttest()},
     }
     if aktion not in aufrufe:
         raise HTTPException(404, "unbekannt")
@@ -934,7 +945,8 @@ async def tesla_befehl(data: dict, _: None = Depends(auth)):
     """Knöpfe im Tesla-Fenster: ausdrücklicher Klick = Auftrag (wie ein bestätigter Sprachbefehl)."""
     from atlas.tools import ToolError
     c = get_core()
-    name = {"klima": "tesla_klima", "laden": "tesla_laden", "ladeplan": "tesla_ladeplan"}.get(str(data.get("befehl")))
+    name = {"klima": "tesla_klima", "laden": "tesla_laden", "ladeplan": "tesla_ladeplan",
+            "waechter_an": "tesla_waechter_an", "waechter_aus": "tesla_waechter_aus"}.get(str(data.get("befehl")))
     if not name or name not in c.tools:
         raise HTTPException(400, "Unbekannter Befehl")
     try:
@@ -1429,6 +1441,23 @@ async def archiv_ordner(data: dict, _: None = Depends(auth)):
     return {"ordner": str(p.parent)}
 
 
+@app.post("/archiv/ordner_auf")
+async def archiv_ordner_auf(data: dict, _: None = Depends(auth)):
+    """Klick: einen Ordner des DATENARCHIVs (iCloud) im Finder öffnen."""
+    import subprocess
+    from atlas.tools import vorschau
+    if not vorschau.INSTANZ:
+        raise HTTPException(404, "DATENARCHIV nicht verfügbar")
+    try:
+        p = vorschau.INSTANZ.at._path(data.get("pfad", ""))
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+    if not p.is_dir():
+        raise HTTPException(400, "Kein Ordner")
+    await asyncio.to_thread(subprocess.run, ["open", str(p)], timeout=15)
+    return {"ordner": str(p)}
+
+
 @app.post("/ui-log")
 def ui_log(data: dict, _: None = Depends(auth)):
     """Kurze Meldungen der Oberfläche ins Protokoll (Fehlersuche)."""
@@ -1634,6 +1663,19 @@ async def iphone_einrichten(_: None = Depends(auth)):
     return await asyncio.to_thread(iphone.einrichten_gui, get_core().token)
 
 
+@app.get("/iphone/diagnose")
+async def iphone_diagnose(_: None = Depends(auth)):
+    from atlas import iphone
+    return await asyncio.to_thread(iphone.diagnose)
+
+
+@app.post("/iphone/zuruecksetzen")
+def iphone_zuruecksetzen(_: None = Depends(auth)):
+    from atlas import iphone
+    iphone.ZUSTAND.unlink(missing_ok=True)
+    return {"ok": True}
+
+
 @app.get("/iphone/kurzbefehl")
 def iphone_kurzbefehl(_: None = Depends(auth)):
     from atlas import iphone
@@ -1811,7 +1853,7 @@ async def link_oeffnen(data: dict, _: None = Depends(auth)):
     url = str(data.get("url", ""))
     erlaubt = ("console.anthropic.com", "elevenlabs.io", "account.apple.com", "t.me", "serper.dev", "developer.tesla.com",
                "auth.tesla.com", "tesla.com", "developer.ford.com",
-               "console.cloud.google.com", "login.tailscale.com", "tailscale.com", "apps.apple.com")
+               "console.cloud.google.com", "login.tailscale.com", "tailscale.com", "apps.apple.com", "web.nuki.io")
     host = urlparse(url).hostname or ""
     if urlparse(url).scheme != "https" or not any(host == h or host.endswith("." + h) for h in erlaubt):
         raise HTTPException(400, "Link nicht erlaubt")

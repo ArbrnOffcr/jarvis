@@ -1140,15 +1140,19 @@ handle = function (ev) {
 // =====================================================================
 //  STILWELTEN, KLÄNGE, ZÄHLER (Oberflächen-Prototypen)
 // =====================================================================
-const STILE = ["plexus", "holo", "organisch", "taktisch", "minimal"];
-const STILNAME = { plexus: "PLEXUS", holo: "HOLOGRAFISCH", organisch: "ORGANISCH", taktisch: "TAKTISCH", minimal: "MINIMAL" };
+const STILE = ["plexus", "holo", "organisch", "taktisch", "minimal", "aura", "nova", "milo"];
+const STILNAME = { plexus: "PLEXUS", holo: "HOLOGRAFISCH", organisch: "ORGANISCH", taktisch: "TAKTISCH", minimal: "MINIMAL",
+  aura: "AVATAR AURA", nova: "AVATAR NOVA", milo: "AVATAR MILO" };
+const AVATAR_STILE = ["aura", "nova", "milo"];          // Avatare sind zusätzliche Stilwelten (Oberfläche: holografisch)
+const stilThema = (s) => AVATAR_STILE.includes(s) ? "holo" : s;
 let stil = "holo", klang = true;
 
 function setStil(name, save = true) {
   stil = STILE.includes(name) ? name : "holo";
-  document.body.dataset.stil = stil;
+  document.body.dataset.stil = stilThema(stil);
   $("stilbtn").textContent = `STIL: ${STILNAME[stil]}`;
-  window.jarvis3d?.setTheme(stil);
+  window.jarvis3d?.setTheme(stilThema(stil));
+  avatarSetzen(AVATAR_STILE.includes(stil) ? stil : null);
   if (save) api("/einstellungen", { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ stil }) }).catch(() => {});
 }
@@ -1163,7 +1167,7 @@ function setKlang(on, save = true) {
     body: JSON.stringify({ klang: on }) }).catch(() => {});
 }
 $("klangbtn").addEventListener("click", () => { unlockAudio(); setKlang(!klang); if (klang) sfx("done"); });
-window.addEventListener("jarvis3d-ready", () => window.jarvis3d.setTheme(stil));
+window.addEventListener("jarvis3d-ready", () => window.jarvis3d.setTheme(stilThema(stil)));
 
 // Klänge: synthetisch über Web Audio – kurz, leise, unaufdringlich
 function sfx(kind) {
@@ -1213,6 +1217,7 @@ function countUp(root) {
 
 // Einstellungen laden
 api("/einstellungen").then((st) => {
+  AV.modus = st.avatar_modus === "figur" ? "figur" : "portraet"; avatarModusKnopf();
   setStil(st.stil || "plexus", st.stil === undefined); setKlang(st.klang !== false, false);
   setRein(st.rein === undefined ? true : !!st.rein, st.rein === undefined);   // neu: reduziert als Standard
 }).catch(() => { setStil("plexus", false); setKlang(true, false); setRein(true, false); });
@@ -2743,13 +2748,28 @@ async function iphoneBereich() {
     el.innerHTML = `<ol><li>Tailscale auf Mac und iPhone installieren (<a data-l="https://apps.apple.com/app/tailscale/id1475387142">App Store ↗</a>)
         und mit demselben Konto anmelden.</li>
       <li>Auf <a data-l="https://login.tailscale.com/admin/dns">login.tailscale.com → DNS ↗</a> „MagicDNS“ und „HTTPS Certificates“ einschalten.</li>
-      <li><button type="button" id="iphone-los" class="vb-knopf">IPHONE VERBINDEN</button> <span id="iphone-st" class="vb-hilfe"></span></li></ol>`;
+      <li><button type="button" id="iphone-los" class="vb-knopf">IPHONE VERBINDEN</button> <span id="iphone-st" class="vb-hilfe"></span></li></ol>
+      <p class="vb-hilfe"><button type="button" id="iphone-diag" class="vb-knopf">VERBINDUNG PRÜFEN</button></p><p id="iphone-diag-aus" class="vb-hilfe"></p>`;
     el.querySelectorAll("[data-l]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); vbLink(a.dataset.l); }));
     $("iphone-los").addEventListener("click", async () => {
-      $("iphone-los").disabled = true; $("iphone-st").textContent = "Richte ein …";
-      try { const r = await vbPost("/iphone/einrichten"); $("iphone-st").textContent = r.text; if (r.ok) setTimeout(iphoneBereich, 800); }
+      $("iphone-los").disabled = true; $("iphone-st").textContent = "Richte ein … (kann bis zu einer Minute dauern)";
+      try {
+        const r = await vbPost("/iphone/einrichten");
+        $("iphone-st").innerHTML = esc(r.text) + (r.link ? ` <a data-l2="${esc(r.link)}">Seite öffnen ↗</a>` : "");
+        $("iphone-st").querySelector("[data-l2]")?.addEventListener("click", (e) => { e.preventDefault(); vbLink(r.link); });
+        if (r.ok) setTimeout(iphoneBereich, 800);
+      }
       catch (e) { $("iphone-st").textContent = "✕ " + e.message; }
       finally { if ($("iphone-los")) $("iphone-los").disabled = false; }
+    });
+    $("iphone-diag")?.addEventListener("click", async () => {
+      const box = $("iphone-diag-aus"); box.textContent = "Prüfe …";
+      try { const d = await api("/iphone/diagnose"); const t = d.tailscale || {};
+        box.innerHTML = `<b>Tailscale:</b> ${t.installiert ? "installiert" : "nicht gefunden"}${t.version ? " · " + esc(t.version.split("-")[0]) : ""}<br>
+          <b>Verbunden:</b> ${t.laeuft ? "ja" : "nein"} ${t.zustand ? "(" + esc(t.zustand) + ")" : ""}<br>
+          <b>Name im Tailnet:</b> ${esc(t.dns || "– (MagicDNS aus?)")}<br><b>HTTPS-Zertifikate:</b> ${t.zertifikate ? "an" : "aus / unbekannt"}<br>
+          ${t.fehler ? `<b>Meldung:</b> ${esc(t.fehler)}<br>` : ""}${d.serve ? `<b>Freigabe:</b> ${esc(d.serve)}` : ""}`;
+      } catch (e) { box.textContent = "✕ " + e.message; }
     });
     return;
   }
@@ -2758,7 +2778,9 @@ async function iphoneBereich() {
     <li>QR-Code mit der Kamera scannen, in Safari öffnen.</li>
     <li>Teilen → „Zum Home-Bildschirm“ – JARVIS ist jetzt eine App.</li>
     <li>In der iPhone-App unter ⚙ den Siri-Kurzbefehl „Frag Jarvis“ laden.</li>
-    ${d.qr ? "" : "<li><b>QR-Code fehlt:</b> einmal <code>jarvis iphone</code> ausführen.</li>"}</ol>`;
+    ${d.qr ? "" : "<li><b>QR-Code fehlt:</b> einmal <code>jarvis iphone</code> ausführen.</li>"}</ol>
+    <p class="vb-hilfe"><button type="button" id="iphone-neu" class="vb-knopf">NEU EINRICHTEN</button></p>`;
+  $("iphone-neu")?.addEventListener("click", async () => { await vbPost("/iphone/zuruecksetzen"); iphoneBereich(); });
 }
 const _einstOeffnenI = window.einstellungenOeffnen;
 window.einstellungenOeffnen = function () { _einstOeffnenI(); iphoneBereich(); };
@@ -3874,7 +3896,7 @@ function teslaHTML(d) {
           <button type="button" data-t="plan">ÜBERNEHMEN</button></div></section>
       <section class="ts-kachel ts-info"><h5>FAHRZEUG</h5>
         <div class="ts-chips"><span class="${d.verriegelt ? "ok" : "warn"}">${d.verriegelt ? "🔒 verriegelt" : "🔓 offen"}</span>
-          ${d.waechter ? `<span>◉ Wächter an</span>` : ""}${o.faehrt ? `<span class="ok">▶ fährt ${o.geschwindigkeit_kmh ?? ""} km/h</span>` : ""}
+          <button type="button" class="ts-waechter ${d.waechter ? "an" : ""}" data-t="${d.waechter ? "waechter-aus" : "waechter-an"}" title="Wächtermodus (Sentry) ${d.waechter ? "ausschalten" : "einschalten"} – Live-Kamera nur in der Tesla-App">◉ Wächter ${d.waechter ? "an" : "aus"}</button>${o.faehrt ? `<span class="ok">▶ fährt ${o.geschwindigkeit_kmh ?? ""} km/h</span>` : ""}
           ${d.kilometerstand ? `<span>${d.kilometerstand.toLocaleString("de-DE")} km</span>` : ""}</div>
         <div class="ts-ort">⌖ <b>${esc(o.name || "Standort unbekannt")}</b>${o.lat != null || o.name ? `<button type="button" data-t="karte">LIVE-KARTE</button>` : ""}</div>
         <div class="ts-stand">${d.online ? "Stand " + esc(stand) : `<b>${esc(d.zustand || "schläft")}</b> · letzter Stand ${esc(stand)}`}</div></section>
@@ -3931,6 +3953,8 @@ document.addEventListener("click", (e) => {
     v = Math.min(28, Math.max(15, v)); el.dataset.soll = v; el.textContent = String(v).replace(".0", "") + "°";
     clearTimeout(TS.tempT); TS.tempT = setTimeout(() => teslaBefehl("klima", { an: true, temperatur: v }, `Klima auf ${v} °C`), 1200); return;
   }
+  if (t === "waechter-an") return teslaBefehl("waechter_an", {}, "Wächtermodus wird eingeschaltet");
+  if (t === "waechter-aus") { if (!confirm("Wächtermodus ausschalten?")) return; return teslaBefehl("waechter_aus", {}, "Wächtermodus wird ausgeschaltet"); }
   if (t === "laden-start") return teslaBefehl("laden", { aktion: "start" }, "Laden wird gestartet");
   if (t === "laden-stop") return teslaBefehl("laden", { aktion: "stop" }, "Laden wird gestoppt");
   if (t === "limit") return teslaBefehl("laden", { aktion: "limit", prozent: +f("limit").value }, `Ladelimit ${f("limit").value} %`);
@@ -4601,7 +4625,9 @@ function imHTML(o) {
   return `<div class="ts-grid im-grid">
     <div class="im-links">
       <div class="im-bild">${b.haupt ? `<img alt="" data-src="${imBildUrl(o, b.haupt)}">` : `<button type="button" data-im="bild-neu-haupt" class="im-platzhalter">＋ BILD DER IMMOBILIE EINFÜGEN<small>JPG, PNG oder HEIC vom iPhone</small></button>`}
-        <div class="im-bild-schild"><b>${esc(o.name || o.adresse)}</b><span>${esc(o.adresse || "")}</span></div></div>
+        <div class="im-bild-schild"><b>${esc(o.name || o.adresse)}</b><span>${esc(o.adresse || "")}</span></div>
+        <div class="im-links-knoepfe">${(o.links || {}).mietvertrag ? `<button type="button" data-im="mv-auf" data-pfad="${esc(o.links.mietvertrag)}" title="${esc(o.links.mietvertrag)}">▤ MIETVERTRAG</button>` : `<button type="button" data-im="bearbeiten" class="aus" title="Kein Mietvertrag gefunden – unter Bearbeiten eintragen">▤ MIETVERTRAG ?</button>`}
+          ${(o.links || {}).ordner ? `<button type="button" data-im="ordner-auf" data-pfad="${esc(o.links.ordner)}" title="${esc(o.links.ordner)}">▱ ORDNER</button>` : `<button type="button" data-im="bearbeiten" class="aus" title="Ordner unter Bearbeiten eintragen">▱ ORDNER ?</button>`}</div></div>
       <div class="im-galerie">${slots}</div>
       <div class="im-duo">
         <div class="im-karte"><div class="im-karte-map"></div><span class="im-tile-titel">⌖ LAGE</span>
@@ -4699,6 +4725,17 @@ document.addEventListener("click", async (e) => {
   if (a === "tab") { IM.aktiv = b.dataset.id; return imZeigen(IM.d); }
   if (a === "neu") return imFormular(null);
   if (a === "bearbeiten") return o && imFormular(o);
+  if (a === "mv-auf") {
+    if (MOBIL) { try { const d = await api(`/vorschau?pfad=${encodeURIComponent(b.dataset.pfad)}&seite=1`); DOK.aktuell = d; handle({ type: "bild", titel: d.titel, bilder: [d] }); }
+      catch (err) { toast("Mietvertrag konnte nicht geladen werden"); } return; }
+    try { await api("/archiv/oeffnen", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pfad: b.dataset.pfad }) }); toast("Mietvertrag in Vorschau geöffnet"); }
+    catch (err) { toast("Mietvertrag: " + err.message); } return;
+  }
+  if (a === "ordner-auf") {
+    if (MOBIL) { toast(`Dateien-App → iCloud Drive → DATENARCHIV → ${b.dataset.pfad}`); return; }
+    try { await api("/archiv/ordner_auf", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pfad: b.dataset.pfad }) }); toast("Ordner im Finder geöffnet"); }
+    catch (err) { toast("Ordner: " + err.message); } return;
+  }
   if (a === "nk") return o && nkOeffnen(o.id);
   if (a === "grundriss") return o && grOeffnen(o.id);
   if (a === "bild-neu" || a === "bild-neu-haupt") { const inp = IM.el.querySelector(".im-datei"); inp.dataset.haupt = a === "bild-neu-haupt" ? "1" : ""; inp.click(); return; }
@@ -4752,7 +4789,7 @@ function imFormular(o) {
       <fieldset data-n="0">${imFeld(o, "name", "Kurzname (z. B. Straße)")}${imFeld(o, "adresse", "Adresse (Straße Nr, PLZ Ort)", "text", "required")}
         ${imFeld(o, "art", "Objektart (Einfamilienhaus, Wohnung …)")}${imFeld(o, "baujahr", "Baujahr", "number")}${imFeld(o, "wohnflaeche", "Wohnfläche m²", "number")}
         ${imFeld(o, "grundstueck", "Grundstück m²", "number")}${imFeld(o, "heizung", "Heizung")}${imFeld(o, "energieklasse", "Energieklasse")}
-        ${imFeld(o, "eigentuemer", "Eigentümer (z. B. GbR)")}${imFeld(o, "ordner", "Ordner im DATENARCHIV (vorhandener Ordner)")}</fieldset>
+        ${imFeld(o, "eigentuemer", "Eigentümer (z. B. GbR)")}${imFeld(o, "ordner", "Ordner im DATENARCHIV (vorhandener Ordner)")}${imFeld(o, "mietvertrag", "Mietvertrag – Pfad im DATENARCHIV (leer = im Ordner suchen)")}</fieldset>
       <fieldset data-n="1" hidden>${imFeld(o, "kaufdatum", "Kaufdatum / Fertigstellung", "date")}${imFeld(o, "kaufpreis", "Kaufpreis bzw. Gesamtkosten €", "number")}
         ${imFeld(o, "kaufnebenkosten", "Kaufnebenkosten €", "number")}${imFeld(o, "marktwert", "Geschätzter Marktwert € (optional)", "number")}
         ${imFeld(o, "nicht_umlagefaehig_jahr", "Nicht umlagefähige Kosten € pro Jahr (Verwaltung, Rücklage …)", "number")}</fieldset>
@@ -5783,7 +5820,7 @@ document.addEventListener("click", async (e) => {
       samstag_ab: f("samstag_ab").value, sonntag: f("sonntag").checked, ruhe_titel: liste("ruhe_titel"), fokus_titel: liste("fokus_titel"), stapel_zeiten: liste("stapel_zeiten") });
     if (a === "fokus") r = await vbPost("/autopilot/fokus", { minuten: 120 });
     if (a === "fokus-aus") r = await vbPost("/autopilot/fokus_ende");
-    if (a === "stapel") { window.einstellungenSchliessen?.(); return btStapelLaden(); }
+    if (a === "stapel") { (typeof einstZu === "function" && einstZu()); return btStapelLaden(); }
     if (a === "rechenschaft") return btRechenschaft(7);
     if (st) { st.textContent = "✓ gespeichert"; st.className = "vb-status ok"; }
     btModusLaden(); setTimeout(btEinstAufbauen, 300);
@@ -5866,11 +5903,19 @@ document.addEventListener("click", async (ev) => {
 });
 
 // ---------- Notfallbegleitung ----------
-const NF = { aktiv: false, d: null };
+const NF = { aktiv: false, probe: false, bis: "", d: null };
+function nfSelbsttestHTML(t) {
+  return `<ul class="nf-test">${(t || []).map((x) => `<li class="${x.ok ? "ok" : "warn"}"><b>${x.ok ? "✓" : "⚠"}</b><span>${esc(x.punkt)}${x.hinweis ? `<small>${esc(x.hinweis)}</small>` : ""}</span></li>`).join("")}</ul>`;
+}
 async function notfallEinstAufbauen() {
   const box = $("einst-notfall"); if (!box) return;
   let d; try { d = await fdGet("/notfall"); } catch (e) { return; }
-  NF.aktiv = d.aktiv; notfallBanner();
+  NF.aktiv = d.aktiv; NF.probe = !!d.probe; NF.bis = d.probe_bis || ""; notfallBanner();
+  if (d.aktiv && d.probe) {
+    box.innerHTML = `<p class="vb-hilfe">🧪 Eine <b>Probe</b> läuft bis ${esc(d.probe_bis)} Uhr. JARVIS verhält sich wie im Ernstfall, führt aber nichts aus.</p>
+      <div class="vb-reihe"><button type="button" class="primary" data-nf="oeffnen">BEGLEITUNG ÖFFNEN</button><button type="button" data-nf="probe-ende">PROBE BEENDEN</button></div><div class="nf-bericht"></div><div class="vb-status"></div>`;
+    return;
+  }
   if (d.aktiv) {
     box.innerHTML = `<p class="vb-hilfe">Die Notfallbegleitung ist aktiv (seit ${esc((d.seit || "").replace("T", " "))}).</p>
       <div class="vb-reihe"><button type="button" class="primary" data-nf="oeffnen">BEGLEITUNG ÖFFNEN</button><button type="button" class="gefahr" data-nf="beenden">BEGLEITUNG BEENDEN</button></div><div class="vb-status"></div>`;
@@ -5885,6 +5930,14 @@ async function notfallEinstAufbauen() {
         <div class="vb-feld"><label>Notfallcode</label><input type="password" data-nff="code1" autocomplete="new-password"></div>
         <div class="vb-feld"><label>Notfallcode wiederholen</label><input type="password" data-nff="code2" autocomplete="new-password"></div>
         <div class="vb-reihe"><button type="button" class="primary" data-nf="einrichten">CODE SPEICHERN</button></div><div class="vb-status"></div></div></details>
+    <details class="vb-zeile"><summary><span>Probe – den Ernstfall üben</span><em class="${d.letzte_probe ? "ok" : ""}">${d.letzte_probe ? "zuletzt " + esc(d.letzte_probe.datum.slice(0, 10).split("-").reverse().join(".")) : "noch nie"}</em></summary>
+      <div class="vb-inhalt"><p class="vb-hilfe">Die Probe läuft genau wie der Ernstfall – Code-Eingabe, Banner, Begleitung mit deinem Notfallordner, lokales Modell,
+        Telegram-Nachricht an dich – aber nichts wird gesendet, abgelegt oder eingetragen, und der Fortschritt wird danach verworfen.
+        Während der Probe ruhen deine Befugnisse und Hinweise; sie endet automatisch nach der gewählten Zeit.</p>
+        <div class="vb-reihe"><button type="button" data-nf="selbsttest">SELBSTTEST</button></div><div class="nf-selbst"></div>
+        <div class="vb-feld"><label>Notfallcode (leer lassen = Probe ohne Codeprüfung)</label><input type="password" data-nff="probecode" autocomplete="off"></div>
+        <div class="bt-reihe"><span>Dauer</span><select data-nff="dauer"><option value="30">30 Minuten</option><option value="60">1 Stunde</option><option value="120" selected>2 Stunden</option></select>
+          <button type="button" class="primary" data-nf="probe">PROBE STARTEN</button></div><div class="nf-bericht"></div><div class="vb-status"></div></div></details>
     <details class="vb-zeile"><summary><span>Notfallordner prüfen (für Richard)</span><em></em></summary>
       <div class="vb-inhalt"><p class="vb-hilfe">Zeigt, welche Kapitel JARVIS in deinem Word-Dokument erkennt – nur Überschriften und Anzahl der Schritte, ohne Inhalte, ohne Sprachmodell.</p>
         <div class="vb-reihe"><button type="button" data-nf="pruefen">JETZT PRÜFEN</button></div><div class="nf-pruef"></div><div class="vb-status"></div></div></details>
@@ -5897,7 +5950,8 @@ function notfallBanner() {
   let b = $("nf-banner");
   if (!NF.aktiv) { b?.remove(); return; }
   if (!b) { b = document.createElement("button"); b.type = "button"; b.id = "nf-banner"; b.addEventListener("click", notfallOeffnen); document.body.appendChild(b); }
-  b.innerHTML = "<i></i>NOTFALLBEGLEITUNG";
+  b.classList.toggle("probe", NF.probe);
+  b.innerHTML = NF.probe ? `<i></i>NOTFALL-PROBE${NF.bis ? " · BIS " + esc(NF.bis) : ""}` : "<i></i>NOTFALLBEGLEITUNG";
 }
 async function notfallOeffnen() {
   let d; try { d = await fdGet("/notfall"); } catch (e) { return toast(e.message); }
@@ -5909,7 +5963,8 @@ async function notfallOeffnen() {
         <div><span>${esc(s.text)}</span>${s.notiz ? `<small>${esc(s.notiz)}</small>` : ""}</div>
         ${s.art === "text" ? "" : `<button type="button" class="nf-frag" data-nf="frag" data-t="${esc(s.text.slice(0, 160))}" title="JARVIS dazu fragen">?</button>`}</li>`).join("")}</ul></section>`).join("");
   const fristen = (d.fristen || []).map((f, i) => `<label><input type="checkbox" data-nff="frist" value="${i}" checked> ${esc(f.datum.split("-").reverse().join("."))} – ${esc(f.titel)}<small>${esc(f.hinweis)}</small></label>`).join("");
-  const el = btFenster("BEGLEITUNG", `
+  const el = btFenster(u.probe ? "BEGLEITUNG · PROBE" : "BEGLEITUNG", `
+    ${u.probe ? `<div class="nf-probe-band">🧪 PROBE bis ${esc(u.probe_bis)} Uhr – so sieht ${esc(u.name)} es im Ernstfall. Es wird nichts ausgeführt; Häkchen werden danach verworfen.</div>` : ""}
     <p class="bt-summe">${esc(u.name)}, ich bin da. Wir gehen das in Ruhe durch – immer nur den nächsten Schritt. Du kannst jederzeit pausieren.</p>
     ${u.naechster_schritt ? `<div class="nf-naechster"><small>NÄCHSTER SCHRITT · ${esc(u.naechster_schritt.kapitel)}</small><b>${esc(u.naechster_schritt.text)}</b>
        <button type="button" data-nf="frag" data-t="${esc(u.naechster_schritt.text.slice(0, 160))}">MIT JARVIS ANGEHEN</button></div>` : ""}
@@ -5918,7 +5973,7 @@ async function notfallOeffnen() {
       ${fristen ? `<div class="nf-fristen">${fristen}</div><p class="vb-hilfe">Vorschläge – bitte mit dem Notfallordner abgleichen. Keine Rechtsberatung.</p>
         <div class="bt-reihe"><button type="button" data-nf="fristen">${u.fristen_vorgeschlagen ? "ERNEUT " : ""}INS FRISTENRADAR</button></div>` : ""}</section>
     ${kap || `<p class="vb-hilfe">${esc(d.hinweis || "Leitfaden nicht gefunden.")}</p>`}`, "nf-fenster");
-  el.querySelector(".bt-kopf-rechts").innerHTML = `<button type="button" data-nf="beenden">BEENDEN</button>`;
+  el.querySelector(".bt-kopf-rechts").innerHTML = u.probe ? `<button type="button" data-nf="probe-ende">PROBE BEENDEN</button>` : `<button type="button" data-nf="beenden">BEENDEN</button>`;
 }
 document.addEventListener("click", async (ev) => {
   const b = ev.target.closest("[data-nf]"); if (!b) return;
@@ -5934,6 +5989,19 @@ document.addEventListener("click", async (ev) => {
     if (a === "aktivieren") { await vbPost("/notfall/aktivieren", { code: f("code").value }); f("code").value = ""; NF.aktiv = true; notfallBanner(); notfallEinstAufbauen(); return notfallOeffnen(); }
     if (a === "beenden") { if (!confirm("Notfallbegleitung beenden?")) return; await vbPost("/notfall/beenden"); NF.aktiv = false; notfallBanner(); btZu(); return notfallEinstAufbauen(); }
     if (a === "oeffnen") return notfallOeffnen();
+    if (a === "selbsttest") { const r = await vbPost("/notfall/selbsttest"); z.querySelector(".nf-selbst").innerHTML = nfSelbsttestHTML(r.selbsttest); return; }
+    if (a === "probe") {
+      const r = await vbPost("/notfall/probe", { code: f("probecode").value, minuten: +f("dauer").value }); f("probecode").value = "";
+      NF.aktiv = true; NF.probe = true; NF.bis = r.bis; notfallBanner(); notfallEinstAufbauen(); (typeof einstZu === "function" && einstZu()); return notfallOeffnen();
+    }
+    if (a === "probe-ende") {
+      const r = await vbPost("/notfall/probe_ende"); NF.aktiv = false; NF.probe = false; notfallBanner();
+      const lp = r.bericht || {};
+      btFenster("PROBE · ERGEBNIS", `<p class="bt-summe">Probe beendet${lp.seit ? ` (gestartet ${esc(lp.seit.slice(11, 16))} Uhr)` : ""}. ${lp.mit_code ? "Code-Eingabe geübt ✓" : "Ohne Codeprüfung geprobt."}
+        ${lp.abgehakt ? ` ${lp.abgehakt} Schritt(e) testweise abgehakt.` : ""} Alles ist zurückgesetzt, deine Befugnisse sind wieder aktiv.</p>
+        <section class="nf-kap"><h5>BEREIT FÜR DEN ERNSTFALL?</h5>${nfSelbsttestHTML(r.selbsttest)}</section>`, "nf-fenster");
+      return notfallEinstAufbauen();
+    }
     if (a === "pruefen") {
       const r = await vbPost("/notfall/pruefen"); const p = z.querySelector(".nf-pruef");
       p.innerHTML = r.gefunden ? `<p class="vb-hilfe">✓ ${esc(r.datei)} (Stand ${esc(r.stand)})</p><ul class="nf-pruefliste">${r.kapitel.map((k) => `<li style="padding-left:${(k.ebene - 1) * 14}px">${esc(k.titel)} <em>${k.schritte} Schritte</em></li>`).join("")}</ul>`
@@ -5949,9 +6017,78 @@ document.addEventListener("click", async (ev) => {
 });
 const _handleNF = handle;
 handle = function (ev) {
-  if (ev.type === "notfall") { NF.aktiv = !!ev.aktiv; notfallBanner(); if (ev.aktualisiert && BT.fenster?.classList.contains("nf-fenster")) notfallOeffnen(); return; }
+  if (ev.type === "notfall") { NF.aktiv = !!ev.aktiv; NF.probe = !!ev.probe && !!ev.aktiv; notfallBanner(); if (!$("einst").hidden) notfallEinstAufbauen(); if (ev.aktualisiert && BT.fenster?.classList.contains("nf-fenster")) notfallOeffnen(); return; }
   _handleNF(ev);
 };
-setTimeout(async () => { try { const d = await fdGet("/notfall"); NF.aktiv = d.aktiv; notfallBanner(); } catch (e) {} }, 3500);
+setTimeout(async () => { try { const d = await fdGet("/notfall"); NF.aktiv = d.aktiv; NF.probe = !!d.probe; NF.bis = d.probe_bis || ""; notfallBanner(); } catch (e) {} }, 3500);
 const _vbAufbauenZN = vbAufbauen;
 vbAufbauen = async function (...a) { await _vbAufbauenZN(...a); zuhauseEinstAufbauen(); notfallEinstAufbauen(); };
+
+// =====================================================================
+//  SCHNELLLEISTE links: Fahrzeuge und Immobilien – dezent, auch in der reduzierten Ansicht
+// =====================================================================
+(function schnellleiste() {
+  const l = document.createElement("nav"); l.id = "schnell"; l.setAttribute("aria-label", "Schnellzugriff");
+  l.innerHTML = `
+    <button type="button" data-sl="fahrzeug" title="Fahrzeuge"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 19.5v-3.2c0-.9.5-1.7 1.3-2.1l2.6-1.3 2.4-4a3 3 0 0 1 2.6-1.4h6.4c1 0 2 .5 2.6 1.4l2.4 4 2.6 1.3c.8.4 1.3 1.2 1.3 2.1v3.2"/><path d="M4 19.5h24v3a1 1 0 0 1-1 1h-2.5M7.5 23.5H5a1 1 0 0 1-1-1v-3"/><circle cx="10" cy="23.5" r="2.4"/><circle cx="22" cy="23.5" r="2.4"/><path d="M12.4 23.5h7.2M9.6 12.9h12.8"/></svg><span>FAHRZEUGE</span></button>
+    <button type="button" data-sl="immo" title="Immobilien"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 15 16 6l11 9"/><path d="M8 13v12.5h16V13"/><path d="M13.5 25.5v-6.5h5v6.5"/><path d="M21 9V6.5h2.5v4.6"/></svg><span>IMMOBILIEN</span></button>`;
+  document.body.appendChild(l);
+  l.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-sl]"); if (!b) return;
+    sfx?.("tick");
+    if (b.dataset.sl === "fahrzeug") window.teslaAnzeigen?.(); else imLaden();
+  });
+})();
+
+
+// =====================================================================
+//  AVATARE AURA · NOVA · MILO – zusätzliche Stilwelten (STIL-Knopf). Darstellung „Porträt“ (lebendes Hologramm
+//  aus den Konzeptbildern) oder „3D-Figur“ (mitgelieferte three.js-Prototypen). Der Kern bleibt für alle anderen Stile.
+// =====================================================================
+const AV = { person: null, inst: null, laden: null, modus: "portraet" };
+const AV_ZUSTAND = { idle: "ruhe", listen: "zuhoeren", think: "denken", tool: "denken", speak: "sprechen", ask: "warnung",
+  error: "warnung", off: "ruhe" };
+function avatarLib() {
+  if (window.JarvisAvatar) return Promise.resolve();
+  if (!AV.laden) AV.laden = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "avatar3d.bundle.js?v=20261028a";
+    s.onload = res; s.onerror = () => { AV.laden = null; rej(new Error("Avatar-Modul fehlt")); }; document.head.appendChild(s); });
+  return AV.laden;
+}
+async function avatarSetzen(person) {
+  if (AV.person === person && (AV.inst || !person)) return;
+  try { AV.inst?.entfernen(); } catch (e) {}
+  AV.inst = null; AV.person = person;
+  let box = $("avatar-box");
+  if (!person) { delete document.body.dataset.avatar; if (box) setTimeout(() => { if (!AV.person) box.remove(); }, 900); return; }
+  if (!box) { box = document.createElement("div"); box.id = "avatar-box"; box.setAttribute("aria-hidden", "true"); $("stage").insertBefore(box, $("state")); }
+  box.textContent = "";
+  try {
+    await avatarLib();
+    if (AV.person !== person) return;
+    AV.inst = window.JarvisAvatar.erzeugen(box, { person, modus: AV.modus, qualitaet: MOBIL ? "niedrig" : "hoch" });
+    AV.inst.zustand(AV_ZUSTAND[coreState] || "ruhe");
+    document.body.dataset.avatar = person;
+  } catch (e) {
+    console.warn("Avatar", e); AV.person = null; delete document.body.dataset.avatar; box.remove();
+    toast("Avatar ließ sich nicht laden – der Kern bleibt aktiv");
+  }
+}
+const _setStateAvatar = setState;
+setState = function (s) { _setStateAvatar(s); try { AV.inst?.zustand(AV_ZUSTAND[s] || "ruhe"); } catch (e) {} };
+window.atlasCore.setState = setState;
+const _setLevelAvatar = window.atlasCore.setLevel;
+window.atlasCore.setLevel = (v) => { _setLevelAvatar(v); try { AV.inst?.pegel(v); } catch (e) {} };
+function avatarModusKnopf() { const b = $("avatarmodus"); if (b) b.textContent = AV.modus === "figur" ? "3D-FIGUR (PROTOTYP)" : "PORTRÄT"; }
+$("avatarmodus")?.addEventListener("click", () => {
+  AV.modus = AV.modus === "figur" ? "portraet" : "figur"; avatarModusKnopf(); sfx?.("tick");
+  api("/einstellungen", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ avatar_modus: AV.modus }) }).catch(() => {});
+  if (AV.person) { const p = AV.person; AV.person = null; avatarSetzen(p); }
+});
+const _handleStil = handle;
+handle = function (ev) {
+  if (ev.type === "stil") {
+    if (ev.avatar_modus === "figur" || ev.avatar_modus === "portraet") { AV.modus = ev.avatar_modus; avatarModusKnopf(); if (AV.person) AV.person = null; }
+    setStil(ev.stil); sfx?.("ok"); return;
+  }
+  _handleStil(ev);
+};

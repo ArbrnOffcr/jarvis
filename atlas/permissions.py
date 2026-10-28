@@ -66,7 +66,8 @@ DEFAULT_POLICY = {
     "ford.lesen": Level.FREI,
     "immo.lesen": Level.FREI,               # HESTIA: Immobilien lesen, Kennzahlen
     "immo.objekt": Level.MELDEN,            # Objektdaten ändern, Mieterhöhung planen               # Ford: nur Status, keine Steuerung möglich
-    "tesla.steuern": Level.MELDEN,          # Klima und Laden; Entriegeln/Öffnen gibt es bewusst nicht
+    "tesla.steuern": Level.MELDEN,
+    "tesla.waechter_aus": Level.BESTAETIGEN,  # Sicherheitsfunktion ausschalten nur mit Bestätigung          # Klima und Laden; Entriegeln/Öffnen gibt es bewusst nicht
     "stab.einsatz": Level.FREI,
     "stab.lesen": Level.FREI,
     "stab.steuern": Level.MELDEN,          # an/aus, Kostengrenze – nur auf Befehl
