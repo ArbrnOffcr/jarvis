@@ -1217,7 +1217,7 @@ function countUp(root) {
 
 // Einstellungen laden
 api("/einstellungen").then((st) => {
-  AV.modus = st.avatar_modus === "figur" ? "figur" : "portraet"; avatarModusKnopf();
+  AV.modus = ["figur", "modell"].includes(st.avatar_modus) ? st.avatar_modus : "portraet"; avatarModusKnopf();
   setStil(st.stil || "plexus", st.stil === undefined); setKlang(st.klang !== false, false);
   setRein(st.rein === undefined ? true : !!st.rein, st.rein === undefined);   // neu: reduziert als Standard
 }).catch(() => { setStil("plexus", false); setKlang(true, false); setRein(true, false); });
@@ -6050,7 +6050,7 @@ const AV_ZUSTAND = { idle: "ruhe", listen: "zuhoeren", think: "denken", tool: "d
   error: "warnung", off: "ruhe" };
 function avatarLib() {
   if (window.JarvisAvatar) return Promise.resolve();
-  if (!AV.laden) AV.laden = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "avatar3d.bundle.js?v=20261028a";
+  if (!AV.laden) AV.laden = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "avatar3d.bundle.js?v=20261028b";
     s.onload = res; s.onerror = () => { AV.laden = null; rej(new Error("Avatar-Modul fehlt")); }; document.head.appendChild(s); });
   return AV.laden;
 }
@@ -6065,7 +6065,8 @@ async function avatarSetzen(person) {
   try {
     await avatarLib();
     if (AV.person !== person) return;
-    AV.inst = window.JarvisAvatar.erzeugen(box, { person, modus: AV.modus, qualitaet: MOBIL ? "niedrig" : "hoch" });
+    AV.inst = window.JarvisAvatar.erzeugen(box, { person, modus: AV.modus, qualitaet: MOBIL ? "niedrig" : "hoch",
+      meldung: (i) => { if (AV.modus === "modell" && i && i.modell === false) toast(`Für ${person.toUpperCase()} gibt es noch kein 3D-Modell – Porträt wird gezeigt`); } });
     AV.inst.zustand(AV_ZUSTAND[coreState] || "ruhe");
     document.body.dataset.avatar = person;
   } catch (e) {
@@ -6078,17 +6079,53 @@ setState = function (s) { _setStateAvatar(s); try { AV.inst?.zustand(AV_ZUSTAND[
 window.atlasCore.setState = setState;
 const _setLevelAvatar = window.atlasCore.setLevel;
 window.atlasCore.setLevel = (v) => { _setLevelAvatar(v); try { AV.inst?.pegel(v); } catch (e) {} };
-function avatarModusKnopf() { const b = $("avatarmodus"); if (b) b.textContent = AV.modus === "figur" ? "3D-FIGUR (PROTOTYP)" : "PORTRÄT"; }
+const AV_MODI = ["portraet", "modell", "figur"], AV_MODUSNAME = { portraet: "PORTRÄT", modell: "3D-MODELL", figur: "3D-FIGUR (PROTOTYP)" };
+function avatarModusKnopf() { const b = $("avatarmodus"); if (b) b.textContent = AV_MODUSNAME[AV.modus] || "PORTRÄT"; }
 $("avatarmodus")?.addEventListener("click", () => {
-  AV.modus = AV.modus === "figur" ? "portraet" : "figur"; avatarModusKnopf(); sfx?.("tick");
+  AV.modus = AV_MODI[(AV_MODI.indexOf(AV.modus) + 1) % AV_MODI.length]; avatarModusKnopf(); sfx?.("tick");
   api("/einstellungen", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ avatar_modus: AV.modus }) }).catch(() => {});
   if (AV.person) { const p = AV.person; AV.person = null; avatarSetzen(p); }
 });
 const _handleStil = handle;
 handle = function (ev) {
   if (ev.type === "stil") {
-    if (ev.avatar_modus === "figur" || ev.avatar_modus === "portraet") { AV.modus = ev.avatar_modus; avatarModusKnopf(); if (AV.person) AV.person = null; }
+    if (["figur", "portraet", "modell"].includes(ev.avatar_modus)) { AV.modus = ev.avatar_modus; avatarModusKnopf(); if (AV.person) AV.person = null; }
     setStil(ev.stil); sfx?.("ok"); return;
   }
   _handleStil(ev);
 };
+
+// Avatar: Mund folgt dem gesprochenen Text, „dreh dich“, 3D-Modelle hochladen
+const _ttsSayAvatar = ttsSay;
+ttsSay = function (text, ...rest) { try { AV.inst?.text?.(String(text || "")); } catch (e) {} return _ttsSayAvatar(text, ...rest); };
+const _handleAvatar = handle;
+handle = function (ev) {
+  if (ev.type === "avatar") { if (ev.aktion === "drehen") AV.inst?.drehen?.(+ev.grad || 360); return; }
+  _handleAvatar(ev);
+};
+async function avatarModelleAufbauen() {
+  const box = $("avatar-modelle"); if (!box) return;
+  let d = {}; try { d = await api("/avatar-modelle"); } catch (e) { return; }
+  box.innerHTML = ["aura", "nova", "milo"].map((p) => { const m = d[p] || {};
+    return `<div class="einst-zeile"><span>${p.toUpperCase()} · 3D-Modell <small class="im-einst-sub">${m.hoch ? `✓ ${m.hoch.mb} MB vom ${esc(m.hoch.datum)}` : "noch keins"}${m.lod1 ? ` · iPhone-Fassung ✓` : ""}</small></span>
+      <span class="avm-knoepfe"><button type="button" data-avm="${p}" data-lod="0">.GLB LADEN</button><button type="button" data-avm="${p}" data-lod="1" title="Leichtere Fassung fürs iPhone (_lod1)">IPHONE</button></span></div>`; }).join("")
+    + `<input type="file" accept=".glb,model/gltf-binary" hidden id="avatar-glb">`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-avm]"); if (!b) return;
+  const inp = $("avatar-glb"); inp.dataset.p = b.dataset.avm; inp.dataset.lod = b.dataset.lod; inp.value = ""; inp.click();
+});
+document.addEventListener("change", async (e) => {
+  if (e.target.id !== "avatar-glb" || !e.target.files[0]) return;
+  const f = e.target.files[0], p = e.target.dataset.p, lod = e.target.dataset.lod;
+  toast(`Lade ${f.name} für ${p.toUpperCase()} …`);
+  try {
+    const r = await fetch(`/avatar-modell/${p}?lod=${lod}`, { method: "POST", body: f, headers: TOKEN ? { "x-atlas-token": TOKEN } : {} });
+    const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.status);
+    toast(`✓ ${p.toUpperCase()}: ${j.formen} Gesichtsformen${j.viseme ? `, ${j.viseme} Viseme` : ""}${j.kopf ? ", Kopfknochen" : ""}${j.clips.length ? `, ${j.clips.length} Clips` : ""}`);
+    avatarModelleAufbauen();
+    if (AV.person === p && AV.modus === "modell") { AV.person = null; avatarSetzen(p); }
+  } catch (err) { toast("Modell: " + err.message); }
+});
+const _einstOeffnenAvatar = window.einstellungenOeffnen;
+window.einstellungenOeffnen = function () { _einstOeffnenAvatar(); avatarModelleAufbauen(); };

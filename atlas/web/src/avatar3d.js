@@ -9,6 +9,7 @@ import * as THREE from "three";
 import { erzeugen as figurAura } from "./figur/aura.js";
 import { erzeugen as figurNova } from "./figur/nova.js";
 import { erzeugen as figurMilo } from "./figur/milo.js";
+import { modell } from "./modell.js";
 
 const FIGUR = { aura: figurAura, nova: figurNova, milo: figurMilo };
 // Augen und Mund im Bildausschnitt (UV, y nach oben) – von Hand an den Konzeptbildern vermessen
@@ -171,14 +172,32 @@ function portraet(container, person, qualitaet) {
     pegel(w) { if (Number.isFinite(w)) { roh = Math.max(0, Math.min(1, w)); letzterPegel = performance.now(); } },
     viseme(name) { visem = VIS[name] ?? 0; },
     farbe(hex) { u.farbe.value.set(hex); },
+    text() {}, drehen() {}, info() { return { modell: false }; },
     entfernen() { weg = true; cancelAnimationFrame(frame); ro.disconnect(); removeEventListener("pointermove", onMaus);
       tex.dispose(); geo.dispose(); mat.dispose(); pg.dispose(); pm.dispose(); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); },
   };
 }
 
-function erzeugen(container, { person = "nova", modus = "portraet", qualitaet = "hoch" } = {}) {
-  if (!PERSON[person]) throw new RangeError("Unbekannte Person: " + person);
+// „modell“: echtes 3D-Modell (.glb) – fehlt es, springt die Darstellung automatisch auf das Porträt zurück
+function mitModell(container, person, qualitaet, url, basis, meldung) {
+  let inst = null, puffer = { zustand: "ruhe" };
+  const api = {
+    zustand(n) { puffer.zustand = n; inst?.zustand(n); }, pegel(w) { inst?.pegel(w); }, viseme(n) { inst?.viseme(n); },
+    farbe(h) { puffer.farbe = h; inst?.farbe(h); }, text(t, ms) { inst?.text?.(t, ms); }, drehen(g) { inst?.drehen?.(g); },
+    info() { return inst?.info?.() || { modell: false }; }, entfernen() { inst?.entfernen(); inst = null; },
+  };
+  inst = modell(container, { url, qualitaet, basis,
+    beiGeladen: (i) => meldung?.({ modell: true, ...i }),
+    beiFehler: () => { if (!inst) return; inst.entfernen(); inst = portraet(container, person, qualitaet); inst.zustand(puffer.zustand);
+      if (puffer.farbe) inst.farbe(puffer.farbe); meldung?.({ modell: false }); } });
+  inst.zustand(puffer.zustand);
+  return api;
+}
+
+function erzeugen(container, { person = "nova", modus = "portraet", qualitaet = "hoch", url = "", basis = "vendor/basis/", meldung } = {}) {
+  if (!PERSON[person] && modus !== "modell") throw new RangeError("Unbekannte Person: " + person);
   if (modus === "figur") return FIGUR[person](container, { qualitaet });
+  if (modus === "modell") return mitModell(container, person, qualitaet, url || `/avatar-modell/${person}${qualitaet === "niedrig" ? "?lod=1" : ""}`, basis, meldung);
   return portraet(container, person, qualitaet);
 }
 window.JarvisAvatar = { erzeugen, personen: Object.keys(PERSON) };

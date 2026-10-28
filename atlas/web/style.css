@@ -1762,3 +1762,4 @@ body[data-avatar] #core3d,body[data-avatar] #core{opacity:0;transition:opacity .
 body[data-avatar].bilder #core3d,body[data-avatar].youtube #core3d{opacity:1}
 body[data-avatar].bilder #avatar-box,body[data-avatar].youtube #avatar-box{opacity:.12}
 body.rein.zeigt[data-avatar] #avatar-box{opacity:.6;filter:blur(1px)}
+.avm-knoepfe{display:flex;gap:6px;flex:0 0 auto}

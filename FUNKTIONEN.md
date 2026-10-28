@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 28.10.2026 · Version 0.19
+Stand: 28.10.2026 · Version 0.20
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -26,6 +26,7 @@ Bedeutung der Zeichen:
 | Eigene Mac-App mit Dauer-Mikrofon, Fenster frei verschiebbar | ✅ | `jarvis app` |
 | Reduzierte Ansicht (nur Kern und Untertitel) und Dashboard-Ansicht | ✅ | Untertitel scrollbar |
 | Avatare AURA, NOVA und MILO als zusätzliche Stilwelten (STIL-Knopf oder „Zeig dich als NOVA“) – die bisherigen Stile bleiben | ✅ | Darstellung „Porträt“ (lebendes Hologramm: Atmen, Blick folgt der Maus, Augen und Nähte leuchten mit der Stimme, Mund bewegt sich, Warnung färbt Bernstein) oder „3D-Figur“ (Prototyp) unter ⚙ Allgemein → Darstellung |
+| Avatare voll animiert mit echtem 3D-Modell (.glb): atmen, blinzeln, Kopf und Augen folgen der Maus (Grenzen ±35°/±20°, Augen ±25°), Sakkaden und Mikrobewegung, Mund passend zu Text und Stimme, Nähte/Augen leuchten mit der Stimme, Zustands-Clips, „Dreh dich mal“ | ⚙️ | Player fertig; Modelle je Figur unter ⚙ Allgemein → Darstellung → „.GLB LADEN“ (und „IPHONE“ für die leichte Fassung); ohne Modell zeigt JARVIS das Porträt. Anleitung: „JARVIS-Avatare: vom Konzeptbild zum animierten 3D-Modell“; Pipeline in `werkzeuge/avatar-pipeline` |
 | Schnellleiste links: Fahrzeuge und Immobilien mit einem Klick – dezent, auch in der reduzierten Ansicht | ✅ | Name erscheint beim Darüberfahren |
 | Dokumente per Drag & Drop in den Chat | ✅ | Vor dem Lesen durch Claude wird immer gefragt |
 | Fotos/Scans vom iPhone („Ablage → Dokument/Kontakt vom iPhone“) | ✅ | Continuity Camera |
