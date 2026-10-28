@@ -56,6 +56,8 @@ class Proaktiv:
         return read_private_json(self.briefing_name(), {})
 
     def make_briefing(self, force: bool = False) -> dict:
+        if getattr(self.c, "notfall", None) and self.c.notfall.aktiv():
+            return {}
         if not force and self.briefing_today().get("text"):
             return self.briefing_today()
         stab = getattr(self.c, "stab", None)
@@ -89,6 +91,12 @@ class Proaktiv:
             hestia = ""
         if hestia:
             text = (text or "").rstrip() + "\n\n" + hestia
+        try:
+            nacht = self.c.aufmerksamkeit.briefing_zeile()
+        except Exception:
+            nacht = ""
+        if nacht:
+            text = (text or "").rstrip() + "\n\n" + nacht
         try:
             werbung = self.c.werbung.briefing_zeile()
         except Exception:
@@ -134,7 +142,15 @@ class Proaktiv:
         except OSError:
             pass
 
-    def hint(self, text: str) -> None:
+    def hint(self, text: str, dringend: bool = False, art: str = "hinweis") -> None:
+        nf = getattr(self.c, "notfall", None)
+        if nf and art != "notfall" and nf.aktiv():           # in der Notfallbegleitung keine Hinweise für Richard
+            self.c.audit.log("hinweis", text=text[:200], zustellung="pausiert (Notfall)")
+            return
+        auf = getattr(self.c, "aufmerksamkeit", None)
+        if auf and not auf.melden(art, text, dringend):      # Ruhe/Fokus: zurücklegen statt stören
+            self.c.audit.log("hinweis", text=text[:200], zustellung="stapel")
+            return
         self.c.audit.log("hinweis", text=text[:200])
         self.telegram.send(f"🔔 {text}")
         self.c.broadcast({"type": "hinweis", "text": text})

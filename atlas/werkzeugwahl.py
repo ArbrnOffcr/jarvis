@@ -32,10 +32,23 @@ GRUPPEN = {
     "tesla": ["tesla_"],
     "ford": ["ford_"],
     "immo": ["immobilien_", "immobilie_", "nebenkosten_"],
+    "autopilot": ["befugnis", "rechenschaft", "rueckgaengig", "fokus_", "stapel_"],
+    "ziele": ["ziele_", "arbeitsort_", "dienststelle_"],
+    "notfall": ["notfall_"],
+    "zuhause": ["zuhause_", "nuki_"],
 }
 
 # Wortanfänge → Gruppen
 SIGNALE = [
+    (r"befugnis|darfst du|ohne (mich|rückfrage)|autopilot|was hast du .*(gemacht|getan|erledigt)|warum hast du|"
+     r"rückgängig|mach das .*zurück|nimm das zurück|rechenschaft|notbremse|fokus|konzentrier|ruhe für|nicht stören|"
+     r"was liegt an|stapel|entscheidungen", ["autopilot"]),
+    (r"notfall|verstorben|gestorben|\btod\b|todesfall|beerdigung|bestattung|trauer|erbe\b|erbschaft|witwe|leitfaden",
+     ["notfall", "fristen", "kontakte", "mail"]),
+    (r"licht|lampe|beleuchtung|lautsprecher|homepod|szene|zuhause|haustür|tür\b|abgeschlossen|abschließ|schloss|nuki|"
+     r"smart ?home|homekit", ["zuhause"]),
+    (r"ziel|sport|training|mobil|homeoffice|dienststelle|arbeitszeit|feierabend|wochenende|dienstbeginn",
+     ["ziele", "kalender"]),
     (r"termin|kalender|woche|übermorgen|morgen|heute|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|"
      r"wochenende|uhr\b|frei\b|zeit für|verschieb|absag", ["kalender", "erinnerungen"]),
     (r"tageslage|briefing|was steht an|was liegt an|überblick|was gibt.?s", ["kalender", "erinnerungen", "wetter", "fristen", "mail", "stab"]),
@@ -77,9 +90,17 @@ SIGNALE = [
 ]
 
 
+IMMER_FN = None      # liefert Gruppen, die gerade immer dabei sein sollen (z. B. in der Notfallbegleitung)
+
+
 def gruppen_fuer(text: str) -> set[str]:
     t = (text or "").lower()
     g: set[str] = set()
+    if IMMER_FN:
+        try:
+            g.update(IMMER_FN())
+        except Exception:
+            pass
     for muster, ziele in SIGNALE:
         if re.search(rf"\b(?:{muster})", t):
             g.update(ziele)

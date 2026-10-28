@@ -22,6 +22,11 @@ def run(core, text: str, history: list[dict] | None = None, *,
     lokal, claude = c.providers["lokal"], c.providers["claude"]
     local_ok, cloud_ok = lokal.available(), claude.available()
     d = c.router.decide(text, "auto", False, local_ok, cloud_ok)
+    if getattr(c, "notfall", None) and c.notfall.aktiv():
+        if quelle in ("briefing",):
+            return ""
+        if local_ok:
+            d.target, d.alias, d.reason = "lokal", None, "Notfallbegleitung – bleibt lokal"
     if d.target == "claude" and d.ask_cloud:
         if not (confirm and confirm("Diese Anfrage enthält sensible Inhalte. Darf ich sie an Claude übermitteln?")):
             if not local_ok:
@@ -54,6 +59,7 @@ def run(core, text: str, history: list[dict] | None = None, *,
             tools = werkzeugwahl.auswahl(c.tools, set())
     work = [*(history or []), {"role": "user", "content": text}]
     reply, t_in, t_out = "", 0, 0
+    fremd: list[str] = []                     # Quellen fremder Inhalte in diesem Durchlauf
     for _ in range(MAX_STEPS):
         result = None
         for ev in provider.step(model, system, list(work), tools, max_tokens):
@@ -71,18 +77,19 @@ def run(core, text: str, history: list[dict] | None = None, *,
         outs = []
         normale = [cl for cl in result.tool_calls if cl.name != werkzeugwahl.LADEN]
         vorweg = {}
-        if len(normale) > 1 and all(cl.name in c.tools and c.gate.level(c.tools[cl.name].action) < Level.BESTAETIGEN
+        if len(normale) > 1 and all(cl.name in c.tools and c.gate.level(c.tools[cl.name].action) == Level.FREI
+                and cl.name not in __import__("atlas.sicherheit", fromlist=["x"]).SCHUTZ_FREI
                                     for cl in normale):       # mehrere Leseabfragen gleichzeitig
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=len(normale)) as tp:
                 vorweg = dict(zip([id(cl) for cl in normale],
-                                  tp.map(lambda cl: _tool(c, cl, confirm, notify, nur_lesen), normale)))
+                                  tp.map(lambda cl: _tool(c, cl, confirm, notify, nur_lesen, fremd, quelle), normale)))
         for call in result.tool_calls:
             if call.name == werkzeugwahl.LADEN:
                 tools = alle
                 outs.append((call, "Alle Werkzeuge stehen jetzt zur Verfügung."))
             else:
-                outs.append((call, vorweg[id(call)] if id(call) in vorweg else _tool(c, call, confirm, notify, nur_lesen)))
+                outs.append((call, vorweg[id(call)] if id(call) in vorweg else _tool(c, call, confirm, notify, nur_lesen, fremd, quelle)))
         if (d.target == "claude" and any(cl.name == "stab_einsatz" for cl in result.tool_calls)
                 and c.stab.einstellungen().get("vortrag_modell") == "sonnet"
                 and "sonnet" not in model and "opus" not in model):
@@ -105,30 +112,46 @@ def run(core, text: str, history: list[dict] | None = None, *,
     return reply.strip() if marken else ohne_marken(reply).strip()
 
 
-def _tool(c, call, confirm, notify, nur_lesen) -> str:
+def _tool(c, call, confirm, notify, nur_lesen, fremd: list | None = None, kanal: str = "agent") -> str:
+    fremd = fremd if fremd is not None else []
     tool = c.tools.get(call.name)
     if not tool:
         return f"Fehler: unbekanntes Werkzeug {call.name}"
     lvl = c.gate.level(tool.action)
-    what = tool.describe(call.args)
     if nur_lesen and lvl > Level.FREI:
         return "Verweigert: in diesem Modus sind nur lesende Werkzeuge erlaubt."
+    hinweis, rid = "", ""
+    if hasattr(c, "sicherheit"):
+        lvl, hinweis, rid = c.sicherheit.entscheiden(tool, call.args, lvl, fremd)
+    what = tool.describe(call.args)
     if lvl == Level.VERBOTEN:
-        c.audit.log("werkzeug_verweigert", werkzeug=call.name, aktion=tool.action)
-        return f"Verweigert: '{tool.action}' ist gesperrt (Rechte oder Not-Aus)."
+        c.audit.log("werkzeug_verweigert", werkzeug=call.name, aktion=tool.action, kanal=kanal, fremd=bool(fremd))
+        return f"Verweigert: '{tool.action}' ist gesperrt" + (f" – {hinweis}" if hinweis else " (Rechte oder Not-Aus).")
     if lvl == Level.BESTAETIGEN:
-        ok = bool(confirm and confirm(f"{what}?"))
-        c.audit.log("bestaetigung", aktion=tool.action, was=what, erteilt=ok)
+        ok = bool(confirm and confirm(f"{what}?" + (f"\n{hinweis}" if hinweis else "")))
+        c.audit.log("bestaetigung", aktion=tool.action, was=what, erteilt=ok, kanal=kanal, fremd=bool(fremd))
         if not ok:
             return "Vom Nutzer abgelehnt oder keine Bestätigung möglich. Nicht erneut versuchen."
+    result = None
     try:
-        out, ok = json.dumps(tool.func(**call.args), ensure_ascii=False, default=str), True
+        result = tool.func(**call.args)
+        out, ok = json.dumps(result, ensure_ascii=False, default=str), True
     except ToolError as e:
         out, ok = f"Fehler: {e}", False
     except Exception as e:
         out, ok = f"Fehler: {type(e).__name__}: {e}", False
-    c.audit.log("werkzeug", werkzeug=call.name, aktion=tool.action, erfolg=ok)
+    rk = c.rechenschaft.merken(call.name, call.args, result) if ok and hasattr(c, "rechenschaft") else ""
+    c.audit.log("werkzeug", werkzeug=call.name, aktion=tool.action, erfolg=ok, was=what, kanal=kanal,
+                stufe=lvl.name, **({"befugnis": rid} if rid else {}), **({"fremd": sorted(set(fremd))} if fremd else {}),
+                **({"rueckgaengig": rk} if rk else {}))
+    if ok and rid:
+        c.befugnisse.genutzt(rid)
     if ok and lvl == Level.MELDEN and notify:
-        notify(f"✓ {what}")
+        notify(f"✓ {what}" + (" · per Befugnis" if rid else ""))
     from atlas.hilfen import vs_schutz
-    return vs_schutz(call.name, out)[:12000]
+    out = vs_schutz(call.name, out)
+    if hasattr(c, "sicherheit"):
+        out, ist_fremd = c.sicherheit.schuetzen(call.name, out, kanal)
+        if ist_fremd:
+            fremd.append(call.name)
+    return out[:12000]

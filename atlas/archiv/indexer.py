@@ -34,6 +34,9 @@ class Archiv:
         parts = rel.split("/")
         if any(p.startswith((".", "~$")) for p in parts):
             return True
+        from atlas.notfall import ist_notfallordner      # Notfallordner nie in den Suchindex
+        if ist_notfallordner(parts[-1]):
+            return True
         return any(rel.startswith(x.strip("/")) for x in self.cfg["ausschluss"])
 
     def files(self):

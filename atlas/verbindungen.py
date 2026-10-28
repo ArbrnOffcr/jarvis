@@ -21,7 +21,7 @@ from atlas.paths import LOCAL_DIR, private_dir, read_private_json, write_private
 from atlas.tools import ToolError
 
 from atlas.voice import STANDARD_STIMME        # ElevenLabs „Daniel“ – ruhig, britisch, spricht auch Deutsch
-ART = ("anthropic", "elevenlabs", "telegram", "serper", "youtube")
+ART = ("anthropic", "elevenlabs", "telegram", "serper", "youtube", "nuki")
 LOKAL_MODELL = "qwen3.5:9b"
 OLLAMA = ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama", str(LOCAL_DIR / "ollama" / "ollama"),
           "/Applications/Ollama.app/Contents/Resources/ollama"]
@@ -90,6 +90,8 @@ def pruefen(art: str, wert: str) -> tuple[bool, str]:
         elif art == "serper":
             r = httpx.post("https://google.serper.dev/images", json={"q": "test", "num": 1},
                            headers={"X-API-KEY": wert}, timeout=15)
+        elif art == "nuki":
+            r = httpx.get("https://api.nuki.io/smartlock", headers={"Authorization": f"Bearer {wert}"}, timeout=15)
         elif art == "youtube":
             r = httpx.get("https://www.googleapis.com/youtube/v3/search",
                           params={"part": "id", "maxResults": 1, "q": "test", "key": wert}, timeout=15)

@@ -88,6 +88,8 @@ class Dokumente:
             text = hilfen.maskieren(text)
         gekuerzt = len(text) > MAX_ZEICHEN
         text = text[:MAX_ZEICHEN]
+        if hasattr(self.c, "sicherheit"):         # Dokumente sind fremder Inhalt: prüfen und einrahmen
+            text = self.c.sicherheit.text_schuetzen(f"dokument:{d['name']}", text)
         return (f"\n\n<dokument id=\"{did}\" name=\"{d['name']}\" seiten=\"{d['seiten']}\">\n{text}\n</dokument>"
                 + (f"\n(Dokument gekürzt – für weitere Seiten 'dokument_lesen' mit id {did} nutzen.)" if gekuerzt else ""))
 

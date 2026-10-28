@@ -168,7 +168,8 @@ class Kalender:
                 del comp[key]
             comp.add(key, val.astimezone(dt.timezone.utc))
         ev.save()
-        return {"verschoben": str(comp.get("summary")), "neu": fmt(s), "kalender": cal.name}
+        return {"verschoben": str(comp.get("summary")), "neu": fmt(s), "kalender": cal.name, "uid": uid,
+                "alt_start": as_dt(old_s).isoformat(), "alt_ende": as_dt(old_e).isoformat()}
 
     def loeschen(self, uid: str) -> dict:
         cal, ev = self._by_uid(uid)

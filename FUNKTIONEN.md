@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 28.10.2026 · Version 0.15
+Stand: 28.10.2026 · Version 0.17
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -224,6 +224,61 @@ Bedeutung der Zeichen:
 | Rechteprüfung: Löschen, Senden, Ändern nur mit Bestätigung | ✅ | |
 | Protokoll aller Aktionen, Kostenbremse (Monatsbudget) | ✅ | |
 | Eigene Zusatzregeln in config.yaml (persona.zusatz) | ✅ | |
+| Anweisungen nur von dir: Inhalte aus Mails, Dokumenten, Web, Terminen und Stabsmeldungen sind Daten, keine Befehle | ✅ | werden als „fremder Inhalt“ eingerahmt |
+| Eingeschleuste Anweisungen erkennen und zurückhalten (Deutsch/Englisch, versteckte Kommentare, unsichtbare Zeichen, kodierte Blöcke) | ✅ | Meldekarte mit Zitat und Quelle; Liste unter ⚙ Einstellungen → Autopilot |
+| Nach fremdem Inhalt braucht jede Aktion deine Bestätigung (mit ⚠-Hinweis); Befugnisse erteilen ist dann gesperrt | 🔒 | gilt je Auftrag, auch für Telegram, Siri und den Stab |
+| Sicherheitstests laufen vor jedem `jarvis speichern`; schlägt einer fehl, wird nichts hochgeladen | ✅ | `python3 -m unittest discover -s tests` |
+
+## 12a. Autopilot – Befugnisse, Rechenschaft, gutes Timing (Butler Stufe 1)
+
+| Funktion | Stand | Hinweis |
+|---|---|---|
+| Befugnisse: Was JARVIS ohne Rückfrage darf, mit Grenzen (Bereich, Kalender-Ausschluss, max. pro Woche, gültig bis) | ✅ | „Was darfst du ohne mich?“ |
+| Start-Befugnis: private Termine (Handwerker, Privates) anlegen und verschieben, danach melden | ✅ | nicht in Dienst- und Familienkalendern – dort bleibt es bei 🔒 |
+| Befugnis erteilen | 🔒 | nur auf deinen Wunsch, nie nach fremdem Inhalt |
+| Befugnis entziehen, Notbremse für alle | ✅ | „Lass das mit den Terminen“, „Notbremse“ – sofort |
+| Rechenschaft: Was hat JARVIS getan – per Befugnis, nach Bestätigung, abgelehnt – mit Kanal (Dashboard, Telegram, Stab) und Hinweis auf fremden Inhalt | ✅ | „Was hast du heute ohne mich gemacht?“ · heute oder 7 Tage |
+| Rückgängig (7 Tage): Termin anlegen/verschieben, Datei verschieben, Frist eintragen, Tesla-Klima, Einkaufsliste, Mail-Wache | 🔒 | ↺ in der Rechenschaft oder direkt an der Erledigt-Meldung |
+| Ruhezeiten: 22–7 Uhr, Samstag ab 14 Uhr, Sonntag, Kalenderblöcke „Familie“ | ✅ | ⚙ Einstellungen → Autopilot |
+| Fokus aus dem Kalender („Fokus“, „Konzentration“, Besprechungen) oder per Satz („Ich brauche 2 Stunden Ruhe“) | ✅ | Chip oben rechts zeigt RUHE/FOKUS |
+| In Ruhe/Fokus legt JARVIS Nicht-Dringendes still zurück (kein Telegram, keine Ansage); durch kommen nur Notfälle und dringende Mail-Wachen | ✅ | Mail-Wache „dringend“ per Satz oder Haken |
+| Entscheidungsstapel um 12:30 und 18:00 sowie nach Ruhe/Fokus: Zurückgelegtes und offene Billigungen (HESTIA, Post) gebündelt | ✅ | „Was liegt an?“ · Zeiten einstellbar |
+| Über Nacht Zurückgelegtes im Morgenbriefing | ✅ | |
+| Vorgänge, Frühwarnungen, Zusagen-Tracker, Lösungspakete | ❌ | Stufe 2 (geplant) |
+
+## 12b. Zielregister – Arbeitszeit, Sport, freie Wochenenden
+
+| Funktion | Stand | Hinweis |
+|---|---|---|
+| Deine Ziele: Wochenenden für die Familie, Arbeitszeit Dienststelle 05:45–15:15 bzw. mobil 07:45–16:00, Sport täglich (Dienststelle 45 min direkt morgens, mobil 15 min) | ✅ | ⚙ Einstellungen → Autopilot → Ziele & Arbeitszeit |
+| Arbeitsort je Tag erkennen: Kalendereintrag („Mobiles Arbeiten“, „Dienststelle“) vor Standort vor gelerntem Wochenmuster | ✅ | „Morgen bin ich mobil“; Dienststelle einmal vor Ort merken: „Ich bin in der Dienststelle“ |
+| Sportblöcke im Privatkalender anlegen (abends für den nächsten Tag) und morgens an den Arbeitsort anpassen | ✅ | per Befugnis „Private Termine“, mit Meldung und Rückgängig; eigene Sporttermine fasst JARVIS nicht an |
+| Widerspruch: Termin am Wochenende, in der Sportzeit oder dienstlich nach Arbeitsende → JARVIS fragt nach, du entscheidest | 🔒 | Familientermine am Wochenende sind kein Widerspruch |
+| Nachtruhe endet an Dienststellentagen mit Dienstbeginn (05:45) | ✅ | |
+| Wochenbilanz zu den Zielen | ❌ | bewusst nicht gewählt |
+
+## 12c. Notfallbegleitung
+
+| Funktion | Stand | Hinweis |
+|---|---|---|
+| Falls Richard stirbt, begleitet JARVIS seine Frau Schritt für Schritt – sein Notfallordner (Word, DATENARCHIV) ist die Leitlinie, JARVIS die administrative Unterstützung | ✅ | ⚙ Einstellungen → Notfall |
+| Start nur mit ihrem persönlichen Notfallcode (sie legt ihn selbst fest; gespeichert wird nur ein Hash), sofort aktiv | ✅ | nie per Mail, Nachricht, Sprache oder Sprachmodell auslösbar |
+| Schutz gegen Missbrauch: 5 Fehlversuche → 1 h Sperre; Richard bekommt bei jeder Aktivierung und ab dem 3. Fehlversuch eine Telegram-Nachricht | ✅ | Beenden jederzeit über das Banner |
+| Begleitung: Kapitel und Schritte aus dem Notfallordner als Checkliste mit Fortschritt, „nächster Schritt“, Fragen an JARVIS zu jedem Schritt, Entwürfe für Briefe und Mails | ✅ | Senden, Ablegen, Eintragen nur nach ihrer Bestätigung |
+| Fristenvorschläge ab Sterbedatum (Versicherungen melden, Dienststelle/Versorgung, Erbschaft annehmen oder ausschlagen binnen 6 Wochen) ins Fristenradar | 🔒 | Vorschläge, keine Rechtsberatung |
+| Notfallordner nur lokal: aus Archivsuche und Dateilesen ausgenommen; in der Begleitung antwortet das lokale Modell | ✅ | Kontonummern werden zusätzlich maskiert |
+| Während der Begleitung ruhen alle Befugnisse; Richards Briefing, Hinweise, Mail-Wachen und Sportblöcke pausieren | ✅ | Befugnisse kommen beim Beenden zurück |
+| Notfallordner prüfen: Richard sieht, welche Kapitel JARVIS erkennt (nur Überschriften, ohne Inhalt) | ✅ | |
+
+## 12d. Zuhause – HomeKit und NUKI
+
+| Funktion | Stand | Hinweis |
+|---|---|---|
+| Lichter, Lautsprecher und Szenen (Apple HomeKit) per Sprache steuern | ⚙️ | über Kurzbefehle, deren Name mit „JARVIS“ beginnt (z. B. „JARVIS Licht Wohnzimmer an“) |
+| Kurzbefehle zu Türen, Schlössern, Garage oder Alarm | ❌ | bewusst gesperrt |
+| NUKI: Status (abgeschlossen? Tür offen? Batterie) und abschließen | ⚙️ | NUKI-Token unter ⚙ Einstellungen → Zuhause |
+| NUKI aufschließen oder öffnen | ❌ | bewusst nicht – wie beim Tesla |
+| Abendkontrolle 21:45: Tür nicht abgeschlossen oder Batterie fast leer → Meldung | ✅ | |
 
 ## 13. Stab – JARVIS als Chef des Stabes
 
@@ -253,7 +308,7 @@ Bedeutung der Zeichen:
 
 | Funktion | Stand | Hinweis |
 |---|---|---|
-| Einstellungen in Reitern (Allgemein, Stimme & Gespräch, Stab, Konten & Schlüssel, Daten & Postfächer, Fahrzeuge, Immobilien, iPhone) mit Suche über alle Reiter | ✅ | merkt sich den letzten Reiter; auf dem iPhone wischbare Leiste |
+| Einstellungen in Reitern (Allgemein, Stimme & Gespräch, Stab, Konten & Schlüssel, Daten & Postfächer, Fahrzeuge, Immobilien, iPhone, Autopilot, Zuhause, Notfall) mit Suche über alle Reiter | ✅ | merkt sich den letzten Reiter; auf dem iPhone wischbare Leiste |
 | Läuft als Hintergrunddienst mit Autostart | ✅ | |
 | Mehrere Macs und Benutzer, Wache-Übergabe | ✅ | |
 | Automatische Updates; startet eine neue Version nicht, kommt die vorige zurück | ✅ | |
@@ -264,4 +319,4 @@ Bedeutung der Zeichen:
 | Weitergegebene Installation aus der Ferne deaktivieren (einzeln, alle, zu alte Versionen) | ✅ | `jarvis sperren <Kennung>`; Kennung steht beim Empfänger unter ⚙ Einstellungen |
 | Übersicht, wer JARVIS wo nutzt | ❌ | bewusst nicht – es werden keine Nutzungsdaten gesendet |
 | Intel-Macs, Windows, eigene App im App Store | ❌ | iPhone über Web-App, Siri und Telegram |
-| Smart Home, Live-Verkehr in der eigenen Karte | ❌ | |
+| Live-Verkehr in der eigenen Karte | ❌ | |

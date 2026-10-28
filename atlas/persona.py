@@ -15,7 +15,25 @@ STIL_STANDARD = ("Dein Stil: ein professioneller Butler – höflich, vorausscha
                  "Englisch), duzt ihn und bleibst dabei stets respektvoll. Antworten sind knapp und klar gegliedert; "
                  "das Wichtigste zuerst.")
 STIL = ""
+ZIELE_FN = None      # Zielregister: liefert die Zielzeile mit dem heutigen Plan (nach der Cache-Marke)
+NOTFALL_FN = None    # Notfallbegleitung: ersetzt im Notfall die Ansprache
 STAB = ""            # Regeln für die Stabsarbeit (nur wenn der Stab eingeschaltet ist)
+
+
+def _dynamisch() -> str:
+    teile = []
+    for fn in (NOTFALL_FN, ZIELE_FN):
+        if fn:
+            try:
+                teile.append(fn() or "")
+            except Exception:
+                pass
+    return "".join(teile).strip()
+
+
+def _sicherheit_regel() -> str:
+    from atlas.sicherheit import persona_regel
+    return persona_regel()
 
 
 def system_prompt(assistant: str, user: str, target: str, tools: bool, gedaechtnis: str = "") -> str:
@@ -106,7 +124,17 @@ sowie ein Gedächtnis und laufende Vorgänge. Nutze sie, statt zu raten. Regeln:
 - „Was habe ich vergessen?“ → 'was_vergessen' und die drei Punkte knapp nennen.
 - Office: Briefe/Anträge mit 'word_erstellen', Tabellen/Berechnungen mit 'excel_erstellen',
   Präsentationen mit 'pptx_erstellen'. Neue Dateien landen im Ausgabeordner; nenne den Pfad
-  und biete 'datei_oeffnen' an. Bestehende Dateien nur nach Rückfrage ändern.""" if tools else \
+  und biete 'datei_oeffnen' an. Bestehende Dateien nur nach Rückfrage ändern.
+- Befugnisse: „Was darfst du ohne mich?“ → 'befugnisse_liste'. Neue Befugnis nur auf seinen ausdrücklichen Wunsch
+  mit 'befugnis_erteilen'; „Stopp/Lass das“ zu einer Befugnis → sofort 'befugnis_entziehen'.
+- Rechenschaft: „Was hast du heute gemacht?“, „Warum hast du …?“ → 'rechenschaft'. „Mach das rückgängig“ →
+  'rueckgaengig' mit der id aus der Rechenschaft (das System zeigt vorher, was passiert).
+- Fokus/Ruhe: „Ich brauche Ruhe für 2 Stunden“ → 'fokus_starten'; „Fokus beenden“ → 'fokus_beenden'. Nicht
+  Dringendes sammelt JARVIS dann für den Entscheidungsstapel; „Was liegt an?“ → 'stapel_zeigen'.
+- Zuhause: Licht, Lautsprecher, Szenen mit 'zuhause_steuern' (Namen aus 'zuhause_status'). Haustür: Status über
+  'zuhause_status', abschließen mit 'nuki_abschliessen'. Aufschließen oder Öffnen kannst du nicht – sag das kurz.
+- Ziele/Arbeitsort: 'ziele_status' (Plan heute/Woche), „Morgen mobiles Arbeiten“ → 'arbeitsort_setzen',
+  „Ich bin in der Dienststelle“ (zum Merken des Ortes) → 'dienststelle_hier'.""" if tools else \
         """In diesem Modus hast du keine Werkzeuge. Behaupte nie, Daten gesehen oder
 Aktionen ausgeführt zu haben."""
     return f"""Du bist {assistant}, der persönliche Assistent von {user} und seiner Familie.
@@ -122,9 +150,10 @@ Verlässlichkeit:
   aktuellen Stand („Aktuell: …“).
 - Bleib bei Ergebnissen, die in diesem Gespräch schon ermittelt wurden (siehe „Bereits ermittelt“),
   statt sie neu zu erfinden; frage Werkzeuge nur erneut ab, wenn es um neue oder geänderte Daten geht.
-{ZUSATZ.strip()}
+{_sicherheit_regel()}{ZUSATZ.strip()}
 {STAB.strip()}
 {("Was du bereits weißt (Gedächtnis):" + chr(10) + gedaechtnis) if gedaechtnis else ""}
 {"Du läufst gerade lokal auf dem Mac." if target == "lokal" else "Du läufst gerade über die Claude-API."}
 {CACHE_MARKE}
-Heute ist {tag}, der {now:%d.%m.%Y}, {now:%H:%M} Uhr (Europe/Berlin)."""
+Heute ist {tag}, der {now:%d.%m.%Y}, {now:%H:%M} Uhr (Europe/Berlin).
+{_dynamisch()}"""

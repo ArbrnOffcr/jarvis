@@ -1645,3 +1645,82 @@ details.nk-teil summary{list-style:none;cursor:pointer}details.nk-teil summary h
 /* Meldekarten (iMessage, Mail-Wache) bleiben unten rechts schweben – die Holo-Kartenregel setzte sie sonst auf „relative“ */
 body>.nachricht-karte{position:fixed;right:24px;bottom:72px;z-index:62}
 #mw-chip{right:auto;left:22px}
+/* ---------- Butler Stufe 1: Modus-Chip, Rechenschaft, Entscheidungsstapel, Sicherheitskarte ---------- */
+#bt-chip{position:fixed;top:44px;right:22px;z-index:30;display:flex;align-items:center;gap:7px;white-space:nowrap;cursor:pointer;
+  font:600 9px var(--mono);letter-spacing:.18em;color:var(--ink2);background:rgba(2,10,18,.55);border:1px solid rgba(0,229,255,.2);padding:5px 10px}
+#bt-chip:hover{color:var(--ink);border-color:var(--accent)}
+#bt-chip i{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+#bt-chip.bt-ruhe i{background:#8b7bff;box-shadow:0 0 8px #8b7bff}
+#bt-chip.bt-fokus i{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.bt-box{width:min(720px,94vw)}
+.bt-box header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font:600 12px var(--mono);letter-spacing:.2em;color:var(--accent-soft)}
+.bt-box header b{flex:1}
+.bt-kopf-rechts{display:flex;gap:6px}
+.bt-kopf-rechts button{font:600 9px var(--mono);letter-spacing:.16em;padding:4px 8px;background:transparent;color:var(--ink2);border:1px solid var(--line);cursor:pointer}
+.bt-kopf-rechts button.an{color:var(--accent);border-color:var(--accent)}
+.bt-inhalt{overflow:auto;padding:10px 16px 14px}
+.bt-summe{margin:4px 0 10px;color:var(--ink2);font-size:13px}
+.bt-inhalt h5{margin:14px 0 6px;font:600 10px var(--mono);letter-spacing:.2em;color:var(--muted)}
+.bt-liste{list-style:none;margin:0;padding:0}
+.bt-liste li{display:flex;align-items:flex-start;gap:12px;padding:8px 0;border-bottom:1px solid rgba(0,229,255,.08)}
+.bt-liste li.leer{color:var(--muted);font-size:13px}
+.bt-liste time{flex:0 0 74px;font:11px var(--mono);color:var(--muted);padding-top:2px}
+.bt-liste li>div{flex:1;min-width:0}
+.bt-liste b{display:block;font-weight:500;color:var(--ink);font-size:13px}
+.bt-liste small{display:block;color:var(--ink2);font-size:11.5px;margin-top:2px;word-break:break-word}
+.bt-liste li.selbst time{color:var(--good)}
+.bt-liste li.warn b{color:var(--warn)}
+.bt-liste li.ent time{color:var(--accent)}
+.bt-liste button{flex:0 0 auto;font:600 9px var(--mono);letter-spacing:.14em;padding:5px 8px;background:transparent;color:var(--accent);border:1px solid var(--line);cursor:pointer}
+.bt-liste button:hover{border-color:var(--accent)}
+.bt-liste button:disabled{opacity:.5;cursor:default}
+.bt-kanal{font-style:normal;color:var(--muted);margin-left:6px}
+.bt-fremd{font-style:normal;color:var(--warn);margin-left:6px}
+.bt-status.ok{color:var(--good)} .bt-status.fehler{color:var(--crit)}
+.bt-sicher{border-color:rgba(255,181,71,.6)!important}
+.bt-sicher .nk-kopf{color:var(--warn)}
+.bt-zitat{font-style:italic;max-height:5.5em;overflow:hidden}
+.bt-toast-undo{margin-left:8px;font:600 12px var(--mono);background:transparent;color:var(--accent);border:1px solid var(--line);padding:0 6px;cursor:pointer;pointer-events:auto}
+.bt-bef.aus b{color:var(--muted);text-decoration:line-through}
+@media (max-width:600px){.bt-liste time{flex-basis:56px}}
+.bt-reihe{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:8px 0;font-size:13px;color:var(--ink2)}
+.bt-reihe label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.bt-reihe input[type=time]{width:auto;flex:0 0 auto}
+/* ---------- Ziele, Zuhause, Notfallbegleitung ---------- */
+.zi-woche{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:10px 0}
+.zi-tag{position:relative;border:1px solid var(--line);padding:6px 7px;font-size:11px;color:var(--ink2);background:rgba(0,0,0,.2)}
+.zi-tag b{display:block;font:600 10px var(--mono);letter-spacing:.1em;color:var(--ink)}
+.zi-tag span{display:block;margin:2px 0;color:var(--accent)}
+.zi-tag.zi-mobil span{color:var(--good)} .zi-tag.zi-frei span{color:#8b7bff}
+.zi-tag small{color:var(--muted);font-size:10.5px;line-height:1.35}
+@media (max-width:600px){.zi-woche{grid-template-columns:repeat(4,1fr)}}
+.zh-kbs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.zh-kb{font:12px var(--sans);padding:6px 10px;background:rgba(0,229,255,.06);color:var(--ink);border:1px solid var(--line);cursor:pointer}
+.zh-kb:hover{border-color:var(--accent)}
+#nf-banner{position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:31;display:flex;align-items:center;gap:8px;cursor:pointer;
+  font:600 9px var(--mono);letter-spacing:.22em;color:#e9e2ff;background:rgba(40,28,70,.75);border:1px solid rgba(160,140,255,.5);padding:6px 14px}
+#nf-banner i{width:6px;height:6px;border-radius:50%;background:#b9a8ff;box-shadow:0 0 8px #b9a8ff}
+.nf-fenster .bt-box{width:min(780px,94vw)}
+.nf-naechster{border:1px solid rgba(160,140,255,.45);background:rgba(60,40,110,.18);padding:12px 14px;margin:6px 0 10px;display:grid;gap:6px}
+.nf-naechster small{font:600 9px var(--mono);letter-spacing:.18em;color:#b9a8ff}
+.nf-naechster b{font-weight:500;font-size:15px}
+.nf-naechster button,.nf-kap button{justify-self:start;font:600 9px var(--mono);letter-spacing:.14em;padding:5px 9px;background:transparent;color:var(--accent);border:1px solid var(--line);cursor:pointer}
+.nf-kap h5 em{font-style:normal;color:var(--muted);margin-left:6px}
+.nf-schritte{list-style:none;margin:0;padding:0}
+.nf-schritte li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid rgba(0,229,255,.06);font-size:13px}
+.nf-schritte li>div{flex:1}
+.nf-schritte li.nf-text{color:var(--ink2);font-style:italic}
+.nf-schritte li small{display:block;color:var(--muted);font-size:11.5px}
+.nf-schritte li button{width:26px;height:26px;padding:0!important;font-size:13px!important;letter-spacing:0!important}
+.nf-schritte li.nf-st-erledigt span{color:var(--muted);text-decoration:line-through}
+.nf-schritte li.nf-st-erledigt button:first-child{color:var(--good);border-color:var(--good)}
+.nf-fristen{display:grid;gap:6px;margin:6px 0}
+.nf-fristen label{font-size:13px;display:block}
+.nf-fristen small{display:block;color:var(--muted);font-size:11.5px;margin-left:22px}
+.nf-pruefliste{list-style:none;padding:0;margin:6px 0;font-size:13px}
+.nf-pruefliste em{font-style:normal;color:var(--muted);margin-left:6px;font-size:11px}
+.bt-reihe label{flex:0 0 auto;width:auto;display:flex;margin:0}
+.bt-reihe input{width:auto!important;flex:0 0 auto;min-width:0;background:rgba(0,0,0,.3);color:var(--ink);border:1px solid var(--line);padding:5px 8px;font:13px var(--sans);color-scheme:dark}
+.bt-reihe input[type=checkbox]{padding:0;width:14px!important;height:14px}
+.bt-reihe input[type=number]{width:64px!important}
+.bt-reihe button{font:600 9px var(--mono);letter-spacing:.14em;padding:6px 9px;background:transparent;color:var(--accent);border:1px solid var(--line);cursor:pointer}

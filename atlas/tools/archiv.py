@@ -24,6 +24,9 @@ class ArchivTools:
         p = (self.root / rel).resolve()
         if p != self.root.resolve() and self.root.resolve() not in p.parents:
             raise ToolError("Pfad liegt außerhalb des DATENARCHIVs")
+        from atlas.notfall import ist_notfallordner
+        if ist_notfallordner(p.name):
+            raise ToolError("Der Notfallordner wird nur in der Notfallbegleitung gelesen (lokal).")
         if must_exist and not p.exists():
             raise ToolError(f"'{rel}' nicht gefunden")
         return p

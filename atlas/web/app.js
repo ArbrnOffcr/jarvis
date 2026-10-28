@@ -3142,6 +3142,8 @@ const VB_INFO = {
     hilfe: "In Telegram @BotFather öffnen → /newbot → Token kopieren. Danach dem eigenen Bot „Start“ schicken." },
   serper: { titel: "Google-Bilder (Serper)", ph: "Schlüssel", link: "https://serper.dev",
     hilfe: "serper.dev – 2.500 Suchen kostenlos. Ohne: Bilder von Wikimedia." },
+  nuki: { titel: "NUKI Smart Lock", ph: "API-Token", link: "https://web.nuki.io/#/admin/web-api",
+    hilfe: "web.nuki.io → Menü → API → API-Token erstellen (Rechte: Smartlocks lesen, Aktionen). JARVIS kann damit nur Status lesen und abschließen." },
   youtube: { titel: "YouTube", ph: "AIza…", link: "https://console.cloud.google.com/apis/library/youtube.googleapis.com",
     hilfe: "Google Cloud Console → YouTube Data API v3 aktivieren → Anmeldedaten → API-Schlüssel." },
 };
@@ -4505,9 +4507,9 @@ vbAufbauen = async function (...a) { await _vbAufbauenFord(...a); fordVbAufbauen
 //  Die Verbindungszeilen bleiben in einem Container (#einst-vb) und werden je Reiter ein-/ausgeblendet.
 // =====================================================================
 const EINST_ZEILEN = { profil: "allgemein", elevenlabs: "stimme", anthropic: "konten", serper: "konten", youtube: "konten",
-  telegram: "konten", lokal: "konten", icloud: "daten", archiv: "daten", tesla: "fahrzeuge", ford: "fahrzeuge" };
+  telegram: "konten", lokal: "konten", icloud: "daten", archiv: "daten", tesla: "fahrzeuge", ford: "fahrzeuge", nuki: "zuhause" };
 const EINST_VB_TITEL = { allgemein: "ÜBER DICH", stimme: "STIMME (ELEVENLABS)", konten: "KONTEN & SCHLÜSSEL", daten: "KALENDER, MAIL & ARCHIV",
-  fahrzeuge: "FAHRZEUGE", immobilien: "IMMOBILIEN" };
+  fahrzeuge: "FAHRZEUGE", immobilien: "IMMOBILIEN", zuhause: "SCHLÜSSEL" };
 let einstAktiv = (() => { try { return localStorage.getItem("jarvis-einst-reiter") || "allgemein"; } catch (e) { return "allgemein"; } })();
 function einstFiltern() {
   const box = $("einst"); if (!box) return;
@@ -5578,7 +5580,7 @@ async function mwEinstAufbauen() {
   const box = $("einst-vb"); if (!box) return;
   let d; try { d = await fdGet("/mailwache"); } catch (e) { return; }
   const iv = d.intervall_s || 120;
-  const liste = d.wachen.map((w) => `<div class="einst-zeile"><span>${esc(w.worauf)}<small class="im-einst-sub">seit ${esc(w.seit.replace("T", " "))}${w.dauerhaft ? " · dauerhaft" : " · bis zum ersten Treffer"}${w.bis ? " · bis " + esc(w.bis.split("-").reverse().join(".")) : ""}</small></span>
+  const liste = d.wachen.map((w) => `<div class="einst-zeile"><span>${esc(w.worauf)}<small class="im-einst-sub">seit ${esc(w.seit.replace("T", " "))}${w.dauerhaft ? " · dauerhaft" : " · bis zum ersten Treffer"}${w.dringend ? " · dringend" : ""}${w.bis ? " · bis " + esc(w.bis.split("-").reverse().join(".")) : ""}</small></span>
       <button type="button" data-mw="beenden" data-id="${esc(w.id)}">BEENDEN</button></div>`).join("");
   const inhalt = `<p class="vb-hilfe">JARVIS darf deinen Posteingang dauerhaft im Hintergrund prüfen (nur Absender und Betreff neuer Mails) und meldet sich
       sofort, wenn eine erwartete Mail eintrifft – mit Ansage, Mitteilung und Telegram. Am einfachsten per Sprache: „Sag mir Bescheid, wenn die Mail von … kommt.“</p>
@@ -5586,6 +5588,7 @@ async function mwEinstAufbauen() {
     <div class="vb-feld"><label>Absender (Name oder Adresse, Teil genügt)</label><input data-mwf="absender"></div>
     <div class="vb-feld"><label>Stichwort im Betreff (optional)</label><input data-mwf="stichwort"></div>
     <div class="vb-reihe"><label class="gr-check"><input type="checkbox" data-mwf="dauerhaft"> dauerhaft (nicht nach dem ersten Treffer beenden)</label></div>
+    <div class="vb-reihe"><label class="gr-check"><input type="checkbox" data-mwf="dringend"> dringend (kommt auch in Ruhezeiten und im Fokus durch)</label></div>
     <div class="vb-reihe"><button type="button" class="primary" data-mw="setzen">WACHE STARTEN</button>
       <button type="button" data-mw="alle">JEDE NEUE MAIL MELDEN</button>${d.wachen.length ? `<button type="button" data-mw="alle-aus">ALLE BEENDEN</button>` : ""}</div>
     <div class="vb-feld"><label>Prüfen alle</label><select data-mwf="intervall">${[[60, "1 Minute"], [120, "2 Minuten"], [300, "5 Minuten"], [900, "15 Minuten"]].map(([s, t]) => `<option value="${s}" ${s === iv ? "selected" : ""}>${t}</option>`).join("")}</select></div>`;
@@ -5601,7 +5604,7 @@ document.addEventListener("click", async (e) => {
   const a = b.dataset.mw;
   try {
     let r;
-    if (a === "setzen") r = await vbPost("/mailwache/setzen", { absender: w("absender").value, stichwort: w("stichwort").value, dauerhaft: w("dauerhaft").checked });
+    if (a === "setzen") r = await vbPost("/mailwache/setzen", { absender: w("absender").value, stichwort: w("stichwort").value, dauerhaft: w("dauerhaft").checked, dringend: w("dringend").checked });
     if (a === "alle") r = await vbPost("/mailwache/setzen", { alle: true, dauerhaft: true });
     if (a === "beenden") r = await vbPost("/mailwache/beenden", { id: b.dataset.id });
     if (a === "alle-aus") r = await vbPost("/mailwache/beenden", { alle: true });
@@ -5615,3 +5618,340 @@ document.addEventListener("change", async (e) => {
 });
 const _vbAufbauenMW = vbAufbauen;
 vbAufbauen = async function (...a) { await _vbAufbauenMW(...a); mwEinstAufbauen(); };
+
+// =====================================================================
+//  BUTLER STUFE 1: Sicherheit (eingeschleuste Anweisungen), Rechenschaft + Rückgängig,
+//  Aufmerksamkeit (Ruhe/Fokus, leise Zustellung, Entscheidungsstapel), Einstellungen → AUTOPILOT
+// =====================================================================
+const BT = { modus: { modus: "normal" }, leise: 0, fenster: null };
+const BT_MODUS = { normal: "", ruhe: "RUHE", fokus: "FOKUS" };
+function btChip() {
+  let c = $("bt-chip");
+  const m = BT.modus.modus || "normal";
+  if (m === "normal" && !BT.leise) { c?.remove(); return; }
+  if (!c) { c = document.createElement("button"); c.type = "button"; c.id = "bt-chip";
+    c.addEventListener("click", () => btStapelLaden()); document.body.appendChild(c); }
+  c.className = "bt-" + m;
+  c.title = (BT.modus.grund ? BT.modus.grund + " – " : "") + "Zurückgelegtes und offene Entscheidungen anzeigen";
+  c.innerHTML = `<i></i>${m === "normal" ? "ZURÜCKGELEGT" : BT_MODUS[m]}${BT.modus.bis && m !== "normal" ? ` BIS ${esc(BT.modus.bis)}` : ""}${BT.leise ? ` · ${BT.leise}` : ""}`;
+}
+async function btModusLaden() {
+  try { const d = await fdGet("/autopilot"); BT.modus = d.modus; BT.leise = d.stapel; btChip(); } catch (e) {}
+}
+function btFenster(titel, html, klasse = "") {
+  btZu();
+  const el = document.createElement("div"); el.className = "im-form bt " + klasse;
+  el.innerHTML = `<div class="im-form-box bt-box"><header><b>${titel}</b><span class="bt-kopf-rechts"></span><button type="button" class="vt-zu" data-bt="zu">✕</button></header>
+    <div class="bt-inhalt">${html}</div><footer><span class="im-form-status bt-status"></span></footer></div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) btZu(); });
+  document.body.appendChild(el); BT.fenster = el; requestAnimationFrame(() => el.classList.add("an"));
+  return el;
+}
+function btZu() { const el = BT.fenster; BT.fenster = null; if (el) { el.classList.remove("an"); setTimeout(() => el.remove(), 300); } }
+const btZeit = (ts) => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleString("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" }); };
+
+// ---------- Rechenschaft ----------
+async function btRechenschaft(tage = 1) {
+  let d; try { d = await fdGet(`/rechenschaft?tage=${tage}`); } catch (e) { toast("Rechenschaft nicht verfügbar"); return; }
+  const kanal = (k) => k ? `<em class="bt-kanal">${esc(k.replace(/^stab:/, "Stab · "))}</em>` : "";
+  const zeilen = d.aktionen.map((a) => `<li class="${a.warum.startsWith("per Befugnis") ? "selbst" : ""}"><time>${btZeit(a.zeit)}</time>
+      <div><b>${esc(a.was)}</b><small>${esc(a.warum)} ${kanal(a.kanal)}${a.fremd?.length ? ` <em class="bt-fremd" title="nach fremdem Inhalt">⚠ nach ${esc(a.fremd.join(", "))}</em>` : ""}</small></div>
+      ${a.rueckgaengig ? `<button type="button" data-bt="undo" data-id="${esc(a.rueckgaengig)}" title="${esc(a.rueckgaengig_text)}">↺ RÜCKGÄNGIG</button>` : ""}</li>`).join("");
+  const abgelehnt = d.abgelehnt.map((a) => `<li><time>${btZeit(a.zeit)}</time><div><b>${esc(a.was)}</b><small>${esc(a.grund)}${a.fremd ? " · nach fremdem Inhalt" : ""}</small></div></li>`).join("");
+  const sich = d.sicherheit.map((v) => `<li class="warn"><time>${btZeit(v.zeit)}</time><div><b>Zurückgehalten aus ${esc(v.quelle)}</b><small>„${esc(v.zitat)}“</small></div></li>`).join("");
+  const el = btFenster("RECHENSCHAFT", `<p class="bt-summe">${esc(d.zusammenfassung)}</p>
+    <section><h5>AKTIONEN</h5><ul class="bt-liste">${zeilen || "<li class='leer'>Keine Aktionen im Zeitraum.</li>"}</ul></section>
+    ${abgelehnt ? `<section><h5>ABGELEHNT / GESPERRT</h5><ul class="bt-liste">${abgelehnt}</ul></section>` : ""}
+    ${sich ? `<section><h5>SICHERHEIT · ERKANNTE EINSCHLEUSUNGSVERSUCHE</h5><ul class="bt-liste">${sich}</ul></section>` : ""}`, "bt-rs");
+  el.querySelector(".bt-kopf-rechts").innerHTML = [1, 7].map((t) => `<button type="button" data-bt="tage" data-t="${t}" class="${t === d.zeitraum_tage ? "an" : ""}">${t === 1 ? "HEUTE" : "7 TAGE"}</button>`).join("");
+}
+
+// ---------- Entscheidungsstapel ----------
+function btStapel(ev) {
+  const z = (ev.zurueckgelegt || []).map((e) => `<li><time>${btZeit(e.zeit)}</time><div><b>${esc(e.text)}</b><small>${esc({ nachricht: "iMessage", mailwache: "Mail-Wache", hinweis: "Hinweis" }[e.art] || e.art)}</small></div>
+      ${e.art === "nachricht" && e.daten?.id ? `<button type="button" data-bt="vorlesen" data-id="${esc(e.daten.id)}">VORLESEN</button>` : ""}</li>`).join("");
+  const ent = (ev.entscheidungen || []).map((e) => `<li class="ent"><time>☐</time><div><b>${esc(e.text)}</b></div>
+      ${e.fenster ? `<button type="button" data-bt="oeffnen" data-f="${esc(e.fenster)}">ÖFFNEN</button>` : ""}</li>`).join("");
+  btFenster("ENTSCHEIDUNGSSTAPEL", `<p class="bt-summe">${esc(ev.grund ? "Gebündelt · " + ev.grund : "Gebündelt")}${ev.modus && ev.modus !== "normal" ? ` · gerade ${esc(BT_MODUS[ev.modus])}${ev.grund ? "" : ""}` : ""}</p>
+    ${ent ? `<section><h5>WARTET AUF DICH</h5><ul class="bt-liste">${ent}</ul></section>` : ""}
+    <section><h5>ZURÜCKGELEGT WÄHREND RUHE/FOKUS</h5><ul class="bt-liste">${z || "<li class='leer'>Nichts zurückgelegt.</li>"}</ul></section>`, "bt-st");
+  BT.leise = 0; btChip();
+}
+async function btStapelLaden() {
+  try { const d = await vbPost("/autopilot/stapel", { leeren: true }); btStapel(d.leer ? { zurueckgelegt: [], entscheidungen: [], grund: "auf Wunsch" } : { ...d, grund: "auf Wunsch" }); }
+  catch (e) { toast(e.message); }
+}
+
+// ---------- Sicherheitsmeldung ----------
+function btSicherheit(ev) {
+  document.querySelector(".bt-sicher")?.remove();
+  const k = document.createElement("div"); k.className = "nachricht-karte bt-sicher";
+  k.innerHTML = `<div class="nk-kopf">⚠ EINGESCHLEUSTE ANWEISUNG ZURÜCKGEHALTEN</div><div class="nk-von"></div><div class="mw-betreff bt-zitat"></div>
+    <div class="nk-knoepfe"><button type="button" data-a="rs">RECHENSCHAFT</button><button type="button" data-a="ok">VERSTANDEN</button></div>`;
+  k.querySelector(".nk-von").textContent = `Quelle: ${ev.quelle} · ${ev.art}${ev.anzahl > 1 ? ` (+${ev.anzahl - 1})` : ""}`;
+  k.querySelector(".bt-zitat").textContent = `„${ev.zitat}“`;
+  k.addEventListener("click", (e) => { const a = e.target.dataset.a; if (!a) return; e.stopPropagation(); k.remove(); if (a === "rs") btRechenschaft(1); });
+  document.body.appendChild(k); sfx("ask");
+  setTimeout(() => k.remove(), 5 * 60 * 1000);
+}
+
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-bt]"); if (!b) return;
+  const a = b.dataset.bt, st = BT.fenster?.querySelector(".bt-status");
+  if (a === "zu") return btZu();
+  if (a === "tage") return btRechenschaft(+b.dataset.t);
+  if (a === "oeffnen") { btZu(); return sendText(b.dataset.f === "hestia" ? "Zeig mir die Nebenkosten" : "Welche Post wartet auf Ablage?"); }
+  if (a === "vorlesen") { btZu(); return nachrichtVorlesen(b.dataset.id); }
+  if (a === "undo") {
+    if (!confirm(`${b.title}?`)) return;
+    b.disabled = true;
+    try { const r = await vbPost(`/rueckgaengig/${encodeURIComponent(b.dataset.id)}`); if (st) { st.textContent = "✓ " + r.rueckgaengig; st.className = "im-form-status bt-status ok"; }
+      b.textContent = "✓ ZURÜCK"; }
+    catch (err) { b.disabled = false; if (st) { st.textContent = "⚠ " + err.message; st.className = "im-form-status bt-status fehler"; } }
+  }
+});
+
+const _handleBT = handle;
+handle = function (ev) {
+  if (ev.type === "sicherheit") { btSicherheit(ev); return; }
+  if (ev.type === "rechenschaft") { btRechenschaft(ev.tage || 1); return; }
+  if (ev.type === "stapel") { btStapel(ev); return; }
+  if (ev.type === "modus") { BT.modus = ev; btChip(); return; }
+  if (ev.type === "leise") { BT.modus = { modus: ev.modus, grund: ev.grund, bis: ev.bis }; BT.leise = ev.anzahl || BT.leise + 1; btChip(); return; }
+  if (ev.type === "nachricht" && ev.leise) return;            // Ruhe/Fokus: liegt im Stapel, keine Karte, keine Ansage
+  if (ev.type === "info" && ev.rueckgaengig) {
+    _handleBT(ev);
+    const t = $("toast"); if (t && !t.hidden) { t.insertAdjacentHTML("beforeend", ` <button type="button" class="bt-toast-undo" data-bt="undo" data-id="${esc(ev.rueckgaengig)}" title="Rückgängig machen">↺</button>`);
+      clearTimeout(t._h); t._h = setTimeout(() => (t.hidden = true), 8000); }
+    return;
+  }
+  _handleBT(ev);
+};
+setTimeout(btModusLaden, 3000); setInterval(btModusLaden, 5 * 60 * 1000);
+
+// ---------- Einstellungen → AUTOPILOT ----------
+async function btEinstAufbauen() {
+  const box = $("einst-autopilot"); if (!box) return;
+  let d; try { d = await fdGet("/autopilot"); } catch (e) { box.textContent = "Nicht verfügbar"; return; }
+  const offen = [...box.querySelectorAll("details[open]")].map((x) => x.dataset.id);
+  const bef = d.befugnisse.befugnisse.map((r) => `<div class="einst-zeile bt-bef ${r.aktiv && !r.abgelaufen ? "" : "aus"}"><span><b>${esc(r.titel)}</b>
+      <small class="im-einst-sub">${esc(d.befugnisse.bereiche[r.bereich] || r.bereich)}${r.bedingung?.kalender_ausschluss?.length ? ` · nicht in: ${esc(r.bedingung.kalender_ausschluss.join(", "))}` : ""}${r.max_pro_woche ? ` · max. ${r.max_pro_woche}/Woche` : ""}${r.gueltig_bis ? ` · bis ${esc(r.gueltig_bis.split("-").reverse().join("."))}` : ""} · ${r.nutzungen_7_tage}× in 7 Tagen${r.abgelaufen ? " · abgelaufen" : ""}</small></span>
+      ${r.aktiv ? `<button type="button" data-ap="entziehen" data-id="${esc(r.id)}">ENTZIEHEN</button>` : `<button type="button" data-ap="aktivieren" data-id="${esc(r.id)}">WIEDER ERTEILEN</button>`}</div>`).join("");
+  const bereiche = Object.entries(d.befugnisse.bereiche).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+  const a = d.aufmerksamkeit;
+  const m = d.modus;
+  const html = [
+    vbZeile("ap-befugnisse", "Befugnisse – was JARVIS ohne Rückfrage darf", { ok: true, text: `${d.befugnisse.befugnisse.filter((r) => r.aktiv).length} aktiv` },
+      `<p class="vb-hilfe">Innerhalb einer Befugnis handelt JARVIS selbst und meldet es danach (mit Rückgängig). Alles außerhalb – Dienstliches, Familie, Geld, Senden – bleibt bei deiner Bestätigung.
+       Per Sprache: „Was darfst du ohne mich?“, „Lass das mit den Terminen“, „Notbremse“. Nach dem Lesen fremder Inhalte (Mails, Dokumente) gilt keine Befugnis.</p>
+       ${bef || "<p class='vb-hilfe'>Keine Befugnisse.</p>"}
+       <div class="vb-reihe"><select data-apf="bereich">${bereiche}</select><input data-apf="max" type="number" min="0" placeholder="max./Woche" style="width:110px"><input data-apf="bis" type="date">
+         <button type="button" class="primary" data-ap="erteilen">ERTEILEN</button></div>
+       <div class="vb-reihe"><button type="button" class="gefahr" data-ap="notbremse">NOTBREMSE – ALLE ENTZIEHEN</button></div>`, offen.includes("ap-befugnisse")),
+    vbZeile("ap-ruhe", "Ruhe, Fokus & Entscheidungsstapel", m.modus === "normal" ? { ok: true, text: "gerade normal" } : { warn: true, text: `${BT_MODUS[m.modus]} · ${m.grund}` },
+      `<p class="vb-hilfe">In Ruhe- und Fokuszeiten legt JARVIS Nicht-Dringendes still zurück (kein Telegram, keine Ansage) und bündelt es im Entscheidungsstapel.
+       Durch kommen nur Notfälle und als dringend markierte Mail-Wachen.</p>
+       <div class="bt-reihe"><label><input type="checkbox" data-apf="aktiv" ${a.aktiv ? "checked" : ""}> Router aktiv</label>
+         <label><input type="checkbox" data-apf="sonntag" ${a.sonntag ? "checked" : ""}> Sonntag ganz Ruhe</label></div>
+       <div class="bt-reihe"><span>Nachtruhe</span><input type="time" data-apf="ruhe_von" value="${esc(a.ruhe_von)}"><span>bis</span><input type="time" data-apf="ruhe_bis" value="${esc(a.ruhe_bis)}">
+         <span>Samstag ab</span><input type="time" data-apf="samstag_ab" value="${esc(a.samstag_ab)}"></div>
+       <div class="vb-feld"><label>Ruhe bei Kalenderterminen mit (Komma-getrennt)</label><input data-apf="ruhe_titel" value="${esc((a.ruhe_titel || []).join(", "))}"></div>
+       <div class="vb-feld"><label>Fokus bei Kalenderterminen mit</label><input data-apf="fokus_titel" value="${esc((a.fokus_titel || []).join(", "))}"></div>
+       <div class="vb-feld"><label>Entscheidungsstapel um</label><input data-apf="stapel_zeiten" value="${esc((a.stapel_zeiten || []).join(", "))}"></div>
+       <div class="vb-reihe"><button type="button" class="primary" data-ap="speichern">SPEICHERN</button>
+         ${m.modus === "fokus" ? `<button type="button" data-ap="fokus-aus">FOKUS BEENDEN</button>` : `<button type="button" data-ap="fokus">FOKUS 2 STUNDEN</button>`}
+         <button type="button" data-ap="stapel">STAPEL JETZT ZEIGEN</button></div>`, offen.includes("ap-ruhe")),
+    vbZeile("ap-sicherheit", "Sicherheit – eingeschleuste Anweisungen", d.vorfaelle.length ? { warn: true, text: `${d.vorfaelle.length} Vorfälle` } : { ok: true, text: "✓ keine Vorfälle" },
+      `<p class="vb-hilfe">Anweisungen nimmt JARVIS nur von dir an. Inhalte aus Mails, Dokumenten, Web, Terminen und Stabsmeldungen sind Daten: Sie werden geprüft,
+       verdächtige Sätze zurückgehalten und als „fremder Inhalt“ eingerahmt. Danach braucht jede Aktion deine Bestätigung. Vor jedem „jarvis speichern“ laufen die Sicherheitstests.</p>
+       <ul class="bt-liste">${d.vorfaelle.slice(0, 12).map((v) => `<li class="warn"><time>${btZeit(v.zeit)}</time><div><b>${esc(v.quelle)}</b><small>${(v.treffer || []).map((t) => `${esc(t.art)}: „${esc(t.zitat)}“`).join("<br>")}</small></div></li>`).join("") || "<li class='leer'>Noch nichts zurückgehalten.</li>"}</ul>
+       <div class="vb-reihe"><button type="button" data-ap="rechenschaft">RECHENSCHAFT ÖFFNEN</button></div>`, offen.includes("ap-sicherheit")),
+  ].join("");
+  box.innerHTML = html; if (typeof einstFiltern === "function") einstFiltern();
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-ap]"); if (!b) return;
+  const z = b.closest(".vb-zeile"), st = z?.querySelector(".vb-status"), f = (k) => z?.querySelector(`[data-apf="${k}"]`);
+  const liste = (k) => f(k).value.split(",").map((x) => x.trim()).filter(Boolean);
+  try {
+    let r; const a = b.dataset.ap;
+    if (a === "entziehen") r = await vbPost("/autopilot/entziehen", { id: b.dataset.id });
+    if (a === "aktivieren") r = await vbPost("/autopilot/aktivieren", { id: b.dataset.id });
+    if (a === "notbremse") { if (!confirm("Alle Befugnisse sofort entziehen?")) return; r = await vbPost("/autopilot/entziehen", { alle: true }); }
+    if (a === "erteilen") r = await vbPost("/autopilot/erteilen", { bereich: f("bereich").value, max_pro_woche: +f("max").value || null, gueltig_bis: f("bis").value });
+    if (a === "speichern") r = await vbPost("/autopilot/einstellen", { aktiv: f("aktiv").checked, ruhe_von: f("ruhe_von").value, ruhe_bis: f("ruhe_bis").value,
+      samstag_ab: f("samstag_ab").value, sonntag: f("sonntag").checked, ruhe_titel: liste("ruhe_titel"), fokus_titel: liste("fokus_titel"), stapel_zeiten: liste("stapel_zeiten") });
+    if (a === "fokus") r = await vbPost("/autopilot/fokus", { minuten: 120 });
+    if (a === "fokus-aus") r = await vbPost("/autopilot/fokus_ende");
+    if (a === "stapel") { window.einstellungenSchliessen?.(); return btStapelLaden(); }
+    if (a === "rechenschaft") return btRechenschaft(7);
+    if (st) { st.textContent = "✓ gespeichert"; st.className = "vb-status ok"; }
+    btModusLaden(); setTimeout(btEinstAufbauen, 300);
+  } catch (err) { if (st) { st.textContent = err.message; st.className = "vb-status fehler"; } }
+});
+const _vbAufbauenBT = vbAufbauen;
+vbAufbauen = async function (...a) { await _vbAufbauenBT(...a); btEinstAufbauen(); };
+
+// =====================================================================
+//  ZIELE (Autopilot-Reiter), ZUHAUSE (HomeKit-Kurzbefehle, NUKI) und NOTFALLBEGLEITUNG
+// =====================================================================
+const ORT_TXT = { dienst: "Dienststelle", mobil: "Mobil", frei: "Frei" };
+async function zieleEinstAufbauen() {
+  const box = $("einst-autopilot"); if (!box) return;
+  let d; try { d = await fdGet("/ziele"); } catch (e) { return; }
+  const e = d.einstellungen, alt = box.querySelector('details[data-id="ap-ziele"]');
+  const woche = d.woche.map((t) => `<div class="zi-tag zi-${t.arbeitsort}"><b>${esc(t.tag)}</b><span>${esc(ORT_TXT[t.arbeitsort] || t.arbeitsort)}</span>
+      <small>${t.arbeit ? esc(t.arbeit) + "<br>Sport " + esc(t.sport.split(" ")[0]) : (t.familie ? "Familie" : "")}</small><i title="${esc(t.quelle)}"></i></div>`).join("");
+  const inhalt = `<p class="vb-hilfe">Deine Ziele: Wochenenden für die Familie, feste Arbeitszeiten, tägliche Sportzeit. JARVIS legt Sportblöcke im Privatkalender an
+      (per Befugnis, mit Meldung), passt sie morgens an deinen Arbeitsort an und fragt nach, wenn ein Termin gegen ein Ziel läuft.
+      Arbeitsort: Kalendereintrag („Mobiles Arbeiten“ / „Dienststelle“) vor Standort vor üblichem Wochenmuster.</p>
+    <div class="zi-woche">${woche}</div>
+    <div class="bt-reihe"><label><input type="checkbox" data-zif="aktiv" ${e.aktiv ? "checked" : ""}> Zielregister aktiv</label>
+      <label><input type="checkbox" data-zif="wochenende_frei" ${e.wochenende_frei ? "checked" : ""}> Wochenende frei</label>
+      <label><input type="checkbox" data-zif="sport_bloecke" ${e.sport_bloecke ? "checked" : ""}> Sportblöcke anlegen</label></div>
+    <div class="bt-reihe"><span>Dienststelle</span><input type="time" data-zif="d_beginn" value="${esc(e.arbeit.dienst.beginn)}"><span>–</span><input type="time" data-zif="d_ende" value="${esc(e.arbeit.dienst.ende)}">
+      <span>Sport ab</span><input type="time" data-zif="ds_beginn" value="${esc(e.sport.dienst.beginn)}"><input type="number" min="5" max="120" data-zif="ds_min" value="${e.sport.dienst.minuten}" style="width:64px"><span>min</span></div>
+    <div class="bt-reihe"><span>Mobil</span><input type="time" data-zif="m_beginn" value="${esc(e.arbeit.mobil.beginn)}"><span>–</span><input type="time" data-zif="m_ende" value="${esc(e.arbeit.mobil.ende)}">
+      <span>Sport ab</span><input type="time" data-zif="ms_beginn" value="${esc(e.sport.mobil.beginn)}"><input type="number" min="5" max="120" data-zif="ms_min" value="${e.sport.mobil.minuten}" style="width:64px"><span>min</span></div>
+    <p class="vb-hilfe">Dienststelle als Ort: ${esc(d.dienststelle)}. Am besten einmal vor Ort „Ich bin in der Dienststelle“ sagen oder hier tippen.</p>
+    <div class="vb-reihe"><button type="button" class="primary" data-zi="speichern">SPEICHERN</button><button type="button" data-zi="dienststelle">HIER IST DIE DIENSTSTELLE</button>
+      <button type="button" data-zi="mobil">HEUTE MOBIL</button><button type="button" data-zi="dienst">HEUTE DIENSTSTELLE</button></div>`;
+  const h = d.heute;
+  const html = vbZeile("ap-ziele", "Ziele & Arbeitszeit", { ok: true, text: h.arbeit ? `heute ${ORT_TXT[h.arbeitsort]} ${h.arbeit}` : "heute frei" }, inhalt, alt?.open);
+  if (alt) alt.outerHTML = html; else box.insertAdjacentHTML("afterbegin", html);
+}
+document.addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-zi]"); if (!b) return;
+  const z = b.closest(".vb-zeile"), st = z?.querySelector(".vb-status"), f = (k) => z.querySelector(`[data-zif="${k}"]`);
+  try {
+    const a = b.dataset.zi;
+    if (a === "speichern") await vbPost("/ziele/einstellen", { aktiv: f("aktiv").checked, wochenende_frei: f("wochenende_frei").checked, sport_bloecke: f("sport_bloecke").checked,
+      arbeit: { dienst: { beginn: f("d_beginn").value, ende: f("d_ende").value }, mobil: { beginn: f("m_beginn").value, ende: f("m_ende").value } },
+      sport: { dienst: { beginn: f("ds_beginn").value, minuten: +f("ds_min").value || 45 }, mobil: { beginn: f("ms_beginn").value, minuten: +f("ms_min").value || 15 } } });
+    if (a === "dienststelle") await vbPost("/ziele/dienststelle");
+    if (a === "mobil" || a === "dienst") await vbPost("/ziele/arbeitsort", { ort: a });
+    if (st) { st.textContent = "✓ gespeichert"; st.className = "vb-status ok"; }
+    setTimeout(zieleEinstAufbauen, 300);
+  } catch (err) { if (st) { st.textContent = err.message; st.className = "vb-status fehler"; } }
+});
+const _btEinstZiele = btEinstAufbauen;
+btEinstAufbauen = async function (...a) { await _btEinstZiele(...a); await zieleEinstAufbauen(); };
+
+// ---------- Zuhause ----------
+async function zuhauseEinstAufbauen() {
+  const box = $("einst-zuhause"); if (!box) return;
+  let d; try { d = await fdGet("/zuhause"); } catch (e) { box.innerHTML = "<p class='vb-hilfe'>Nicht verfügbar.</p>"; return; }
+  const kb = d.kurzbefehle.map((k) => `<button type="button" class="zh-kb" data-zh="kb" data-a="${esc(k)}">${esc(k)}</button>`).join("");
+  const locks = (d.schloesser || []).map((l) => `<div class="einst-zeile"><span><b>${l.abgeschlossen ? "🔒" : "🔓"} ${esc(l.name)}</b>
+      <small class="im-einst-sub">${esc(l.schloss)} · Tür ${esc(l.tuer)}${l.batterie != null ? ` · Batterie ${l.batterie} %` : ""}${l.batterie_kritisch ? " · ⚠ Batterie kritisch" : ""}</small></span>
+      ${l.abgeschlossen ? "" : `<button type="button" data-zh="ab" data-a="${esc(l.name)}">ABSCHLIESSEN</button>`}</div>`).join("");
+  box.innerHTML = `
+    <p class="vb-hilfe"><b>HomeKit (Lichter, Lautsprecher, Szenen):</b> In der App „Kurzbefehle“ je Aktion einen Kurzbefehl mit „Steuere Zuhause“ anlegen,
+      dessen Name mit <b>JARVIS</b> beginnt – z. B. „JARVIS Licht Wohnzimmer an“, „JARVIS Szene Abend“, „JARVIS Lautsprecher Küche leiser“.
+      Dann reicht „Licht im Wohnzimmer an“. Kurzbefehle zu Türen, Schlössern, Garage oder Alarm führt JARVIS nie aus.</p>
+    <div class="zh-kbs">${kb || "<span class='vb-hilfe'>Noch keine JARVIS-Kurzbefehle gefunden.</span>"}</div>
+    ${d.gesperrte_kurzbefehle?.length ? `<p class="vb-hilfe">Gesperrt (Sicherheit): ${d.gesperrte_kurzbefehle.map(esc).join(", ")}</p>` : ""}
+    <p class="vb-hilfe"><b>NUKI:</b> JARVIS liest den Status und darf abschließen – aufschließen und öffnen kann er nicht. Um 21:45 meldet er eine offene Tür.
+      ${d.nuki ? "" : "Token oben unter „NUKI Smart Lock“ eintragen."}${d.nuki_fehler ? " ⚠ " + esc(d.nuki_fehler) : ""}</p>
+    ${locks}<div class="vb-status"></div>`;
+}
+document.addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-zh]"); if (!b) return;
+  const st = $("einst-zuhause")?.querySelector(".vb-status");
+  try {
+    const r = await vbPost(b.dataset.zh === "kb" ? "/zuhause/steuern" : "/zuhause/abschliessen", { aktion: b.dataset.a, schloss: b.dataset.a });
+    if (st) { st.textContent = "✓ " + (r.ausgefuehrt || `${r.schloss}: ${r.status}`); st.className = "vb-status ok"; }
+    if (b.dataset.zh === "ab") setTimeout(zuhauseEinstAufbauen, 4000);
+  } catch (err) { if (st) { st.textContent = err.message; st.className = "vb-status fehler"; } }
+});
+
+// ---------- Notfallbegleitung ----------
+const NF = { aktiv: false, d: null };
+async function notfallEinstAufbauen() {
+  const box = $("einst-notfall"); if (!box) return;
+  let d; try { d = await fdGet("/notfall"); } catch (e) { return; }
+  NF.aktiv = d.aktiv; notfallBanner();
+  if (d.aktiv) {
+    box.innerHTML = `<p class="vb-hilfe">Die Notfallbegleitung ist aktiv (seit ${esc((d.seit || "").replace("T", " "))}).</p>
+      <div class="vb-reihe"><button type="button" class="primary" data-nf="oeffnen">BEGLEITUNG ÖFFNEN</button><button type="button" class="gefahr" data-nf="beenden">BEGLEITUNG BEENDEN</button></div><div class="vb-status"></div>`;
+    return;
+  }
+  box.innerHTML = `
+    <p class="vb-hilfe">Für den Fall, dass Richard etwas zustößt: JARVIS begleitet ${esc(d.name)} Schritt für Schritt – mit Richards Notfallordner als Leitlinie und als administrative
+      Unterstützung (Checkliste, Fristen, Entwürfe). Der Notfallordner wird dabei nur auf dem Mac gelesen. Starten kann die Begleitung nur, wer den persönlichen Notfallcode kennt.</p>
+    <details class="vb-zeile" ${d.eingerichtet ? "" : "open"}><summary><span>Notfallcode ${d.eingerichtet ? "ändern" : "einrichten"}</span><em class="${d.eingerichtet ? "ok" : "warn"}">${d.eingerichtet ? "✓ eingerichtet" : "fehlt"}</em></summary>
+      <div class="vb-inhalt"><p class="vb-hilfe">Bitte ${esc(d.name)} den Code selbst eingeben lassen – mindestens 6 Zeichen, nicht aufschreiben. Gespeichert wird nur eine verschlüsselte Prüfsumme.</p>
+        <div class="vb-feld"><label>Name</label><input data-nff="name" value="${esc(d.name)}"></div>
+        <div class="vb-feld"><label>Notfallcode</label><input type="password" data-nff="code1" autocomplete="new-password"></div>
+        <div class="vb-feld"><label>Notfallcode wiederholen</label><input type="password" data-nff="code2" autocomplete="new-password"></div>
+        <div class="vb-reihe"><button type="button" class="primary" data-nf="einrichten">CODE SPEICHERN</button></div><div class="vb-status"></div></div></details>
+    <details class="vb-zeile"><summary><span>Notfallordner prüfen (für Richard)</span><em></em></summary>
+      <div class="vb-inhalt"><p class="vb-hilfe">Zeigt, welche Kapitel JARVIS in deinem Word-Dokument erkennt – nur Überschriften und Anzahl der Schritte, ohne Inhalte, ohne Sprachmodell.</p>
+        <div class="vb-reihe"><button type="button" data-nf="pruefen">JETZT PRÜFEN</button></div><div class="nf-pruef"></div><div class="vb-status"></div></div></details>
+    ${d.eingerichtet ? `<details class="vb-zeile"><summary><span>Begleitung starten</span><em></em></summary>
+      <div class="vb-inhalt"><p class="vb-hilfe">${esc(d.name)}, hier mit deinem Notfallcode starten. Richard bekommt eine Nachricht; bei einem Irrtum lässt sich die Begleitung jederzeit beenden.</p>
+        <div class="vb-feld"><label>Notfallcode</label><input type="password" data-nff="code" autocomplete="off"></div>
+        <div class="vb-reihe"><button type="button" class="primary" data-nf="aktivieren">BEGLEITUNG STARTEN</button></div><div class="vb-status"></div></div></details>` : ""}`;
+}
+function notfallBanner() {
+  let b = $("nf-banner");
+  if (!NF.aktiv) { b?.remove(); return; }
+  if (!b) { b = document.createElement("button"); b.type = "button"; b.id = "nf-banner"; b.addEventListener("click", notfallOeffnen); document.body.appendChild(b); }
+  b.innerHTML = "<i></i>NOTFALLBEGLEITUNG";
+}
+async function notfallOeffnen() {
+  let d; try { d = await fdGet("/notfall"); } catch (e) { return toast(e.message); }
+  if (!d.aktiv) { NF.aktiv = false; notfallBanner(); return; }
+  NF.d = d; const u = d.begleitung || { kapitel: [] };
+  const STATUS = { offen: "○", erledigt: "✓", spaeter: "◔", nicht_noetig: "–" };
+  const kap = u.kapitel.map((k) => `<section class="nf-kap"><h5>${esc(k.titel)} <em>${k.erledigt}/${k.gesamt}</em></h5><ul class="nf-schritte">${k.schritte.map((s) =>
+      `<li class="nf-${s.art} nf-st-${s.status}">${s.art === "text" ? "" : `<button type="button" data-nf="schritt" data-id="${esc(s.id)}" data-s="${s.status === "erledigt" ? "offen" : "erledigt"}" title="abhaken">${STATUS[s.status] || "○"}</button>`}
+        <div><span>${esc(s.text)}</span>${s.notiz ? `<small>${esc(s.notiz)}</small>` : ""}</div>
+        ${s.art === "text" ? "" : `<button type="button" class="nf-frag" data-nf="frag" data-t="${esc(s.text.slice(0, 160))}" title="JARVIS dazu fragen">?</button>`}</li>`).join("")}</ul></section>`).join("");
+  const fristen = (d.fristen || []).map((f, i) => `<label><input type="checkbox" data-nff="frist" value="${i}" checked> ${esc(f.datum.split("-").reverse().join("."))} – ${esc(f.titel)}<small>${esc(f.hinweis)}</small></label>`).join("");
+  const el = btFenster("BEGLEITUNG", `
+    <p class="bt-summe">${esc(u.name)}, ich bin da. Wir gehen das in Ruhe durch – immer nur den nächsten Schritt. Du kannst jederzeit pausieren.</p>
+    ${u.naechster_schritt ? `<div class="nf-naechster"><small>NÄCHSTER SCHRITT · ${esc(u.naechster_schritt.kapitel)}</small><b>${esc(u.naechster_schritt.text)}</b>
+       <button type="button" data-nf="frag" data-t="${esc(u.naechster_schritt.text.slice(0, 160))}">MIT JARVIS ANGEHEN</button></div>` : ""}
+    <section class="nf-kap"><h5>FRISTEN</h5>
+      <div class="bt-reihe"><span>Sterbedatum</span><input type="date" data-nff="datum" value="${esc(u.sterbedatum)}"><button type="button" data-nf="datum">ÜBERNEHMEN</button></div>
+      ${fristen ? `<div class="nf-fristen">${fristen}</div><p class="vb-hilfe">Vorschläge – bitte mit dem Notfallordner abgleichen. Keine Rechtsberatung.</p>
+        <div class="bt-reihe"><button type="button" data-nf="fristen">${u.fristen_vorgeschlagen ? "ERNEUT " : ""}INS FRISTENRADAR</button></div>` : ""}</section>
+    ${kap || `<p class="vb-hilfe">${esc(d.hinweis || "Leitfaden nicht gefunden.")}</p>`}`, "nf-fenster");
+  el.querySelector(".bt-kopf-rechts").innerHTML = `<button type="button" data-nf="beenden">BEENDEN</button>`;
+}
+document.addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-nf]"); if (!b) return;
+  const z = b.closest(".vb-inhalt, .vb, .bt-box"), st = z?.querySelector(".vb-status, .bt-status"), f = (k) => z?.querySelector(`[data-nff="${k}"]`);
+  const melde = (t, ok = true) => { if (st) { st.textContent = t; st.className = (st.classList.contains("bt-status") ? "im-form-status bt-status " : "vb-status ") + (ok ? "ok" : "fehler"); } };
+  try {
+    const a = b.dataset.nf;
+    if (a === "einrichten") {
+      if (f("code1").value !== f("code2").value) return melde("Die beiden Eingaben stimmen nicht überein.", false);
+      const r = await vbPost("/notfall/einrichten", { code: f("code1").value, name: f("name").value }); f("code1").value = f("code2").value = ""; melde(r.text);
+      return setTimeout(notfallEinstAufbauen, 1200);
+    }
+    if (a === "aktivieren") { await vbPost("/notfall/aktivieren", { code: f("code").value }); f("code").value = ""; NF.aktiv = true; notfallBanner(); notfallEinstAufbauen(); return notfallOeffnen(); }
+    if (a === "beenden") { if (!confirm("Notfallbegleitung beenden?")) return; await vbPost("/notfall/beenden"); NF.aktiv = false; notfallBanner(); btZu(); return notfallEinstAufbauen(); }
+    if (a === "oeffnen") return notfallOeffnen();
+    if (a === "pruefen") {
+      const r = await vbPost("/notfall/pruefen"); const p = z.querySelector(".nf-pruef");
+      p.innerHTML = r.gefunden ? `<p class="vb-hilfe">✓ ${esc(r.datei)} (Stand ${esc(r.stand)})</p><ul class="nf-pruefliste">${r.kapitel.map((k) => `<li style="padding-left:${(k.ebene - 1) * 14}px">${esc(k.titel)} <em>${k.schritte} Schritte</em></li>`).join("")}</ul>`
+        : `<p class="vb-hilfe">⚠ Kein Word-Dokument mit „Notfallordner“ im Namen im DATENARCHIV gefunden.</p>`;
+      return;
+    }
+    if (a === "schritt") { await vbPost("/notfall/schritt", { id: b.dataset.id, status: b.dataset.s }); return notfallOeffnen(); }
+    if (a === "datum") { await vbPost("/notfall/sterbedatum", { datum: f("datum").value }); return notfallOeffnen(); }
+    if (a === "fristen") { const sel = [...z.querySelectorAll('[data-nff="frist"]:checked')].map((x) => +x.value);
+      const r = await vbPost("/notfall/fristen", { auswahl: sel }); melde(`✓ Eingetragen: ${r.eingetragen.length}`); return; }
+    if (a === "frag") { btZu(); return sendText(`Hilf mir bei diesem Schritt aus dem Notfallordner: „${b.dataset.t}“`); }
+  } catch (err) { melde(err.message, false); }
+});
+const _handleNF = handle;
+handle = function (ev) {
+  if (ev.type === "notfall") { NF.aktiv = !!ev.aktiv; notfallBanner(); if (ev.aktualisiert && BT.fenster?.classList.contains("nf-fenster")) notfallOeffnen(); return; }
+  _handleNF(ev);
+};
+setTimeout(async () => { try { const d = await fdGet("/notfall"); NF.aktiv = d.aktiv; notfallBanner(); } catch (e) {} }, 3500);
+const _vbAufbauenZN = vbAufbauen;
+vbAufbauen = async function (...a) { await _vbAufbauenZN(...a); zuhauseEinstAufbauen(); notfallEinstAufbauen(); };

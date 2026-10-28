@@ -139,6 +139,30 @@ class Core:
         from atlas.workflows import nebenkosten as _nk
         self.nebenkosten = _nk.Nebenkosten(self)
         self.tools.update({t.name: t for t in _nk.tools(self)})
+        # Butler Stufe 1: Schutz gegen eingeschleuste Anweisungen + Befugnisregister
+        from atlas.sicherheit import Sicherheit
+        from atlas import befugnisse as _bef
+        self.sicherheit = Sicherheit(self)
+        self.befugnisse = _bef.Befugnisse(self)
+        self.tools.update({t.name: t for t in _bef.tools(self)})
+        from atlas import rechenschaft as _rs, aufmerksamkeit as _auf
+        self.rechenschaft = _rs.Rechenschaft(self)
+        self.tools.update({t.name: t for t in _rs.tools(self)})
+        self.aufmerksamkeit = _auf.Aufmerksamkeit(self)
+        self.tools.update({t.name: t for t in _auf.tools(self)})
+        from atlas import ziele as _ziele, persona as _persona
+        self.ziele = _ziele.Ziele(self)
+        self.tools.update({t.name: t for t in _ziele.tools(self)})
+        _persona.ZIELE_FN = self.ziele.persona_zeile
+        from atlas import notfall as _notfall
+        self.notfall = _notfall.Notfall(self)
+        self.tools.update({t.name: t for t in _notfall.tools(self)})
+        _persona.NOTFALL_FN = self.notfall.persona
+        from atlas import zuhause as _zh
+        self.zuhause = _zh.Zuhause(self)
+        self.tools.update({t.name: t for t in _zh.tools(self)})
+        from atlas import werkzeugwahl as _ww
+        _ww.IMMER_FN = lambda: {"notfall", "fristen", "kontakte", "mail", "kalender"} if self.notfall.aktiv() else set()
         _wetter_mod.ORT = self.standort.wetter_ort
         _wetter_mod.ZIELE = self.standort.reiseziele
         # Stab: JARVIS als Chef des Stabes mit Sachgebietsagenten (Einstellungen → Stab)
@@ -281,6 +305,7 @@ class Session:
         self.gruppen: set[str] | None = set()  # Werkzeuggruppen der letzten Antwort (None = alle)
         self.antworten: dict[str, asyncio.Future] = {}   # offene Rückfragen
         self.task: asyncio.Task | None = None  # laufende Antwort (abbrechbar)
+        self.fremd: list[str] = []   # Quellen fremder Inhalte in diesem Durchlauf (Mail, Dokument, Web …)
 
 
 MAX_STEPS = 8
@@ -307,22 +332,26 @@ async def _ask(ws: WebSocket, text: str) -> bool:
 
 
 async def _run_tool(ws: WebSocket, call) -> str:
-    """Ein Werkzeug ausführen – mit Rechteprüfung, Rückfrage und Protokoll."""
+    """Ein Werkzeug ausführen – mit Rechteprüfung, Befugnissen, Fremdinhalt-Schutz, Rückfrage und Protokoll."""
     c = get_core()
     tool = c.tools.get(call.name)
     if not tool:
         return f"Fehler: unbekanntes Werkzeug {call.name}"
+    s = getattr(ws, "_atlas_session", None)
+    fremd = s.fremd if s is not None else []
     lvl = c.gate.level(tool.action)
+    lvl, hinweis, rid = c.sicherheit.entscheiden(tool, call.args, lvl, fremd)
     what = tool.describe(call.args)
     if lvl == Level.VERBOTEN:
-        c.audit.log("werkzeug_verweigert", werkzeug=call.name, aktion=tool.action)
-        return f"Verweigert: '{tool.action}' ist gesperrt (Rechte oder Not-Aus)."
+        c.audit.log("werkzeug_verweigert", werkzeug=call.name, aktion=tool.action, fremd=bool(fremd))
+        return f"Verweigert: '{tool.action}' ist gesperrt" + (f" – {hinweis}" if hinweis else " (Rechte oder Not-Aus).")
     if lvl == Level.BESTAETIGEN:
-        ok = await _ask(ws, f"{what}?")
-        c.audit.log("bestaetigung", aktion=tool.action, was=what, erteilt=ok)
+        ok = await _ask(ws, f"{what}?" + (f"\n{hinweis}" if hinweis else ""))
+        c.audit.log("bestaetigung", aktion=tool.action, was=what, erteilt=ok, fremd=bool(fremd))
         if not ok:
             return "Vom Nutzer abgelehnt. Nicht erneut versuchen, sondern nachfragen."
     await ws.send_json({"type": "tool", "name": call.name, "text": what})
+    result = None
     try:
         result = await asyncio.to_thread(tool.func, **call.args)
         out = json.dumps(result, ensure_ascii=False, default=str)
@@ -333,17 +362,26 @@ async def _run_tool(ws: WebSocket, call) -> str:
         out, ok = f"Fehler: falsche Parameter ({e})", False
     except Exception as e:
         out, ok = f"Fehler: {type(e).__name__}: {e}", False
-    c.audit.log("werkzeug", werkzeug=call.name, aktion=tool.action, erfolg=ok,
+    rk = c.rechenschaft.merken(call.name, call.args, result) if ok and hasattr(c, "rechenschaft") else ""
+    c.audit.log("werkzeug", werkzeug=call.name, aktion=tool.action, erfolg=ok, was=what, kanal="dashboard",
+                stufe=lvl.name, **({"befugnis": rid} if rid else {}), **({"fremd": sorted(set(fremd))} if fremd else {}),
+                **({"rueckgaengig": rk} if rk else {}),
                 args={k: (v if len(str(v)) < 80 else str(v)[:80] + "…")
                       for k, v in call.args.items()}, **({} if ok else {"fehler": out[:300]}))
+    if ok and rid:
+        c.befugnisse.genutzt(rid)
     if ok and lvl == Level.MELDEN:
-        await ws.send_json({"type": "info", "text": f"✓ {what}"})
+        await ws.send_json({"type": "info", "text": f"✓ {what}" + (" · per Befugnis" if rid else ""),
+                            **({"rueckgaengig": rk} if rk else {})})
     if ok and isinstance(result, dict) and result.get("erstellt"):
         await ws.send_json({"type": "datei", "pfad": result["erstellt"], "art": result.get("art", "")})
     from atlas.hilfen import vs_schutz
     geschuetzt = vs_schutz(call.name, out)
     if geschuetzt != out:
         c.audit.log("vs_kennzeichnung", werkzeug=call.name)
+    geschuetzt, ist_fremd = c.sicherheit.schuetzen(call.name, geschuetzt, "dashboard")
+    if ist_fremd:
+        fremd.append(call.name)
     return geschuetzt[:MAX_RESULT]
 
 
@@ -364,6 +402,7 @@ DOK_FRAGE = ("Was ist das für ein Dokument? Fasse kurz zusammen: worum es geht,
 async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False, quelle: str = "",
                       dok_ids: list | None = None):
     c = get_core()
+    s.fremd = []                                  # Fremdinhalt-Markierung gilt je Auftrag
     t0 = time.monotonic(); t_erst = None          # Messung: bis zum ersten Wort / gesamt
     lokal, claude = c.providers["lokal"], c.providers["claude"]
     local_ok = await asyncio.to_thread(lokal.available)
@@ -404,6 +443,8 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
         alias = CLAUDE_ROUTES.get(s.mode, c.cfg["claude"]["default"])
         d = Decision("claude", alias, f"Dokument ({len(doks)}) – freigegeben")
     anhang = "".join(c.dokumente.anhang(dk["id"], cloud=not dok_lokal) for dk in doks)
+    if doks:
+        s.fremd += [f"dokument:{dk['name']}" for dk in doks]   # nach Dokumenten: Aktionen nur mit Bestätigung
     # Kurze Rückfragen ("ja, mach das") beim bisherigen Modell lassen
     # Kurze Rückfragen nach einer lokalen Antwort beim lokalen Modell lassen; nach Claude-Antworten
     # übernimmt das schnelle Haiku (der Verlauf geht ja mit) – Sonnet nur für wirklich Komplexes
@@ -411,6 +452,11 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
             and s.last[0] == "claude" and not s.sensitive and cloud_ok):
         d.target, d.alias, d.reason = "claude", "haiku", "Fortsetzung"
 
+    if c.notfall.aktiv():                         # Notfallbegleitung: der Notfallordner bleibt auf dem Mac
+        s.sensitive = True
+        if local_ok:
+            from atlas.router import Decision
+            d = Decision("lokal", None, "Notfallbegleitung – bleibt lokal")
     # Rechteprüfung für Cloud-Übermittlung (bei freigegebenen Dokumenten schon erfragt)
     if d.target == "claude" and not (doks and not dok_lokal):
         action = "cloud.sensibel" if (s.sensitive or d.ask_cloud) else "chat.cloud"
@@ -529,7 +575,8 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
             outputs = []
             normale = [cl for cl in result.tool_calls if cl.name != werkzeugwahl.LADEN]
             parallel = len(normale) > 1 and all(                      # mehrere Leseabfragen gleichzeitig ausführen
-                cl.name in c.tools and c.gate.level(c.tools[cl.name].action) < Level.BESTAETIGEN for cl in normale)
+                cl.name in c.tools and c.gate.level(c.tools[cl.name].action) == Level.FREI
+                and cl.name not in __import__("atlas.sicherheit", fromlist=["x"]).SCHUTZ_FREI for cl in normale)   # nur reine Abfragen: Fremdinhalt-Schutz greift sonst zu spät
             vorweg = dict(zip([id(cl) for cl in normale],
                               await asyncio.gather(*[_run_tool(ws, cl) for cl in normale]))) if parallel else {}
             for call in result.tool_calls:
@@ -702,6 +749,132 @@ def standort_lesen(_: None = Depends(auth)):
     return get_core().standort.status()
 
 
+@app.get("/notfall")
+def notfall_status(_: None = Depends(auth)):
+    """Notfallbegleitung: Status; ist sie aktiv, auch die Begleitung (Leitfaden mit Fortschritt – lokal angezeigt)."""
+    n = get_core().notfall
+    st = n.status()
+    if st["aktiv"]:
+        try:
+            st["begleitung"] = n.uebersicht()
+            st["fristen"] = n.fristen_vorschlag()
+        except ToolError as e:
+            st["hinweis"] = str(e)
+    return st
+
+
+@app.post("/notfall/{aktion}")
+async def notfall_aktion(aktion: str, request: Request, data: dict | None = None, _: None = Depends(auth)):
+    """Nur über das Dashboard (Eingabefeld/Klick) – kein Werkzeug des Sprachmodells kann hier aktivieren."""
+    n, d = get_core().notfall, data or {}
+    geraet = (request.headers.get("user-agent") or "")[:80]
+    aufrufe = {
+        "pruefen": lambda: n.pruefen(),
+        "einrichten": lambda: n.einrichten(str(d.get("code") or ""), str(d.get("name") or "")),
+        "aktivieren": lambda: n.aktivieren(str(d.get("code") or ""), geraet),
+        "beenden": lambda: n.beenden(),
+        "schritt": lambda: n.schritt(str(d.get("id") or ""), str(d.get("status") or "erledigt"), str(d.get("notiz") or "")),
+        "sterbedatum": lambda: n.sterbedatum(str(d.get("datum") or "")),
+        "fristen": lambda: n.fristen_eintragen(d.get("auswahl")),
+    }
+    if aktion not in aufrufe:
+        raise HTTPException(404, "unbekannt")
+    try:
+        return await asyncio.to_thread(aufrufe[aktion])
+    except (ToolError, ValueError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/zuhause")
+def zuhause_status(_: None = Depends(auth)):
+    return get_core().zuhause.status()
+
+
+@app.post("/zuhause/{aktion}")
+async def zuhause_aktion(aktion: str, data: dict | None = None, _: None = Depends(auth)):
+    """Klick im Dashboard = Bestätigung. Aufschließen gibt es nicht."""
+    c, d = get_core(), data or {}
+    aufrufe = {"steuern": lambda: c.zuhause.ausfuehren(str(d.get("aktion") or "")),
+               "abschliessen": lambda: c.zuhause.abschliessen(str(d.get("schloss") or ""))}
+    if aktion not in aufrufe:
+        raise HTTPException(404, "unbekannt")
+    try:
+        r = await asyncio.to_thread(aufrufe[aktion])
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+    c.audit.log("werkzeug", werkzeug=f"zuhause_{aktion}", aktion="zuhause", erfolg=True, kanal="dashboard",
+                stufe="BESTAETIGEN", was=str(d.get("aktion") or d.get("schloss") or aktion))
+    return r
+
+
+@app.get("/ziele")
+def ziele_status(_: None = Depends(auth)):
+    z = get_core().ziele
+    return {**z.status(), "einstellungen": z.einstellungen()}
+
+
+@app.post("/ziele/{aktion}")
+async def ziele_aktion(aktion: str, data: dict | None = None, _: None = Depends(auth)):
+    z, d = get_core().ziele, data or {}
+    aufrufe = {"einstellen": lambda: z.einstellen(**d), "arbeitsort": lambda: z.arbeitsort_setzen(str(d.get("ort") or ""), str(d.get("datum") or "")),
+               "dienststelle": lambda: z.dienststelle_hier(), "sport": lambda: z.sport_abgleichen()}
+    if aktion not in aufrufe:
+        raise HTTPException(404, "unbekannt")
+    try:
+        return await asyncio.to_thread(aufrufe[aktion])
+    except (ToolError, ValueError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/autopilot")
+def autopilot(_: None = Depends(auth)):
+    """Einstellungen → Autopilot: Befugnisse, Ruhe/Fokus/Stapel, Sicherheitsvorfälle."""
+    c = get_core()
+    return {"befugnisse": c.befugnisse.liste(), "aufmerksamkeit": c.aufmerksamkeit.einstellungen(),
+            "modus": c.aufmerksamkeit.modus(), "vorfaelle": c.sicherheit.vorfaelle(30),
+            "stapel": len(c.aufmerksamkeit._stapel())}
+
+
+@app.post("/autopilot/{aktion}")
+async def autopilot_aktion(aktion: str, data: dict | None = None, _: None = Depends(auth)):
+    """Klicks im Dashboard gelten als Bestätigung des Nutzers."""
+    c, d = get_core(), data or {}
+    b, a = c.befugnisse, c.aufmerksamkeit
+    aufrufe = {
+        "erteilen": lambda: b.erteilen(str(d.get("bereich") or ""), str(d.get("titel") or ""), d.get("max_pro_woche"),
+                                       str(d.get("gueltig_bis") or "")),
+        "entziehen": lambda: b.entziehen(str(d.get("id") or ""), bool(d.get("alle"))),
+        "aktivieren": lambda: b.wieder_aktivieren(str(d.get("id") or "")),
+        "bedingung": lambda: b.bedingung_setzen(str(d.get("id") or ""), d.get("kalender_ausschluss"),
+                                                d.get("max_pro_woche"), d.get("gueltig_bis")),
+        "einstellen": lambda: a.einstellen(**{k: v for k, v in d.items()}),
+        "fokus": lambda: a.fokus_starten(int(d.get("minuten") or 120), str(d.get("grund") or "")),
+        "fokus_ende": lambda: a.fokus_beenden(),
+        "stapel": lambda: a.ausliefern("auf Wunsch", leeren=bool(d.get("leeren", True)), telegram=False),
+    }
+    if aktion not in aufrufe:
+        raise HTTPException(404, "unbekannt")
+    try:
+        r = await asyncio.to_thread(aufrufe[aktion])
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+    c.audit.log("autopilot", aktion=aktion, kanal="dashboard")
+    return r
+
+
+@app.get("/rechenschaft")
+def rechenschaft(tage: int = 1, _: None = Depends(auth)):
+    return get_core().rechenschaft.bericht(tage)
+
+
+@app.post("/rueckgaengig/{rid}")
+async def rueckgaengig(rid: str, _: None = Depends(auth)):
+    try:
+        return await asyncio.to_thread(get_core().rechenschaft.rueckgaengig, rid)
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.get("/mailwache")
 def mailwache_liste(_: None = Depends(auth)):
     return get_core().mailwache.liste()
@@ -711,7 +884,7 @@ def mailwache_liste(_: None = Depends(auth)):
 async def mailwache_aktion(aktion: str, data: dict | None = None, _: None = Depends(auth)):
     mw, d = get_core().mailwache, data or {}
     aufrufe = {"setzen": lambda: mw.setzen(str(d.get("absender") or ""), str(d.get("stichwort") or ""), str(d.get("bis") or ""),
-                                           bool(d.get("dauerhaft")), bool(d.get("alle"))),
+                                           bool(d.get("dauerhaft")), bool(d.get("alle")), "", bool(d.get("dringend"))),
                "beenden": lambda: mw.beenden(str(d.get("id") or ""), bool(d.get("alle"))),
                "intervall": lambda: mw.intervall(int(d.get("sekunden") or 120)),
                "pruefen": lambda: mw.pruefen()}
@@ -1980,6 +2153,9 @@ def run():
         ("Werbefilter", lambda: c.werbung.start(c.proaktiv.stop)),
         ("HESTIA Nebenkosten", lambda: c.nebenkosten.start(c.proaktiv.stop)),
         ("Mail-Wache", lambda: c.mailwache.start(c.proaktiv.stop)),
+        ("Aufmerksamkeit", lambda: c.aufmerksamkeit.start(c.proaktiv.stop)),
+        ("Zielregister", lambda: c.ziele.start(c.proaktiv.stop)),
+        ("Zuhause", lambda: c.zuhause.start(c.proaktiv.stop)),
         ("Timer", c.timer.start),
         ("Musik", c.musik.start),
         ("Beihilfe-Workflow", lambda: c.archiv and c.beihilfe.start(c.proaktiv.stop)),

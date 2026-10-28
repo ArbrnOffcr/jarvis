@@ -398,7 +398,25 @@ def update() -> None:
     dienst("neustart")
 
 
+def tests_ausfuehren() -> bool:
+    """Sicherheitstests vor dem Hochladen (Schutz gegen eingeschleuste Anweisungen, Befugnisse, Router)."""
+    import sys
+    if not (REPO_DIR / "tests").is_dir():
+        return True
+    r = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", "."], cwd=str(REPO_DIR),
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        console.print("[red]✗ Sicherheitstests fehlgeschlagen – nichts hochgeladen.[/]")
+        console.print((r.stderr or r.stdout)[-3000:])
+        return False
+    zeile = next((z for z in (r.stderr or "").splitlines() if z.startswith("Ran ")), "")
+    console.print(f"[green]✓ Sicherheitstests bestanden[/] ({zeile.replace('Ran ', '').strip()})")
+    return True
+
+
 def speichern(msg: str) -> None:
+    if not tests_ausfuehren():
+        return
     g = ["git", "-C", str(REPO_DIR)]
     subprocess.run([*g, "add", "-A"])
     if subprocess.run([*g, "diff", "--cached", "--quiet"]).returncode != 0:

@@ -71,6 +71,20 @@ DEFAULT_POLICY = {
     "stab.lesen": Level.FREI,
     "stab.steuern": Level.MELDEN,          # an/aus, Kostengrenze – nur auf Befehl
     "stab.aendern": Level.BESTAETIGEN,     # Persona-Änderungen per Sprache: Unterschied bestätigen
+    # Butler: Befugnisse, Rechenschaft, Aufmerksamkeit
+    "befugnis.lesen": Level.FREI,
+    "befugnis.erteilen": Level.BESTAETIGEN,  # neue Spielräume nur nach ausdrücklicher Bestätigung
+    "befugnis.entziehen": Level.FREI,        # Entziehen geht immer sofort (Notbremse)
+    "rechenschaft.lesen": Level.FREI,
+    "rueckgaengig": Level.BESTAETIGEN,       # Rückgängig machen zeigt vorher, was passiert
+    "fokus": Level.FREI,
+    "ziele.lesen": Level.FREI,
+    "ziele.schreiben": Level.MELDEN,
+    "notfall.lesen": Level.FREI,
+    "notfall.schreiben": Level.MELDEN,
+    "zuhause.lesen": Level.FREI,
+    "zuhause.steuern": Level.MELDEN,        # Licht, Lautsprecher, Szenen (Kurzbefehle) – Türen nie
+    "nuki.abschliessen": Level.MELDEN,      # nur Abschließen; Aufschließen/Öffnen gibt es nicht
 }
 
 NOTAUS_FILE = LOCAL_DIR / "NOTAUS"

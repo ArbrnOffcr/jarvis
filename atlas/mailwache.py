@@ -53,12 +53,12 @@ class MailWache:
 
     # ------------------------------------------------------------ Wachen verwalten
     def setzen(self, absender: str = "", stichwort: str = "", bis: str = "", dauerhaft: bool = False,
-               alle: bool = False, notiz: str = "") -> dict:
+               alle: bool = False, notiz: str = "", dringend: bool = False) -> dict:
         absender, stichwort = (absender or "").strip()[:80], (stichwort or "").strip()[:80]
         if not (absender or stichwort or alle):
             raise ToolError("Worauf soll ich achten? Absender, ein Stichwort im Betreff – oder „jede neue Mail“")
         w = {"id": "w" + secrets.token_hex(3), "absender": absender, "stichwort": stichwort, "alle": bool(alle),
-             "dauerhaft": bool(dauerhaft or alle), "bis": _datum(bis), "notiz": (notiz or "").strip()[:120],
+             "dringend": bool(dringend) and not alle, "dauerhaft": bool(dauerhaft or alle), "bis": _datum(bis), "notiz": (notiz or "").strip()[:120],
              "seit": datetime.now().isoformat(timespec="minutes"), "aktiv": True, "treffer": 0}
         with self.lock:
             z = self._z()
@@ -93,7 +93,7 @@ class MailWache:
     def _kurz(w: dict) -> dict:
         return {"id": w["id"], "worauf": "jede neue Mail" if w["alle"] else " / ".join(x for x in (
                     f"von „{w['absender']}“" if w["absender"] else "", f"Betreff mit „{w['stichwort']}“" if w["stichwort"] else "") if x),
-                "dauerhaft": w["dauerhaft"], "bis": w["bis"], "seit": w["seit"], "treffer": w["treffer"], "aktiv": w["aktiv"]}
+                "dauerhaft": w["dauerhaft"], "dringend": w.get("dringend", False), "bis": w["bis"], "seit": w["seit"], "treffer": w["treffer"], "aktiv": w["aktiv"]}
 
     def liste(self) -> dict:
         z = self._z()
@@ -153,7 +153,7 @@ class MailWache:
                     for w in wachen:
                         if self._passt(w, von, betreff):
                             treffer.append({"uid": str(uid), "von": von, "betreff": betreff, "wache": w["id"],
-                                            "zeit": datetime.now().isoformat(timespec="minutes"), "alle": w["alle"]})
+                                            "dringend": w.get("dringend", False), "zeit": datetime.now().isoformat(timespec="minutes"), "alle": w["alle"]})
                             break
         finally:
             try:
@@ -179,6 +179,10 @@ class MailWache:
     def _melden(self, t: dict) -> None:
         name = re.sub(r"\s*<.*", "", t["von"]).strip('" ') or t["von"]
         self.c.audit.log("mailwache_treffer", von=name)
+        auf = getattr(self.c, "aufmerksamkeit", None)
+        if auf and not auf.melden("mailwache", f"Mail von {name}: „{t['betreff'][:100]}“", t.get("dringend", False),
+                                  {"uid": t["uid"]}):
+            return                                         # Ruhe/Fokus und nicht dringend: in den Stapel
         self.c.broadcast({"type": "mailwache", "ereignis": "treffer", "uid": t["uid"], "von": name, "betreff": t["betreff"],
                           "alle": t["alle"]})
         try:
@@ -197,7 +201,7 @@ class MailWache:
             try:
                 if not getattr(self.c.proaktiv, "leader", False) or not self.c.secrets.get("icloud_app_pw"):
                     continue
-                if not self.aktiv():
+                if not self.aktiv() or (getattr(self.c, "notfall", None) and self.c.notfall.aktiv()):
                     continue
                 if time.time() - self.letzter >= int(self._z().get("intervall_s") or 120):
                     self.letzter = time.time()
@@ -217,12 +221,13 @@ def tools(core) -> list[Tool]:
              "Posteingang dauerhaft im Hintergrund überwachen und SOFORT melden, wenn eine passende Mail eintrifft – z. B. "
              "„Sag mir Bescheid, wenn die Mail von X kommt“, „Ich warte dringend auf die Antwort zum Antrag“. Absender "
              "(Name oder Adresse, Teil genügt) und/oder Stichwort im Betreff; alle=true meldet jede neue Mail. Endet nach dem "
-             "ersten Treffer, außer dauerhaft=true; optional bis (Datum).", "mail.wache",
-             lambda absender="", stichwort="", bis="", dauerhaft=False, alle=False, notiz="":
-                 mw.setzen(absender, stichwort, bis, dauerhaft, alle, notiz),
+             "ersten Treffer, außer dauerhaft=true; optional bis (Datum). dringend=true, wenn der Nutzer „dringend“/„wichtig“ "
+             "sagt – nur dann kommt die Meldung auch in Ruhezeiten und im Fokus durch.", "mail.wache",
+             lambda absender="", stichwort="", bis="", dauerhaft=False, alle=False, notiz="", dringend=False:
+                 mw.setzen(absender, stichwort, bis, dauerhaft, alle, notiz, dringend),
              {"absender": S("Name oder Mailadresse (Teil genügt)"), "stichwort": S("Wort(e) im Betreff"),
               "bis": S("TT.MM.JJJJ, optional"), "dauerhaft": {"type": "boolean"}, "alle": {"type": "boolean"},
-              "notiz": S("worum es geht, optional")}),
+              "notiz": S("worum es geht, optional"), "dringend": {"type": "boolean"}}),
         Tool("mail_wache_liste", "Aktive Mail-Wachen und letzte Treffer.", "mail.wache", lambda: mw.liste()),
         Tool("mail_wache_beenden", "Mail-Wache beenden (id, Absender/Stichwort oder alle=true).", "mail.wache",
              lambda id="", alle=False: mw.beenden(id, alle), {"id": S("id oder Absender/Stichwort"), "alle": {"type": "boolean"}}),

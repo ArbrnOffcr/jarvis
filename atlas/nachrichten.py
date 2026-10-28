@@ -163,8 +163,10 @@ class Nachrichten:
                 for n in self.abrufen():
                     self.neu[n["id"]] = n
                     self.c.audit.log("nachricht", von=n["von"], gruppe=n["gruppe"])   # ohne Inhalt
+                    auf = getattr(self.c, "aufmerksamkeit", None)
+                    leise = bool(auf) and not auf.melden("nachricht", f"iMessage von {n['von']}", False, {"id": n["id"]})
                     self.c.broadcast({"type": "nachricht", "id": n["id"], "von": n["von"],
-                                      "gruppe": n["gruppe"], "zeit": n["zeit"]})
+                                      "gruppe": n["gruppe"], "zeit": n["zeit"], "leise": leise})
                 while len(self.neu) > 50:
                     self.neu.pop(next(iter(self.neu)))
             except sqlite3.Error:

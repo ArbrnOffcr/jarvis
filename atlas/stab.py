@@ -497,6 +497,8 @@ class Stab:
         geschuetzt = vs_schutz(name, out)
         if roh is not None and geschuetzt == out:
             roh[key or name] = ergebnis
+        if hasattr(c, "sicherheit"):
+            geschuetzt, _ = c.sicherheit.schuetzen(name, geschuetzt, "stab")
         return geschuetzt[:12000]
 
     def _fristen_zahlungen(self) -> tuple[list, list]:
@@ -582,6 +584,7 @@ class Stab:
                        "Details auf:\n" + "\n\n".join(teile))
         work = [{"role": "user", "content": inhalt}]
         text = ""
+        stab_fremd: list[str] = []                   # Fremdinhalt im Agentenlauf → Aktionen nur mit Bestätigung
         try:
             for _ in range(MAX_SCHRITTE):
                 if time.monotonic() - t0 > FRIST_S:
@@ -605,7 +608,7 @@ class Stab:
                 def ausf(call):
                     if call.name == "abstimmen":
                         return call, self._abstimmen(p, call.args, tiefe, erg)
-                    return call, agent._tool(c, call, None, None, nur_lesen)
+                    return call, agent._tool(c, call, None, None, nur_lesen, stab_fremd, f"stab:{p.get('kuerzel', '')}")
                 erg["werkzeuge"] += [cl.name for cl in result.tool_calls]
                 if len(result.tool_calls) > 1:            # mehrere Abfragen gleichzeitig
                     with ThreadPoolExecutor(max_workers=len(result.tool_calls)) as tp:
