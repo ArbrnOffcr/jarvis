@@ -130,6 +130,10 @@ class Core:
         from atlas import immobilien as _immo
         self.immobilien = _immo.Immobilien(self)
         self.tools.update({t.name: t for t in _immo.tools(self)})
+        from atlas import mailwache as _mw
+        self.mailwache = _mw.MailWache(self)
+        if self.secrets.get("icloud_app_pw"):
+            self.tools.update({t.name: t for t in _mw.tools(self)})
         from atlas.grundriss import Grundriss
         self.grundriss = Grundriss(self)
         from atlas.workflows import nebenkosten as _nk
@@ -698,6 +702,31 @@ def standort_lesen(_: None = Depends(auth)):
     return get_core().standort.status()
 
 
+@app.get("/mailwache")
+def mailwache_liste(_: None = Depends(auth)):
+    return get_core().mailwache.liste()
+
+
+@app.post("/mailwache/{aktion}")
+async def mailwache_aktion(aktion: str, data: dict | None = None, _: None = Depends(auth)):
+    mw, d = get_core().mailwache, data or {}
+    aufrufe = {"setzen": lambda: mw.setzen(str(d.get("absender") or ""), str(d.get("stichwort") or ""), str(d.get("bis") or ""),
+                                           bool(d.get("dauerhaft")), bool(d.get("alle"))),
+               "beenden": lambda: mw.beenden(str(d.get("id") or ""), bool(d.get("alle"))),
+               "intervall": lambda: mw.intervall(int(d.get("sekunden") or 120)),
+               "pruefen": lambda: mw.pruefen()}
+    if aktion not in aufrufe:
+        raise HTTPException(404, "unbekannt")
+    return await asyncio.to_thread(_ford_fehler, aufrufe[aktion])
+
+
+@app.get("/standort/ort")
+async def standort_ort(lat: float, lon: float, _: None = Depends(auth)):
+    """Ort und Ortsteil für die Anzeige bei Durchfahrt (Live-Karte der Fahrzeuge)."""
+    from atlas.standort import ort_mit_teil
+    return await asyncio.to_thread(ort_mit_teil, lat, lon)
+
+
 # ---------------------------------------------------------------- Tesla
 @app.get("/tesla")
 async def tesla_status(wecken: int = 0, _: None = Depends(auth)):
@@ -953,6 +982,11 @@ async def immobilien_mietvertrag(request: Request, x_dateiname: str = Header(def
         raise HTTPException(400, "Datei zu groß")
     from urllib.parse import unquote
     return await asyncio.to_thread(_ford_fehler, get_core().immobilien.mietvertrag_lesen, daten, unquote(x_dateiname))
+
+
+@app.post("/immobilien/{oid}/verorten")
+async def immobilien_verorten(oid: str, _: None = Depends(auth)):
+    return await asyncio.to_thread(_ford_fehler, get_core().immobilien.verorten, oid)
 
 
 @app.post("/immobilien/{oid}")
@@ -1945,6 +1979,7 @@ def run():
         ("Spracherkennung vorwärmen", lambda: threading.Thread(target=_whisper_vorwaermen, daemon=True).start()),
         ("Werbefilter", lambda: c.werbung.start(c.proaktiv.stop)),
         ("HESTIA Nebenkosten", lambda: c.nebenkosten.start(c.proaktiv.stop)),
+        ("Mail-Wache", lambda: c.mailwache.start(c.proaktiv.stop)),
         ("Timer", c.timer.start),
         ("Musik", c.musik.start),
         ("Beihilfe-Workflow", lambda: c.archiv and c.beihilfe.start(c.proaktiv.stop)),

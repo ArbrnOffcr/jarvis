@@ -119,6 +119,38 @@ def ortsname(lat: float, lon: float) -> str:
         return ""
 
 
+_ORTE: dict = {}
+
+
+def ort_mit_teil(lat: float, lon: float) -> dict:
+    """Koordinaten → {ort, teil} für die Durchfahrt (Stadt/Gemeinde und Ortsteil); zwischengespeichert (~100 m)."""
+    k = (round(lat, 3), round(lon, 3))
+    if k in _ORTE:
+        return _ORTE[k]
+    erg = {"ort": "", "teil": ""}
+    try:
+        r = httpx.get("https://photon.komoot.io/reverse", params={"lat": lat, "lon": lon, "lang": "de", "limit": 1},
+                      headers=UA, timeout=6)
+        p = (r.json().get("features") or [{}])[0].get("properties") or {}
+        erg["ort"] = p.get("city") or p.get("town") or p.get("village") or p.get("municipality") or p.get("county") or ""
+        teil = p.get("district") or p.get("locality") or p.get("suburb") or ""
+        erg["teil"] = teil if teil and teil != erg["ort"] else ""
+    except (httpx.HTTPError, ValueError, KeyError, IndexError):
+        try:
+            r = httpx.get("https://nominatim.openstreetmap.org/reverse",
+                          params={"lat": lat, "lon": lon, "format": "jsonv2", "zoom": 14, "accept-language": "de"},
+                          headers=UA, timeout=6)
+            a = r.json().get("address") or {}
+            erg["ort"] = a.get("city") or a.get("town") or a.get("village") or a.get("municipality") or ""
+            erg["teil"] = a.get("suburb") or a.get("city_district") or a.get("quarter") or ""
+        except (httpx.HTTPError, ValueError):
+            pass
+    if len(_ORTE) > 3000:
+        _ORTE.clear()
+    _ORTE[k] = erg
+    return erg
+
+
 class Standort:
     def __init__(self, core):
         self.c = core

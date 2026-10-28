@@ -1506,8 +1506,8 @@ body.mit-vortrag .chat{z-index:141}
 .nk-teil h5{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;font:600 9.5px var(--mono);letter-spacing:.26em;color:var(--muted)}
 .nk-teil h5 em{font-style:normal;color:#ffb547}
 details.nk-teil summary{list-style:none;cursor:pointer}details.nk-teil summary h5{margin:0}details.nk-teil[open] summary h5{margin-bottom:8px}
-.nk-kopf{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
-.nk-kopf small{display:block;font:600 8px var(--mono);letter-spacing:.2em;color:var(--muted)}.nk-kopf b{font:600 13px var(--mono);color:var(--ink)}
+.nk-teil.nk-kopf{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+.nk-teil.nk-kopf small{display:block;font:600 8px var(--mono);letter-spacing:.2em;color:var(--muted)}.nk-teil.nk-kopf b{font:600 13px var(--mono);color:var(--ink)}
 .nk-balken{display:block;height:4px;margin-top:5px;background:rgba(0,229,255,.08)}.nk-balken u{display:block;height:100%;width:calc(var(--p)*100%);background:#3ddc97;text-decoration:none}
 .nk-tab{width:100%;border-collapse:collapse;font-size:12.5px}
 .nk-tab th{text-align:left;font:600 8.5px var(--mono);letter-spacing:.18em;color:var(--muted);padding:4px 6px;border-bottom:1px solid var(--line)}
@@ -1542,7 +1542,7 @@ details.nk-teil summary{list-style:none;cursor:pointer}details.nk-teil summary h
 .nk-pdf iframe{width:100%;height:560px;border:1px solid var(--line);background:#fff;margin-top:8px}
 .nk-vs-tab input,.nk-vs-tab select{width:100%}
 .nk-x{background:none;border:0;color:var(--muted);cursor:pointer}
-@media (max-width:900px){.nk-kopf{grid-template-columns:repeat(3,1fr)}.nk-vor-felder,.nk-anf .nk-vor-felder{grid-template-columns:1fr 1fr}.nk-tab{font-size:11.5px}}
+@media (max-width:900px){.nk-teil.nk-kopf{grid-template-columns:repeat(3,1fr)}.nk-vor-felder,.nk-anf .nk-vor-felder{grid-template-columns:1fr 1fr}.nk-tab{font-size:11.5px}}
 .nk-posten-neu[hidden],.im-erh-form[hidden]{display:none}
 .einst{z-index:145}
 .immo .ts-titel{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
@@ -1595,3 +1595,53 @@ details.nk-teil summary{list-style:none;cursor:pointer}details.nk-teil summary h
 .gr-abgleich.warn{border-color:rgba(255,181,71,.5)}
 .gr-check{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--ink2)}
 @media (max-width:1100px){.gr-inhalt{grid-template-columns:1fr;overflow:auto}.gr-svg-box,.gr-3d-box{min-height:380px}}
+
+/* ---------- Immobilienfenster: Karte + 3D-Grundriss nebeneinander ---------- */
+.im-duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.im-duo .im-karte,.im-3d{position:relative;height:270px;border:1px solid rgba(0,229,255,.14);overflow:hidden;background:#03121c}
+.im-karte-map{position:absolute!important;inset:0}
+.im-karte-map .maplibregl-ctrl-attrib{background:rgba(2,10,18,.6)!important;color:#5a7f8e}.im-karte-map .maplibregl-ctrl-attrib a{color:#5a7f8e}
+.im-3d-box{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 70%,rgba(0,229,255,.1),transparent 70%);cursor:grab}
+.im-3d-box:active{cursor:grabbing}.im-3d-box canvas{display:block}
+.im-tile-titel{position:absolute;left:8px;top:7px;z-index:2;font:600 8.5px var(--mono);letter-spacing:.22em;color:var(--accent-soft);
+  background:rgba(2,10,18,.65);padding:3px 7px;pointer-events:none}
+.im-3d-gross{position:absolute;right:6px;top:6px;z-index:2;width:26px;height:26px;padding:0;font-size:14px;color:var(--ink);background:rgba(2,10,18,.7);border:1px solid var(--line);cursor:pointer}
+.im-3d-gross:hover{border-color:var(--accent)}
+.im-3d-leer{position:absolute;inset:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;
+  border:1px dashed rgba(0,229,255,.35);background:rgba(0,229,255,.03);color:var(--ink2)}
+.im-3d-leer b{font:600 10px var(--mono);letter-spacing:.2em}.im-3d-leer small{font-size:11px;color:var(--muted)}
+.im-3d-leer:hover{color:var(--ink);border-color:var(--accent)}
+.im-ort-fehlt{position:absolute;inset:auto 10px 10px;margin:0}
+@media (max-width:700px){.im-duo{grid-template-columns:1fr}}
+
+/* ---------- Live-Karte: Orte bei Durchfahrt ---------- */
+.tl-durchfahrt{position:absolute;left:50%;top:22%;z-index:6;transform:translate(-50%,-8px) scale(.96);opacity:0;pointer-events:none;
+  display:flex;flex-direction:column;align-items:center;gap:1px;padding:7px 16px 8px;text-align:center;
+  background:radial-gradient(ellipse at 50% 50%,rgba(2,14,22,.82),rgba(2,14,22,.55) 70%,transparent);filter:drop-shadow(0 0 10px rgba(0,229,255,.35));
+  transition:opacity .6s ease,transform .8s cubic-bezier(.2,.8,.2,1)}
+.tl-durchfahrt.da{opacity:1;transform:translate(-50%,0) scale(1)}.tl-durchfahrt.weg{opacity:0;transform:translate(-50%,6px) scale(.98)}
+.tl-durchfahrt small{font:600 8px var(--mono);letter-spacing:.3em;color:var(--accent-soft)}
+.tl-durchfahrt b{font:600 17px var(--mono);letter-spacing:.16em;color:#fff;text-shadow:0 0 12px var(--accent)}
+.tl-durchfahrt span{font:600 9.5px var(--mono);letter-spacing:.24em;color:var(--ink2)}
+.tl-durchfahrt.stadt b{font-size:21px}
+.tl-durchfahrt b::after{content:"";display:block;height:1px;margin:3px auto 0;width:0;background:var(--accent);box-shadow:0 0 8px var(--accent);transition:width .9s .2s ease}
+.tl-durchfahrt.da b::after{width:100%}
+.karte-hud.tl-mini .tl-durchfahrt{top:auto;bottom:21%;padding:4px 10px 5px;max-width:86%}
+.karte-hud.tl-mini .tl-durchfahrt b{font-size:12px;letter-spacing:.1em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.karte-hud.tl-mini .tl-durchfahrt.stadt b{font-size:14px}
+.karte-hud.tl-mini .tl-durchfahrt small{font-size:7px}.karte-hud.tl-mini .tl-durchfahrt span{font-size:8px}
+.tl-orte{margin-top:10px;padding-top:8px;border-top:1px solid rgba(0,229,255,.12)}
+.tl-orte small{display:block;font:600 8px var(--mono);letter-spacing:.24em;color:var(--muted);margin-bottom:4px}
+.tl-orte div{display:flex;gap:8px;align-items:baseline;font-size:12px;padding:2px 0;animation:vt-auf .5s both}
+.tl-orte i{font:10.5px var(--mono);font-style:normal;color:var(--muted)}.tl-orte b{color:var(--ink);font-weight:500}.tl-orte span{color:var(--ink2);font-size:11px}
+
+/* ---------- Mail-Wache ---------- */
+.mw-karte .mw-betreff{margin:4px 0 10px;font-size:13px;color:var(--ink2);line-height:1.4}
+#mw-chip{position:fixed;top:44px;right:22px;z-index:30;display:flex;align-items:center;gap:7px;max-width:340px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  font:600 9px var(--mono);letter-spacing:.18em;color:var(--ink2);background:rgba(2,10,18,.55);border:1px solid rgba(0,229,255,.2);padding:5px 10px;cursor:pointer}
+#mw-chip:hover{color:var(--ink);border-color:var(--accent)}
+#mw-chip i{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:mw-puls 2s ease-in-out infinite}
+@keyframes mw-puls{50%{opacity:.25}}
+/* Meldekarten (iMessage, Mail-Wache) bleiben unten rechts schweben – die Holo-Kartenregel setzte sie sonst auf „relative“ */
+body>.nachricht-karte{position:fixed;right:24px;bottom:72px;z-index:62}
+#mw-chip{right:auto;left:22px}

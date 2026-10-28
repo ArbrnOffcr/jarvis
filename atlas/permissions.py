@@ -53,6 +53,7 @@ DEFAULT_POLICY = {
     "mail.lesen": Level.FREI,
     "mail.entwurf": Level.FREI,
     "mail.senden": Level.BESTAETIGEN,
+    "mail.wache": Level.FREI,               # Posteingang im Hintergrund auf erwartete Mails prüfen (nur Kopfzeilen)
     "shell": Level.BESTAETIGEN,
     "post.lesen": Level.FREI,
     "post.ablegen": Level.BESTAETIGEN,     # Ablage im DATENARCHIV: vorschlagen, Nutzer bestätigt

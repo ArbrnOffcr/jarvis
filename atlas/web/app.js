@@ -4601,7 +4601,11 @@ function imHTML(o) {
       <div class="im-bild">${b.haupt ? `<img alt="" data-src="${imBildUrl(o, b.haupt)}">` : `<button type="button" data-im="bild-neu-haupt" class="im-platzhalter">＋ BILD DER IMMOBILIE EINFÜGEN<small>JPG, PNG oder HEIC vom iPhone</small></button>`}
         <div class="im-bild-schild"><b>${esc(o.name || o.adresse)}</b><span>${esc(o.adresse || "")}</span></div></div>
       <div class="im-galerie">${slots}</div>
-      <div class="im-karte"><div class="im-karte-map"></div>${o.lat == null ? `<p class="ts-hinweis">Adresse nicht auf der Karte gefunden.</p>` : ""}</div>
+      <div class="im-duo">
+        <div class="im-karte"><div class="im-karte-map"></div><span class="im-tile-titel">⌖ LAGE</span>
+          ${o.lat == null ? `<p class="ts-hinweis im-ort-fehlt">Adresse wird auf der Karte gesucht …</p>` : ""}</div>
+        <div class="im-3d"><div class="im-3d-box"></div><span class="im-tile-titel">⬚ GRUNDRISS 3D</span>
+          <button type="button" class="im-3d-gross" data-im="grundriss" title="Grundriss öffnen und bearbeiten">⤢</button></div></div>
       <div class="ts-reihe im-werkzeuge"><button type="button" data-im="grundriss">⬚ GRUNDRISS → 3D</button></div>
     </div>
     <div class="ts-rechts">
@@ -4639,16 +4643,22 @@ function imZeigen(d, aktiv) {
   IM.el.querySelector('[data-im="bearbeiten"]').hidden = !o;
   IM.el.querySelector(".ts-inhalt").innerHTML = imHTML(o);
   IM.el.querySelectorAll("img[data-src]").forEach(imBildLaden);
-  if (o) imKarte(o);
+  if (o) { imKarte(o); im3dKachel(o); }
   if (o) nkKurz(o.id);
 }
-function imZu() { if (!IM.el) return; const el = IM.el; IM.el = null; if (typeof NK !== "undefined") { NK.el = null; IM.form = null; } if (typeof GR !== "undefined" && GR.el) { try { GR.m3d?.entfernen(); } catch (e) {} GR.m3d = null; GR.el = null; } try { IM.map?.remove(); } catch (e) {} IM.map = null; el.classList.remove("an"); setTimeout(() => el.remove(), 500); }
+function imZu() { if (!IM.el) return; const el = IM.el; IM.el = null; try { IM.m3d?.entfernen(); } catch (e) {} IM.m3d = null; if (typeof NK !== "undefined") { NK.el = null; IM.form = null; } if (typeof GR !== "undefined" && GR.el) { try { GR.m3d?.entfernen(); } catch (e) {} GR.m3d = null; GR.el = null; } try { IM.map?.remove(); } catch (e) {} IM.map = null; el.classList.remove("an"); setTimeout(() => el.remove(), 500); }
 async function imLaden(aktiv) {
   try { const r = await fetch("/immobilien", { headers: imH() }); const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.status); imZeigen(j, aktiv); }
   catch (e) { toast("Immobilien: " + e.message); }
 }
 async function imKarte(o) {
-  const box = IM.el?.querySelector(".im-karte-map"); if (!box || o.lat == null) return;
+  const box = IM.el?.querySelector(".im-karte-map"); if (!box) return;
+  if (o.lat == null) {                                  // Adresse (noch) nicht verortet: einmal nachholen
+    if (IM.verortet === o.id) { const h = IM.el.querySelector(".im-ort-fehlt"); if (h) h.textContent = "Adresse nicht auf der Karte gefunden – unter „Bearbeiten“ prüfen."; return; }
+    IM.verortet = o.id;
+    try { const r = await vbPost(`/immobilien/${o.id}/verorten`, {}); if (r.lat != null) { IM.d.objekte = IM.d.objekte.map((x) => x.id === o.id ? { ...x, lat: r.lat, lon: r.lon } : x); return imZeigen(IM.d); } } catch (e) {}
+    const h = IM.el?.querySelector(".im-ort-fehlt"); if (h) h.textContent = "Adresse nicht auf der Karte gefunden – unter „Bearbeiten“ prüfen."; return;
+  }
   try { await karteLib(); } catch (e) { return; }
   try { IM.map?.remove(); } catch (e) {}
   const ml = window.maplibregl;
@@ -5196,7 +5206,7 @@ async function grOeffnen(oid) {
   }
   await grLaden();
 }
-function grZu() { const el = GR.el; GR.el = null; try { GR.m3d?.entfernen(); } catch (e) {} GR.m3d = null; Object.values(GR.bilder).forEach((u) => URL.revokeObjectURL(u)); GR.bilder = {}; if (el) { el.classList.remove("an"); setTimeout(() => el.remove(), 300); } }
+function grZu() { const el = GR.el; GR.el = null; setTimeout(() => { if (IM.el && imObjekt()) im3dKachel(imObjekt()); }, 350); try { GR.m3d?.entfernen(); } catch (e) {} GR.m3d = null; Object.values(GR.bilder).forEach((u) => URL.revokeObjectURL(u)); GR.bilder = {}; if (el) { el.classList.remove("an"); setTimeout(() => el.remove(), 300); } }
 function grMeldung(t, art = "") { const s = GR.el?.querySelector(".gr-status"); if (s) { s.textContent = t; s.className = "im-form-status gr-status " + art; } }
 async function grLaden() {
   try { const r = await fdGet(`/grundriss/${encodeURIComponent(GR.oid)}`); GR.plaene = r.plaene; GR.abgleich = r.abgleich; }
@@ -5448,3 +5458,160 @@ document.addEventListener("change", async (e) => {
   if (k === "wand-aussen") p.waende[GR.sel.i].aussen = t.checked;
   grGeaendert();
 });
+
+// ---------- Immobilienfenster: interaktives 3D-Modell des Grundrisses neben der Karte ----------
+async function im3dKachel(o) {
+  const box = IM.el?.querySelector(".im-3d-box"); if (!box) return;
+  try { IM.m3d?.entfernen(); } catch (e) {} IM.m3d = null;
+  let plaene = [];
+  try { plaene = (await fdGet(`/grundriss/${encodeURIComponent(o.id)}`)).plaene.filter((p) => (p.waende || []).length); } catch (e) {}
+  if (!IM.el || imObjekt()?.id !== o.id) return;
+  if (!plaene.length) {
+    box.innerHTML = `<button type="button" class="im-3d-leer" data-im="grundriss"><b>＋ GRUNDRISS HINZUFÜGEN</b><small>Plan hochladen – daraus entsteht ein 3D-Modell zum Drehen</small></button>`;
+    return;
+  }
+  box.innerHTML = "";
+  try { await gr3dLib(); IM.m3d = window.Grundriss3D.erzeugen(box, plaene); box.title = "Ziehen zum Drehen, scrollen zum Zoomen"; }
+  catch (e) { box.innerHTML = `<p class="ts-hinweis">3D braucht WebGL.</p>`; }
+}
+
+// ---------- Live-Karte (Fahrzeuge): Orte bei Durchfahrt einblenden – auch in der minimierten Ansicht ----------
+TL.orte = []; TL.ortZeit = 0; TL.ortPos = null; TL.ortLetzt = "";
+function tlAbstand(a, b) {
+  const r = Math.PI / 180, dl = (b[1] - a[1]) * r, dn = (b[0] - a[0]) * r;
+  const x = Math.sin(dl / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin(dn / 2) ** 2;
+  return 12742000 * Math.asin(Math.sqrt(x));
+}
+async function tlOrtPruefen(p) {
+  if (!TL.an || p.lat == null || !p.faehrt) return;
+  const jetzt = Date.now(), pos = [p.lon, p.lat];
+  if (jetzt - TL.ortZeit < 15000 || (TL.ortPos && tlAbstand(TL.ortPos, pos) < 400)) return;
+  TL.ortZeit = jetzt; TL.ortPos = pos;
+  let o; try { o = await fdGet(`/standort/ort?lat=${p.lat}&lon=${p.lon}`); } catch (e) { return; }
+  const label = o.teil ? `${o.teil} · ${o.ort}` : o.ort;
+  if (!label || label === TL.ortLetzt || !TL.an) return;
+  const neueStadt = !TL.ortLetzt || !TL.ortLetzt.endsWith(o.ort);
+  TL.ortLetzt = label;
+  TL.orte.unshift({ ort: o.ort, teil: o.teil, zeit: new Date().toTimeString().slice(0, 5) }); TL.orte = TL.orte.slice(0, 6);
+  tlOrtZeigen(o, neueStadt);
+  if (!TL.mini) tlInfo();
+}
+function tlOrtZeigen(o, neueStadt) {
+  const el = KARTE.el; if (!el) return;
+  el.querySelector(".tl-durchfahrt")?.remove();
+  const d = document.createElement("div");
+  d.className = "tl-durchfahrt" + (neueStadt ? " stadt" : "");
+  d.innerHTML = `<small>${neueStadt ? "◉ ORTSEINFAHRT" : "DURCHFAHRT"}</small><b>${esc((o.teil || o.ort).toUpperCase())}</b>${o.teil ? `<span>${esc(o.ort.toUpperCase())}</span>` : ""}`;
+  el.appendChild(d);
+  requestAnimationFrame(() => d.classList.add("da"));
+  setTimeout(() => { d.classList.remove("da"); d.classList.add("weg"); }, neueStadt ? 6500 : 4500);
+  setTimeout(() => d.remove(), neueStadt ? 7400 : 5400);
+  sfx?.("tick");
+}
+const _tlNeuOrt = tlNeu;
+tlNeu = function (p) { _tlNeuOrt(p); tlOrtPruefen(p); };
+const _tlInfoOrt = tlInfo;
+tlInfo = function () {
+  _tlInfoOrt();
+  const box = $("kh-info"); if (!box || !TL.orte.length || !TL.an) return;
+  box.insertAdjacentHTML("beforeend", `<div class="tl-orte"><small>DURCHFAHREN</small>${TL.orte.map((x) => `<div><i>${esc(x.zeit)}</i><b>${esc(x.teil || x.ort)}</b>${x.teil ? `<span>${esc(x.ort)}</span>` : ""}</div>`).join("")}</div>`);
+};
+const _tlStopOrt = tlStop;
+tlStop = function () { TL.orte = []; TL.ortLetzt = ""; TL.ortPos = null; KARTE.el?.querySelector(".tl-durchfahrt")?.remove(); return _tlStopOrt(); };
+
+// =====================================================================
+//  MAIL-WACHE: erwartete Mails sofort melden (Karte, Ansage „Soll ich sie vorlesen?“), Hinweis-Chip, Einstellungen
+// =====================================================================
+const MW = { frage: null, bis: 0, liste: [] };
+function mwKarte(ev) {
+  document.querySelector(".nachricht-karte")?.remove();
+  const k = document.createElement("div"); k.className = "nachricht-karte mw-karte";
+  k.innerHTML = `<div class="nk-kopf">✉︎ ${ev.alle ? "NEUE MAIL" : "DIE ERWARTETE MAIL IST DA"}</div><div class="nk-von"></div><div class="mw-betreff"></div>
+    <div class="nk-knoepfe"><button type="button" data-a="lesen">VORLESEN</button><button type="button" data-a="spaeter">SPÄTER</button></div>`;
+  k.querySelector(".nk-von").textContent = ev.von; k.querySelector(".mw-betreff").textContent = ev.betreff || "(ohne Betreff)";
+  k.addEventListener("click", (e) => {
+    const a = e.target.dataset.a; if (!a) return; e.stopPropagation();
+    if (a === "lesen") mwVorlesen(ev); else { k.remove(); MW.frage = null; }
+  });
+  document.body.appendChild(k);
+  setTimeout(() => k.remove(), 10 * 60 * 1000);
+}
+function mwVorlesen(ev) {
+  MW.frage = null; document.querySelector(".mw-karte")?.remove();
+  _sendTextMW(`Lies mir die Mail von ${ev.von} mit dem Betreff „${ev.betreff}“ vor (uid ${ev.uid}).`);
+}
+async function mwChip() {
+  try { const d = await fdGet("/mailwache"); MW.liste = d.wachen; } catch (e) { return; }
+  let c = $("mw-chip");
+  const gezielt = MW.liste.filter((w) => w.worauf !== "jede neue Mail");
+  if (!MW.liste.length) { c?.remove(); return; }
+  if (!c) { c = document.createElement("button"); c.type = "button"; c.id = "mw-chip"; c.title = "Mail-Wache – Einstellungen öffnen";
+    c.addEventListener("click", () => window.einstReiter?.("daten")); document.body.appendChild(c); }
+  c.innerHTML = `<i></i>✉ ${gezielt.length ? `WARTE AUF: ${esc(gezielt[0].worauf.replace(/^von /, "").replace(/[„“]/g, ""))}${gezielt.length > 1 ? ` +${gezielt.length - 1}` : ""}` : "POSTEINGANG WIRD ÜBERWACHT"}`;
+}
+const _handleMW = handle;
+handle = function (ev) {
+  if (ev.type === "mailwache") {
+    if (ev.ereignis === "treffer") {
+      mwKarte(ev); sfx("ask");
+      MW.frage = ev; MW.bis = Date.now() + 90 * 1000;
+      if (V.out !== "aus") { unlockAudio(); V.turnLang = "";
+        ttsSay(ev.alle ? `Neue Mail von ${ev.von}: ${ev.betreff}.` : `Sir, die erwartete Mail ist da – von ${ev.von}: ${ev.betreff}. Soll ich sie vorlesen?`); }
+    }
+    mwChip(); if (!$("einst").hidden) mwEinstAufbauen();
+    return;
+  }
+  _handleMW(ev);
+};
+const _sendTextMW = sendText;
+sendText = function (text, viaVoice = false) {
+  if (MW.frage && Date.now() < MW.bis) {
+    const t = (text || "").trim().toLowerCase();
+    if (/^(ja|jawohl|gerne|bitte|klar|ok|okay|lies( sie)?( vor)?|vorlesen|ja bitte)\b/.test(t) && t.length < 30) return mwVorlesen(MW.frage);
+    if (/^(nein|später|nicht jetzt|danke nein|lass)\b/.test(t) && t.length < 30) { MW.frage = null; document.querySelector(".mw-karte")?.remove(); V.turnLang = ""; ttsSay("In Ordnung."); return; }
+  }
+  return _sendTextMW(text, viaVoice);
+};
+setTimeout(mwChip, 4000); setInterval(mwChip, 5 * 60 * 1000);
+
+async function mwEinstAufbauen() {
+  const box = $("einst-vb"); if (!box) return;
+  let d; try { d = await fdGet("/mailwache"); } catch (e) { return; }
+  const iv = d.intervall_s || 120;
+  const liste = d.wachen.map((w) => `<div class="einst-zeile"><span>${esc(w.worauf)}<small class="im-einst-sub">seit ${esc(w.seit.replace("T", " "))}${w.dauerhaft ? " · dauerhaft" : " · bis zum ersten Treffer"}${w.bis ? " · bis " + esc(w.bis.split("-").reverse().join(".")) : ""}</small></span>
+      <button type="button" data-mw="beenden" data-id="${esc(w.id)}">BEENDEN</button></div>`).join("");
+  const inhalt = `<p class="vb-hilfe">JARVIS darf deinen Posteingang dauerhaft im Hintergrund prüfen (nur Absender und Betreff neuer Mails) und meldet sich
+      sofort, wenn eine erwartete Mail eintrifft – mit Ansage, Mitteilung und Telegram. Am einfachsten per Sprache: „Sag mir Bescheid, wenn die Mail von … kommt.“</p>
+    ${liste || `<p class="vb-hilfe">Gerade keine Wache aktiv.</p>`}
+    <div class="vb-feld"><label>Absender (Name oder Adresse, Teil genügt)</label><input data-mwf="absender"></div>
+    <div class="vb-feld"><label>Stichwort im Betreff (optional)</label><input data-mwf="stichwort"></div>
+    <div class="vb-reihe"><label class="gr-check"><input type="checkbox" data-mwf="dauerhaft"> dauerhaft (nicht nach dem ersten Treffer beenden)</label></div>
+    <div class="vb-reihe"><button type="button" class="primary" data-mw="setzen">WACHE STARTEN</button>
+      <button type="button" data-mw="alle">JEDE NEUE MAIL MELDEN</button>${d.wachen.length ? `<button type="button" data-mw="alle-aus">ALLE BEENDEN</button>` : ""}</div>
+    <div class="vb-feld"><label>Prüfen alle</label><select data-mwf="intervall">${[[60, "1 Minute"], [120, "2 Minuten"], [300, "5 Minuten"], [900, "15 Minuten"]].map(([s, t]) => `<option value="${s}" ${s === iv ? "selected" : ""}>${t}</option>`).join("")}</select></div>`;
+  const zeile = box.querySelector('details[data-id="mail-wache"]');
+  const html = vbZeile("mail-wache", "Mail-Wache (Posteingang überwachen)", d.wachen.length ? { ok: true, text: `✓ ${d.wachen.length} aktiv` } : { text: "– keine aktiv" }, inhalt, zeile?.open);
+  if (zeile) zeile.outerHTML = html; else box.insertAdjacentHTML("beforeend", html);
+  if (typeof einstFiltern === "function") einstFiltern();
+}
+EINST_ZEILEN["mail-wache"] = "daten";
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-mw]"); if (!b) return;
+  const z = b.closest(".vb-zeile"), st = z?.querySelector(".vb-status"), w = (k) => z.querySelector(`[data-mwf="${k}"]`);
+  const a = b.dataset.mw;
+  try {
+    let r;
+    if (a === "setzen") r = await vbPost("/mailwache/setzen", { absender: w("absender").value, stichwort: w("stichwort").value, dauerhaft: w("dauerhaft").checked });
+    if (a === "alle") r = await vbPost("/mailwache/setzen", { alle: true, dauerhaft: true });
+    if (a === "beenden") r = await vbPost("/mailwache/beenden", { id: b.dataset.id });
+    if (a === "alle-aus") r = await vbPost("/mailwache/beenden", { alle: true });
+    if (st) { st.textContent = r?.hinweis || "✓"; st.className = "vb-status ok"; }
+    mwChip(); setTimeout(mwEinstAufbauen, 400);
+  } catch (err) { if (st) { st.textContent = err.message; st.className = "vb-status fehler"; } }
+});
+document.addEventListener("change", async (e) => {
+  if (!e.target.matches('[data-mwf="intervall"]')) return;
+  try { await vbPost("/mailwache/intervall", { sekunden: +e.target.value }); } catch (err) {}
+});
+const _vbAufbauenMW = vbAufbauen;
+vbAufbauen = async function (...a) { await _vbAufbauenMW(...a); mwEinstAufbauen(); };

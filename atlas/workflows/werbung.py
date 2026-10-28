@@ -75,6 +75,11 @@ class Werbung:
         domain = adresse.split("@")[-1]
         if adresse in self._kontakte():
             return -9, "Kontakt"
+        try:                                          # erwartete Mail (Mail-Wache) nie als Werbung
+            if self.c.mailwache.werbung_ausnahme(von, betreff):
+                return -9, "erwartete Mail"
+        except Exception:
+            pass
         try:                                          # Mails an das Immobilien-Postfach (HESTIA) nie als Werbung
             alias = self.c.nebenkosten.alias()
             if alias and alias in str(hdr["To"] or "").lower() + str(hdr["Delivered-To"] or "").lower():

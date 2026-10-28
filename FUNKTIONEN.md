@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 28.10.2026 · Version 0.14
+Stand: 28.10.2026 · Version 0.15
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -70,6 +70,7 @@ Bedeutung der Zeichen:
 | Posteingang, Suche, Mail lesen (iCloud-Mail) | ⚙️ | |
 | Entwurf schreiben – im eigenen Schreibstil (lokal gelernt) | ✅ | wird nur gespeichert, nicht gesendet |
 | Mail senden, auch mit Dokument als Anhang | 🔒 | nur auf ausdrücklichen Wunsch |
+| Mail-Wache: Posteingang dauerhaft im Hintergrund überwachen und sofort melden, wenn eine erwartete Mail eintrifft (Absender und/oder Betreff, einmalig oder dauerhaft, optional bis Datum; auch „jede neue Mail“) | ✅ | „Sag mir Bescheid, wenn die Mail von … kommt“; Ansage mit „Soll ich sie vorlesen?“, Mitteilung, Telegram; Chip oben links; Einstellungen → Daten & Postfächer; erwartete Mails sortiert der Werbefilter nie aus |
 | Wichtige neue Mails melden | ✅ | Einschätzung lokal |
 | Werbefilter: Werbung in den Papierkorb (30 Tage zurückholbar) | ✅ | erste Woche nur Probelauf; Ausnahmen möglich |
 | iMessage/SMS: neue Nachrichten melden und vorlesen | ⚙️ | Festplattenvollzugriff; Inhalt geht nie an die KI |
@@ -162,6 +163,7 @@ Bedeutung der Zeichen:
 | Laden starten/stoppen, Ladelimit, Ladeplan (Abfahrtszeit mit Vorklimatisierung oder Ladestart) | ⚙️ | per Sprache oder Knopf |
 | Live-Karte: Auto als echtes 3D-Modell in Lackfarbe (dreht und neigt sich mit der Karte, Räder drehen sich, Licht auf der Straße), Fahrt flüssig animiert mit leuchtender Spur | ✅ | „Wo steht mein Auto?“ oder Knopf „Live-Karte“ |
 | Karte minimieren: schwebt kantenlos am Rand und verfolgt die Fahrt live; Klick öffnet sie wieder groß | ✅ | Abruf alle 12 s während der Fahrt (kostet je Abruf einen Bruchteil eines Cents), geparkt jede Minute |
+| Orte bei Durchfahrt: Ortsteil und Ort werden während der Fahrt kurz eingeblendet (auch in der minimierten Karte, Ortseinfahrt hervorgehoben); Liste der durchfahrenen Orte in der großen Karte | ✅ | höchstens alle 15 s bzw. 400 m abgefragt (OpenStreetMap) |
 | TÜV/HU und Kfz-Versicherung im Fahrzeugfenster: Fälligkeit mit Countdown, Versicherer, Kündigungsfrist (1 Monat vor Hauptfälligkeit) | ✅ | eintragen im Fenster oder per Sprache; wird als Frist mit Erinnerung geführt |
 | Schlafendes Auto wird nur auf Wunsch geweckt | ✅ | sonst letzter Stand mit Uhrzeit |
 | Entriegeln, Türen/Kofferraum öffnen, Fahren | ❌ | bewusst nicht |
@@ -183,6 +185,7 @@ Bedeutung der Zeichen:
 | Funktion | Stand | Hinweis |
 |---|---|---|
 | Immobiliendashboard: Karte mit 3D-Gebäuden, Hauptbild und Galerie (bis 5 Bilder, auch HEIC), Mieter, Miete kalt/NK/warm, Darlehen mit Restschuld und Zinsbindung, Objektdaten | ✅ | „Zeig mir meine Immobilie“ oder ⚙ Einstellungen → Immobilien |
+| Unter den Bildern: Karte mit der Lage und daneben das 3D-Modell des Grundrisses zum Drehen und Zoomen | ✅ | ⤢ öffnet den Grundriss-Editor; ohne Grundriss: „＋ Grundriss hinzufügen“ |
 | Kennzahlen mit Ampel: Brutto-/Nettomietrendite, Cashflow, Beleihung, Kapitaldienstdeckung, Kaltmiete je m², EK-Rendite, Tilgung | ✅ | Ampel-Grenzen und Kappungsgrenze unter ⚙ Einstellungen → Immobilien |
 | Mieterhöhung planen: prüft 15-Monats-Frist und Kappungsgrenze, legt Frist zum Ankündigen an | ✅ | im Fenster „＋ PLANEN“ oder per Sprache |
 | Fristen: Zinsbindungsende und „Anschlussfinanzierung prüfen“ (12 Monate vorher) | ✅ | automatisch beim Speichern |

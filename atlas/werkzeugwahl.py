@@ -54,7 +54,7 @@ SIGNALE = [
      r"liste", ["einkauf"]),
     (r"notiz", ["notizen"]),
     (r"kontakt|telefonnummer|nummer von|adresse|visitenkarte|geburtstag|anruf", ["kontakte"]),
-    (r"mail|posteingang|antworte|entwurf|anhang|anhäng|verschick|versende|schick", ["mail", "kontakte"]),
+    (r"mail|posteingang|antworte|entwurf|anhang|anhäng|verschick|versende|schick|bescheid sag|sag mir bescheid|warte (dringend |noch )?auf|überwach", ["mail", "kontakte"]),
     (r"anhang|anhäng|verschick|versende", ["archiv"]),
     (r"wetter|regen|temperatur|grad\b|schnee|gewitter|jacke|schirm|sonnig", ["wetter"]),
     (r"zeig|bild|foto|video|clip|film|youtube|erklär|wie funktioniert|skizze|veranschaulich|diagramm|"

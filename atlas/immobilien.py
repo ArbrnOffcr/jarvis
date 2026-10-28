@@ -204,6 +204,17 @@ class Immobilien:
         except Exception:
             return {"lat": None, "lon": None}
 
+    def verorten(self, oid: str) -> dict:
+        """Koordinaten für die Adresse (erneut) suchen – z. B. wenn sie beim Anlegen nicht gefunden wurde."""
+        with self.lock:
+            z = self._laden()
+            o = next((x for x in z["objekte"] if x["id"] == oid), None)
+            if not o:
+                raise ToolError("Immobilie nicht gefunden")
+            o.update(self._geocode(o.get("adresse", "")))
+            self._speichern(z)
+        return {"ok": True, "lat": o.get("lat"), "lon": o.get("lon")}
+
     def entfernen(self, oid: str) -> dict:
         with self.lock:
             z = self._laden()
