@@ -3940,7 +3940,7 @@ async function teslaBefehl(befehl, args, text) {
     setTimeout(() => teslaLaden(false), 2500); }
   catch (e) { st.textContent = "⚠ " + e.message; st.className = "ts-status fehler"; TS.el.querySelectorAll(".ts-rechts button").forEach((b) => b.disabled = false); }
 }
-document.addEventListener("click", (e) => {
+document.addEventListener("click", async (e) => {
   if (!TS.el || !e.target.closest(".tesla")) return;
   const b = e.target.closest("[data-t]"); if (!b) return;
   const t = b.dataset.t, f = (n) => TS.el.querySelector(`[data-f="${n}"]`);
@@ -3958,7 +3958,7 @@ document.addEventListener("click", (e) => {
     clearTimeout(TS.tempT); TS.tempT = setTimeout(() => teslaBefehl("klima", { an: true, temperatur: v }, `Klima auf ${v} °C`), 1200); return;
   }
   if (t === "waechter-an") return teslaBefehl("waechter_an", {}, "Wächtermodus wird eingeschaltet");
-  if (t === "waechter-aus") { if (!confirm("Wächtermodus ausschalten?")) return; return teslaBefehl("waechter_aus", {}, "Wächtermodus wird ausgeschaltet"); }
+  if (t === "waechter-aus") { if (!(await frage({ titel: "TESLA · WÄCHTERMODUS", text: "Wächtermodus ausschalten?", ok: "AUSSCHALTEN", gefahr: true }))) return; return teslaBefehl("waechter_aus", {}, "Wächtermodus wird ausgeschaltet"); }
   if (t === "laden-start") return teslaBefehl("laden", { aktion: "start" }, "Laden wird gestartet");
   if (t === "laden-stop") return teslaBefehl("laden", { aktion: "stop" }, "Laden wird gestoppt");
   if (t === "limit") return teslaBefehl("laden", { aktion: "limit", prozent: +f("limit").value }, `Ladelimit ${f("limit").value} %`);
@@ -5744,7 +5744,7 @@ document.addEventListener("click", async (e) => {
   if (a === "oeffnen") { btZu(); return sendText(b.dataset.f === "hestia" ? "Zeig mir die Nebenkosten" : "Welche Post wartet auf Ablage?"); }
   if (a === "vorlesen") { btZu(); return nachrichtVorlesen(b.dataset.id); }
   if (a === "undo") {
-    if (!confirm(`${b.title}?`)) return;
+    if (!(await frage({ text: `${b.title}?` }))) return;
     b.disabled = true;
     try { const r = await vbPost(`/rueckgaengig/${encodeURIComponent(b.dataset.id)}`); if (st) { st.textContent = "✓ " + r.rueckgaengig; st.className = "im-form-status bt-status ok"; }
       b.textContent = "✓ ZURÜCK"; }
@@ -5818,7 +5818,7 @@ document.addEventListener("click", async (e) => {
     let r; const a = b.dataset.ap;
     if (a === "entziehen") r = await vbPost("/autopilot/entziehen", { id: b.dataset.id });
     if (a === "aktivieren") r = await vbPost("/autopilot/aktivieren", { id: b.dataset.id });
-    if (a === "notbremse") { if (!confirm("Alle Befugnisse sofort entziehen?")) return; r = await vbPost("/autopilot/entziehen", { alle: true }); }
+    if (a === "notbremse") { if (!(await frage({ titel: "NOTBREMSE", text: "Alle Befugnisse sofort entziehen?", ok: "ENTZIEHEN", gefahr: true }))) return; r = await vbPost("/autopilot/entziehen", { alle: true }); }
     if (a === "erteilen") r = await vbPost("/autopilot/erteilen", { bereich: f("bereich").value, max_pro_woche: +f("max").value || null, gueltig_bis: f("bis").value });
     if (a === "speichern") r = await vbPost("/autopilot/einstellen", { aktiv: f("aktiv").checked, ruhe_von: f("ruhe_von").value, ruhe_bis: f("ruhe_bis").value,
       samstag_ab: f("samstag_ab").value, sonntag: f("sonntag").checked, ruhe_titel: liste("ruhe_titel"), fokus_titel: liste("fokus_titel"), stapel_zeiten: liste("stapel_zeiten") });
@@ -5991,7 +5991,7 @@ document.addEventListener("click", async (ev) => {
       return setTimeout(notfallEinstAufbauen, 1200);
     }
     if (a === "aktivieren") { await vbPost("/notfall/aktivieren", { code: f("code").value }); f("code").value = ""; NF.aktiv = true; notfallBanner(); notfallEinstAufbauen(); return notfallOeffnen(); }
-    if (a === "beenden") { if (!confirm("Notfallbegleitung beenden?")) return; await vbPost("/notfall/beenden"); NF.aktiv = false; notfallBanner(); btZu(); return notfallEinstAufbauen(); }
+    if (a === "beenden") { if (!(await frage({ titel: "NOTFALLBEGLEITUNG", text: "Notfallbegleitung beenden?", ok: "BEENDEN", gefahr: true }))) return; await vbPost("/notfall/beenden"); NF.aktiv = false; notfallBanner(); btZu(); return notfallEinstAufbauen(); }
     if (a === "oeffnen") return notfallOeffnen();
     if (a === "selbsttest") { const r = await vbPost("/notfall/selbsttest"); z.querySelector(".nf-selbst").innerHTML = nfSelbsttestHTML(r.selbsttest); return; }
     if (a === "probe") {
@@ -6200,7 +6200,7 @@ document.addEventListener("click", async (e) => {
   const melde = (t, ok = true) => { if (st) { st.textContent = t; st.className = "im-form-status bt-status " + (ok ? "ok" : "fehler"); } };
   try {
     if (a === "waehlen") { PJ.aktiv = b.dataset.id; return pjZeichnen(); }
-    if (a === "neu") { const name = prompt("Name des Projekts:"); if (!name) return; const r = await vbPost("/projekte/anlegen", { name }); PJ.aktiv = r.id; return projekteOeffnen(); }
+    if (a === "neu") { const name = await frage({ titel: "NEUES PROJEKT", text: "Name des Projekts:", ok: "ANLEGEN", eingabe: { platzhalter: "z. B. Auslandsverwendung" } }); if (!name) return; const r = await vbPost("/projekte/anlegen", { name }); PJ.aktiv = r.id; return projekteOeffnen(); }
     if (a === "speichern") { await vbPost("/projekte/aendern", { projekt: p.id, ziel: f("ziel").value, stichwoerter: pjListe(f("stichwoerter").value) }); melde("✓ gespeichert"); return projekteOeffnen(); }
     if (a === "b-neu") {
       const r = await vbPost("/projekte/beobachtung", { projekt: p.id, titel: g("titel").value, suchbegriffe: pjListe(g("suchbegriffe").value),
@@ -6208,7 +6208,7 @@ document.addEventListener("click", async (e) => {
       melde("✓ " + r.hinweis); return setTimeout(projekteOeffnen, 400);
     }
     if (a === "b-aktiv") { const bb = p.beobachtungen.find((x) => x.id === b.dataset.b); await vbPost("/projekte/beobachtung_aendern", { projekt: p.id, beobachtung: bb.id, aktiv: !bb.aktiv }); return projekteOeffnen(); }
-    if (a === "b-weg") { if (!confirm("Beobachtung entfernen?")) return; await vbPost("/projekte/beobachtung_aendern", { projekt: p.id, beobachtung: b.dataset.b, loeschen: true }); return projekteOeffnen(); }
+    if (a === "b-weg") { if (!(await frage({ titel: "BEOBACHTUNG", text: "Beobachtung entfernen?", ok: "ENTFERNEN", gefahr: true }))) return; await vbPost("/projekte/beobachtung_aendern", { projekt: p.id, beobachtung: b.dataset.b, loeschen: true }); return projekteOeffnen(); }
     if (a === "lauf") { melde("Recherchiere …"); b.disabled = true; const r = await vbPost("/projekte/lauf", { projekt: p.id });
       const n = (r || []).reduce((s, x) => s + (x.funde || 0), 0); melde(`✓ ${n} neue Meldung(en)`); return projekteOeffnen(); }
     if (a === "gelesen") { await vbPost("/projekte/gelesen", { projekt: p.id, alle: true }); return projekteOeffnen(); }
@@ -6302,7 +6302,8 @@ function agZeichnen() {
   const st = AG.el.querySelector(".bt-status");
   if (st) st.textContent = d.laeuft ? "AEGIS prüft … (bis 1–2 Minuten)" : "";
   if (!d.vorhanden) { box.innerHTML = `<p class="vb-hilfe">${esc(d.hinweis)}</p>`; return; }
-  const z = d.zaehlung, ernst = d.befunde.filter((b) => !["ok", "info"].includes(b.stufe) && !b.akzeptiert);
+  const z = d.zaehlung, ernst = d.befunde.filter((b) => !["ok", "info"].includes(b.stufe) && !b.akzeptiert && !b.behoben);
+  const erledigt = d.befunde.filter((b) => b.behoben && !b.akzeptiert);
   const akz = d.befunde.filter((b) => b.akzeptiert);
   const ok = d.befunde.filter((b) => b.stufe === "ok"), info = d.befunde.filter((b) => b.stufe === "info");
   const offen = ernst.filter((b) => !b.behoben);
@@ -6319,6 +6320,7 @@ function agZeichnen() {
       <button type="button" class="ag-haupt" data-ag="auftrag">CLAUDE-AUFTRAG ERSTELLEN (<span data-ag-zahl>${AG.wahl.size}</span>)</button></div>` : ""}
     <div class="ag-auftrag-box"></div>
     <h5>HANDLUNGSBEDARF</h5><ul class="ag-liste">${ernst.map(agBefund).join("") || "<li class='leer'>Keine Schwachstellen gefunden.</li>"}</ul>
+    ${erledigt.length ? `<h5>ERLEDIGT – WIRKT NACH NEUSTART BZW. NÄCHSTER PRÜFUNG</h5><ul class="ag-liste">${erledigt.map(agBefund).join("")}</ul>` : ""}
     ${akz.length ? `<h5>BEWUSST HINGENOMMEN</h5><ul class="ag-liste">${akz.map(agBefund).join("")}</ul>` : ""}
     ${info.length ? `<h5>HINWEISE</h5><ul class="ag-liste">${info.map(agBefund).join("")}</ul>` : ""}
     <details class="ag-gut"><summary>${ok.length} PRÜFUNGEN OHNE BEFUND</summary><ul class="ag-liste">${ok.map(agBefund).join("")}</ul></details>
@@ -6365,7 +6367,7 @@ document.addEventListener("click", async (e) => {
       AG.d = { ...(AG.d || {}), laeuft: true }; agZeichnen(); return agWarten();
     }
     if (a === "fix") {
-      if (!confirm(`AEGIS soll beheben:\n„${b.dataset.titel}“\n\nAusführen?`)) return;
+      if (!(await frage({ titel: "AEGIS · BEHEBEN", text: `„${b.dataset.titel}“\n\nJARVIS behebt das jetzt und prüft danach nach.`, ok: "BEHEBEN" }))) return;
       b.disabled = true; melde("AEGIS behebt …" + (b.dataset.fix.startsWith("pip:") ? " (Update + Sicherheitstests, bis 2 Minuten)" : ""));
       const r = await vbPost("/sicherheit/audit/beheben", { fix: b.dataset.fix });
       toast("✓ " + (r.hinweis || "behoben")); await aegisOeffnen(); return melde("✓ " + (r.hinweis || "behoben"));
@@ -6378,7 +6380,7 @@ document.addEventListener("click", async (e) => {
     if (a === "einstellung") { await vbPost("/sicherheit/audit/einstellung", { ziel: b.dataset.ziel }); return melde("Systemeinstellungen geöffnet – danach „Nachprüfen“."); }
     if (a === "befehl") { const ok = await agKopieren(b.dataset.befehl); return melde(ok ? "✓ Befehl kopiert – im Terminal einfügen." : b.dataset.befehl); }
     if (a === "ausnahme") {
-      const grund = prompt(`„${b.dataset.titel}“ bewusst hinnehmen (90 Tage, zählt nicht zur Ampel).\nGrund:`);
+      const grund = await frage({ titel: "AEGIS · HINNEHMEN", text: `„${b.dataset.titel}“ bewusst hinnehmen?\nGilt 90 Tage, zählt nicht zur Ampel und wird nicht gemeldet.`, ok: "HINNEHMEN", eingabe: { platzhalter: "Grund, z. B. „gewollt, nur im Heimnetz“" } });
       if (!grund) return;
       await vbPost("/sicherheit/audit/ausnahme", { id: b.dataset.id, grund }); AG.wahl.delete(b.dataset.id); return aegisOeffnen();
     }
@@ -6391,7 +6393,7 @@ document.addEventListener("click", async (e) => {
     if (a === "auftrag-zu") { AG.auftrag = null; const x = AG.el?.querySelector(".ag-auftrag-box"); if (x) x.innerHTML = ""; return; }
     if (a === "kopieren" && AG.auftrag) { const ok = await agKopieren(b.dataset.was === "cowork" ? AG.auftrag.cowork : AG.auftrag.text); return melde(ok ? "✓ kopiert" : "Kopieren nicht möglich – Text unten markieren."); }
     if (a === "claude-code") {
-      if (!confirm("Terminal öffnen und Claude Code im atlas-Ordner mit diesem Auftrag starten?\nJede Änderung bestätigst du dort selbst.")) return;
+      if (!(await frage({ titel: "CLAUDE CODE", text: "Terminal öffnen und Claude Code im atlas-Ordner mit diesem Auftrag starten?\nJede Änderung bestätigst du dort selbst.", ok: "STARTEN" }))) return;
       const r = await vbPost("/sicherheit/audit/claude_code"); return melde("✓ " + r.hinweis);
     }
   } catch (err) { melde("⚠ " + err.message); b.disabled = false; }
@@ -6419,3 +6421,37 @@ async function aegisEinstAufbauen() {
 }
 const _einstOeffnenAG = window.einstellungenOeffnen;
 window.einstellungenOeffnen = function () { _einstOeffnenAG(); aegisEinstAufbauen(); };
+
+// ---------- Eigener Rückfrage-Dialog ----------
+// window.confirm/prompt liefern in der Mac-App (WKWebView) ohne passende Swift-Methode sofort „Nein“ bzw. nichts –
+// deshalb fragt JARVIS überall mit diesem Dialog nach. Rückgabe: true/false bzw. eingegebener Text oder null.
+function frage({ titel = "BESTÄTIGEN", text = "", ok = "OK", abbrechen = "ABBRECHEN", eingabe = null, gefahr = false } = {}) {
+  return new Promise((res) => {
+    const el = document.createElement("div"); el.className = "jv-frage";
+    el.innerHTML = `<div class="jv-frage-box" role="dialog" aria-modal="true"><b>${esc(titel)}</b><p>${esc(text).replace(/\n/g, "<br>")}</p>
+      ${eingabe ? `<input type="text" value="${esc(eingabe.wert || "")}" placeholder="${esc(eingabe.platzhalter || "")}">` : ""}
+      <div class="jv-frage-knoepfe"><button type="button" data-f="nein">${esc(abbrechen)}</button><button type="button" class="${gefahr ? "gefahr" : "primary"}" data-f="ja">${esc(ok)}</button></div></div>`;
+    const inp = el.querySelector("input");
+    inp?.addEventListener("input", () => inp.classList.remove("fehlt"));
+    const zu = (w) => { document.removeEventListener("keydown", taste, true); el.classList.remove("an"); setTimeout(() => el.remove(), 180); res(w); };
+    const ja = () => {
+      if (!inp) return zu(true);
+      const v = inp.value.trim();
+      if (!v) { inp.classList.add("fehlt"); inp.focus(); return; }
+      zu(v);
+    };
+    const taste = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); zu(inp ? null : false); }
+      else if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); ja(); }
+    };
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const f = e.target.closest("[data-f]")?.dataset.f;
+      if (f === "ja") ja(); else if (f === "nein" || e.target === el) zu(inp ? null : false);
+    });
+    document.addEventListener("keydown", taste, true);
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add("an"));
+    setTimeout(() => (inp || el.querySelector('[data-f="ja"]'))?.focus(), 30);
+  });
+}

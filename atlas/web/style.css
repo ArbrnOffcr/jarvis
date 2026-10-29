@@ -1884,3 +1884,18 @@ body.rein.zeigt[data-avatar] #avatar-box{opacity:.6;filter:blur(1px)}
 .ag-auftrag details summary{cursor:pointer;font:600 9.5px var(--mono);letter-spacing:.16em;color:var(--muted)}
 .ag-auftrag pre{max-height:280px;overflow:auto;white-space:pre-wrap;font:11.5px/1.5 var(--mono);color:var(--ink2);background:rgba(0,0,0,.25);padding:10px;border:1px solid var(--line)}
 @media (max-width:700px){.ag-plan button{margin-left:0;width:100%}}
+
+/* Eigener Rückfrage-Dialog (ersetzt confirm/prompt – in der Mac-App liefern die nichts) */
+.jv-frage{position:fixed;inset:0;z-index:400;display:grid;place-items:center;background:rgba(2,6,10,.6);backdrop-filter:blur(3px);opacity:0;transition:opacity .18s}
+.jv-frage.an{opacity:1}
+.jv-frage-box{width:min(440px,calc(100vw - 32px));padding:18px 20px 16px;background:var(--bg2);border:1px solid var(--accent);box-shadow:0 0 40px rgba(0,229,255,.18)}
+.jv-frage-box>b{display:block;font:600 10.5px var(--mono);letter-spacing:.24em;color:var(--accent)}
+.jv-frage-box p{margin:10px 0 14px;font-size:14px;line-height:1.45;color:var(--ink)}
+.jv-frage-box input{width:100%;box-sizing:border-box;padding:9px 10px;margin:0 0 14px;background:rgba(0,229,255,.05);border:1px solid var(--line);color:var(--ink);font:14px var(--sans);outline:none}
+.jv-frage-box input:focus{border-color:var(--accent)}
+.jv-frage-box input.fehlt{border-color:var(--crit)}
+.jv-frage-knoepfe{display:flex;justify-content:flex-end;gap:10px}
+.jv-frage-knoepfe button{font:600 10px var(--mono);letter-spacing:.18em;padding:9px 14px;background:transparent;color:var(--ink2);border:1px solid var(--line);cursor:pointer}
+.jv-frage-knoepfe button.primary{background:var(--accent);border-color:var(--accent);color:#001218}
+.jv-frage-knoepfe button.gefahr{background:transparent;border-color:var(--crit);color:var(--crit)}
+body.mobil .jv-frage-box input{font-size:16px}

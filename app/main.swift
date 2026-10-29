@@ -147,13 +147,37 @@ final class JarvisApp: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigati
         }
     }
 
-    // Alerts/Bestätigungen aus der Seite (falls je verwendet)
+    // Alerts aus der Seite
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
         let alert = NSAlert()
         alert.messageText = message
         alert.runModal()
         completionHandler()
+    }
+
+    // confirm() aus der Seite – ohne diese Methode liefert WKWebView immer „Nein“
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Abbrechen")
+        completionHandler(alert.runModal() == .alertFirstButtonReturn)
+    }
+
+    // prompt() aus der Seite – ohne diese Methode liefert WKWebView immer null
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = prompt
+        let feld = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        feld.stringValue = defaultText ?? ""
+        alert.accessoryView = feld
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Abbrechen")
+        alert.window.initialFirstResponder = feld
+        completionHandler(alert.runModal() == .alertFirstButtonReturn ? feld.stringValue : nil)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

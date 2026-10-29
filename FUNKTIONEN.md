@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 29.10.2026 · Version 0.22.1
+Stand: 29.10.2026 · Version 0.22.2
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -321,6 +321,7 @@ Bedeutung der Zeichen:
 | Claude-Auftrag: ausgewählte Befunde als Markdown-Auftrag mit verbindlichen Sicherheitsvorgaben, Fundstellen maskiert, gespeichert unter .aegis/AUFTRAG_aktuell.md (nicht versioniert) | ✅ | „Schreib einen Claude-Auftrag für die Sicherheitsbefunde“ |
 | Auftrag direkt in Claude Code im Terminal starten | 🔒 | nur wenn Claude Code installiert ist; jede Änderung bestätigst du dort |
 | Auftrag in Claude/Cowork übergeben (Satz kopieren, Claude liest die Datei im verbundenen atlas-Ordner) oder kompletten Text kopieren | ✅ | |
+| Behobene Befunde verschwinden aus dem Handlungsbedarf (Bereich wird sofort nachgeprüft); Paket-Updates stehen bis zum Neustart unter „Erledigt“ | ✅ | |
 | Befund bewusst hinnehmen (mit Grund, 90 Tage): zählt nicht zur Ampel, wird nicht gemeldet, jederzeit „Wieder melden“ | 🔒 | kritische Befunde nicht hinnehmbar |
 | Rechte lockern, macOS-Einstellungen ändern oder Schlüssel automatisch erneuern | ❌ | bewusst nicht – Anleitung bzw. Claude-Auftrag |
 
@@ -354,6 +355,7 @@ Bedeutung der Zeichen:
 | Funktion | Stand | Hinweis |
 |---|---|---|
 | Einstellungen in Reitern (Allgemein, Stimme & Gespräch, Stab, Konten & Schlüssel, Daten & Postfächer, Fahrzeuge, Immobilien, iPhone, Autopilot, Zuhause, Notfall, Projekte, Sicherheit) mit Suche über alle Reiter | ✅ | merkt sich den letzten Reiter; auf dem iPhone wischbare Leiste |
+| Rückfragen (Beheben, Hinnehmen, Notbremse, Notfall beenden, Wächtermodus, Projekt anlegen …) als eigener JARVIS-Dialog – funktioniert in der Mac-App, im Browser und auf dem iPhone | ✅ | Enter bestätigt, Esc bricht ab |
 | Läuft als Hintergrunddienst mit Autostart | ✅ | |
 | Mehrere Macs und Benutzer, Wache-Übergabe | ✅ | |
 | Automatische Updates; startet eine neue Version nicht, kommt die vorige zurück | ✅ | |
