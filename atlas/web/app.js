@@ -2790,13 +2790,16 @@ window.einstellungenOeffnen = function () { _einstOeffnenI(); iphoneBereich(); }
 //  KARTE: Orte und Routen – Globus-Anflug, leuchtende Route, HUD
 // =====================================================================
 const KARTE = { map: null, laden: null, el: null, anim: null, marker: [] };
+// MapLibre ab 6.x gibt es nur noch als ES-Modul (Sicherheitsupdate CVE-2026-85061 / GHSA-jrc7-96c5-q579).
+// Das Modul findet seinen Worker (vendor/maplibre-gl-worker.mjs) selbst über import.meta.url.
+const MAPLIBRE_V = "6.16.0";
 function karteLib() {
   if (window.maplibregl) return Promise.resolve();
   if (KARTE.laden) return KARTE.laden;
-  KARTE.laden = new Promise((res, rej) => {
-    const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "vendor/maplibre-gl.css"; document.head.appendChild(l);
-    const s = document.createElement("script"); s.src = "vendor/maplibre-gl.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s);
-  });
+  const l = document.createElement("link"); l.rel = "stylesheet"; l.href = `vendor/maplibre-gl.css?v=${MAPLIBRE_V}`; document.head.appendChild(l);
+  KARTE.laden = import(new URL(`vendor/maplibre-gl.mjs?v=${MAPLIBRE_V}`, document.baseURI).href)
+    .then((m) => { window.maplibregl = m; })
+    .catch((e) => { KARTE.laden = null; console.warn("Karte nicht geladen:", e); throw e; });
   return KARTE.laden;
 }
 function karteGeruest() {

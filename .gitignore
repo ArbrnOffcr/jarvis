@@ -12,3 +12,5 @@ data/
 Daten/
 .DS_Store
 *.egg-info/
+# nie versionieren (AEGIS)
+.aegis/

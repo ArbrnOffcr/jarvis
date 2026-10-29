@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 29.10.2026 · Version 0.22
+Stand: 29.10.2026 · Version 0.22.1
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -365,3 +365,4 @@ Bedeutung der Zeichen:
 | Übersicht, wer JARVIS wo nutzt | ❌ | bewusst nicht – es werden keine Nutzungsdaten gesendet |
 | Intel-Macs, Windows, eigene App im App Store | ❌ | iPhone über Web-App, Siri und Telegram |
 | Live-Verkehr in der eigenen Karte | ❌ | |
+| Kartenbibliothek MapLibre 6.16 (Sicherheitsupdate gegen CVE-2026-85061: Schadcode über Karten-Quellenangaben), lokal mitgeliefert als ES-Modul | ✅ | gefunden von AEGIS, behoben per Claude-Auftrag |
