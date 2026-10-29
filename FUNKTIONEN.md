@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 29.10.2026 · Version 0.22.4
+Stand: 29.10.2026 · Version 0.23.5
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -26,8 +26,10 @@ Bedeutung der Zeichen:
 | Deutsch und Englisch (Antwort in der Sprache der Frage) | ✅ | |
 | Eigene Mac-App mit Dauer-Mikrofon, Fenster frei verschiebbar | ✅ | `jarvis app` |
 | Reduzierte Ansicht (nur Kern und Untertitel) und Dashboard-Ansicht | ✅ | Untertitel scrollbar |
-| Avatare AURA, NOVA und MILO als zusätzliche Stilwelten (STIL-Knopf oder „Zeig dich als NOVA“) – die bisherigen Stile bleiben | ✅ | Darstellung „Porträt“ (lebendes Hologramm: Atmen, Blick folgt der Maus, Augen und Nähte leuchten mit der Stimme, Mund bewegt sich, Warnung färbt Bernstein) oder „3D-Figur“ (Prototyp) unter ⚙ Allgemein → Darstellung |
-| Avatare voll animiert mit echtem 3D-Modell (.glb): atmen, blinzeln, Kopf und Augen folgen der Maus (Grenzen ±35°/±20°, Augen ±25°), Sakkaden und Mikrobewegung, Mund passend zu Text und Stimme, Nähte/Augen leuchten mit der Stimme, Zustands-Clips, „Dreh dich mal“ | ⚙️ | Player fertig; Modelle je Figur unter ⚙ Allgemein → Darstellung → „.GLB LADEN“ (und „IPHONE“ für die leichte Fassung); ohne Modell zeigt JARVIS das Porträt. Anleitung: „JARVIS-Avatare: vom Konzeptbild zum animierten 3D-Modell“; Pipeline in `werkzeuge/avatar-pipeline` |
+| Stilwelt MOSAIK: abstraktes, frontales Gesicht mit dunklen Augenhöhlen, flacher Nase und flachem Mund, eingebettet in einen feinen Kachelteppich in Plexus-Farben, der kräftig wie eine zähe Masse wabert (treibende Wölbungen ohne Vorzugsrichtung, echte Tiefe, im Gesicht gedämpft); das Gesicht folgt ganz leicht der Maus | ✅ | STIL-Knopf oder „Zeig dich als MOSAIK“; am Mac ca. 40.000 Kacheln |
+| MOSAIK lebt: dezente Mimik, Mund passend zu Stimme und Lauten – auch bei reinen Textantworten liest er stumm mit; Zuhören färbt das Gesicht Plexus-Grün; Nachdenken zeigt gedämpfte Datenströme wie bei Plexus, die seitlich um den Kopf schwingen und oben hinter der Stirn – im Gehirn – verlöschen (nie über dem Gesicht) – je Quelle in eigener, zurückhaltender Farbe | ✅ | Mimik aus neun Posen (ChatGPT), neu aufbereiten: werkzeuge/mosaik/aufbereiten.py |
+| Startsequenz je nach zuletzt gewähltem Stil: bei MOSAIK liegt der Teppich dunkel hinter der Sequenz, wächst beim Aufladen von der Mitte her und entfaltet sich beim Zünden nahtlos zum Gesicht | ✅ | bei Plexus wie bisher mit Globus |
+| Avatare AURA, NOVA, MILO und eigene 3D-Modelle (.glb) | ❌ | entfernt, ersetzt durch MOSAIK; hochgeladene Modelle wandern beim ersten Start in den Papierkorb |
 | Schnellleiste links: Fahrzeuge und Immobilien mit einem Klick – dezent, auch in der reduzierten Ansicht | ✅ | Name erscheint beim Darüberfahren |
 | Dokumente per Drag & Drop in den Chat | ✅ | Vor dem Lesen durch Claude wird immer gefragt |
 | Fotos/Scans vom iPhone („Ablage → Dokument/Kontakt vom iPhone“) | ✅ | Continuity Camera |

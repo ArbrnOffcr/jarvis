@@ -443,7 +443,7 @@ class Sicherheitsaudit:
                 out.append(("PyPI", n, d.version))
         web = REPO_DIR / "atlas" / "web"
         maplibre = "vendor/maplibre-gl.mjs" if (web / "vendor" / "maplibre-gl.mjs").exists() else "vendor/maplibre-gl.js"
-        for datei, name in ((maplibre, "maplibre-gl"), ("avatar3d.bundle.js", "three")):
+        for datei, name in ((maplibre, "maplibre-gl"), ("mosaik.bundle.js", "three")):
             try:
                 kopf = (web / datei).read_text(encoding="utf-8", errors="ignore")[:400_000]
             except OSError:

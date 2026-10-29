@@ -37,7 +37,7 @@ class Lagebild:
         cur = self.settings()
         cur.update({k: v for k, v in data.items()
                     if k in ("erinnerungen_ausblenden", "stimme_ausgabe", "weckwort", "stil", "klang", "rein",
-                             "gespraech", "unterbrechen", "einfuehrung_gesehen", "einfuehrung_offen", "avatar_modus")})
+                             "gespraech", "unterbrechen", "einfuehrung_gesehen", "einfuehrung_offen")})
         write_private_json(SETTINGS, cur)
         self.cache.pop("erinnerungen", None)
         return cur

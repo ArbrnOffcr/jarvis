@@ -1755,14 +1755,18 @@ body.mobil #schnell{top:auto;bottom:110px;transform:none}
 .nf-test small{display:block;color:var(--muted);font-size:11.5px}
 .bt-reihe select{background:rgba(0,0,0,.3);color:var(--ink);border:1px solid var(--line);padding:5px 8px;color-scheme:dark}
 .bt-reihe select{width:auto!important;flex:0 0 auto}
-/* ---------- Avatare AURA · NOVA · MILO (zusätzliche Stilwelten) ---------- */
+/* ---------- MOSAIK: Kachelgesicht im JARVIS-Sechseck (Stilwelt) ---------- */
 #avatar-box{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:0;transition:opacity 1.2s ease}
 body[data-avatar] #avatar-box{opacity:1}
 body[data-avatar] #core3d,body[data-avatar] #core{opacity:0;transition:opacity .9s ease}
 body[data-avatar].bilder #core3d,body[data-avatar].youtube #core3d{opacity:1}
 body[data-avatar].bilder #avatar-box,body[data-avatar].youtube #avatar-box{opacity:.12}
 body.rein.zeigt[data-avatar] #avatar-box{opacity:.6;filter:blur(1px)}
-.avm-knoepfe{display:flex;gap:6px;flex:0 0 auto}
+#avatar-box .mosaik-cv{position:absolute;inset:0;width:100%;height:100%;display:block}
+/* Startsequenz im MOSAIK-Stil: Teppich liegt dunkel dahinter und entfaltet sich beim Zünden */
+.boot.mosaik{background:radial-gradient(circle at 50% 44%,rgba(3,16,26,.5) 0%,rgba(1,6,11,.8) 65%,rgba(0,0,0,.92) 100%)}
+body.boot-mosaik>:not(.boot):not(main),body.boot-mosaik main>:not(.center),body.boot-mosaik .center>:not(#stage),body.boot-mosaik #stage>:not(#avatar-box){opacity:0!important}
+body[data-avatar] #state{z-index:2}
 /* ---------- Projekte ---------- */
 .pj-fenster .bt-box{width:min(1120px,96vw);max-height:90vh}
 .pj-raster{display:grid;grid-template-columns:260px 1fr;gap:18px;min-height:420px}

@@ -329,7 +329,7 @@ function handle(ev) {
       break;
     case "tool":
       setState("tool");
-      window.jarvis3d?.tool(ev.name); sfx("tick");
+      window.jarvis3d?.tool(ev.name); try { AV.inst?.werkzeug?.(ev.name); } catch (e) {} sfx("tick");
       if (current) addLine(current, "tool", `⚙ ${ev.text}`);
       break;
     case "confirm":
@@ -896,8 +896,9 @@ async function ttsRun() {
     if (job.szene) { play.queue.shift(); try { window.vortragSzene?.(job.szene); } catch (e) {} continue; }   // Abschnittsmarke
     if (job.ab) {                       // vorgeladen, Einsatz erst zum Übergabezeitpunkt (höchstens 12 s warten)
       await Promise.race([job.ab, new Promise((r) => setTimeout(r, 12000))]);
-      job.ab = null; if (job.beiStart) try { job.beiStart(); } catch (e) {}
+      job.ab = null;
     }
+    if (job.beiStart) { try { job.beiStart(); } catch (e) {} job.beiStart = null; }
     let t = 0, laeuft = false, puffer = [];
     const spiele = (f) => {
       const b = play.ctx.createBuffer(1, f.length, job.rate); b.copyToChannel(f, 0);
@@ -1145,15 +1146,17 @@ handle = function (ev) {
 // =====================================================================
 //  STILWELTEN, KLÄNGE, ZÄHLER (Oberflächen-Prototypen)
 // =====================================================================
-const STILE = ["plexus", "holo", "organisch", "taktisch", "minimal", "aura", "nova", "milo"];
+const STILE = ["plexus", "holo", "organisch", "taktisch", "minimal", "mosaik"];
 const STILNAME = { plexus: "PLEXUS", holo: "HOLOGRAFISCH", organisch: "ORGANISCH", taktisch: "TAKTISCH", minimal: "MINIMAL",
-  aura: "AVATAR AURA", nova: "AVATAR NOVA", milo: "AVATAR MILO" };
-const AVATAR_STILE = ["aura", "nova", "milo"];          // Avatare sind zusätzliche Stilwelten (Oberfläche: holografisch)
+  mosaik: "MOSAIK" };
+const AVATAR_STILE = ["mosaik"];          // Gesicht als zusätzliche Stilwelt (Oberfläche: holografisch)
 const stilThema = (s) => AVATAR_STILE.includes(s) ? "holo" : s;
 let stil = "holo", klang = true;
 
 function setStil(name, save = true) {
+  if (["aura", "nova", "milo"].includes(name)) name = "mosaik";          // frühere Avatare → MOSAIK
   stil = STILE.includes(name) ? name : "holo";
+  try { localStorage.setItem("jarvis-stil", stil); } catch (e) {}   // die Startsequenz kennt so den Stil, bevor der Kern antwortet
   document.body.dataset.stil = stilThema(stil);
   $("stilbtn").textContent = `STIL: ${STILNAME[stil]}`;
   window.jarvis3d?.setTheme(stilThema(stil));
@@ -1222,7 +1225,6 @@ function countUp(root) {
 
 // Einstellungen laden
 api("/einstellungen").then((st) => {
-  AV.modus = ["figur", "modell"].includes(st.avatar_modus) ? st.avatar_modus : "portraet"; avatarModusKnopf();
   setStil(st.stil || "plexus", st.stil === undefined); setKlang(st.klang !== false, false);
   setRein(st.rein === undefined ? true : !!st.rein, st.rein === undefined);   // neu: reduziert als Standard
 }).catch(() => { setStil("plexus", false); setKlang(true, false); setRein(true, false); });
@@ -2066,7 +2068,7 @@ function tonStarten(a) {
 }
 
 // Partikel, Drahtgitter-Globus und Explosion auf einer eigenen 2D-Leinwand
-function bootLeinwand(cv, t0, ZUEND) {
+function bootLeinwand(cv, t0, ZUEND, mosaik = false) {
   const ctx = cv.getContext("2d"), dpr = Math.min(devicePixelRatio || 1, 2);
   let W = 0, H = 0;
   const groesse = () => { W = cv.clientWidth; H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
@@ -2107,7 +2109,7 @@ function bootLeinwand(cv, t0, ZUEND) {
       ctx.beginPath(); ctx.arc(x, y, p.s * (p.ex ? 1.4 : 1), 0, Math.PI * 2); ctx.fill();
     }
     // Drahtgitter-Globus hinter den Ringen: ab 2,4 s, dreht sich und wächst
-    const g = Math.min(1, Math.max(0, (t - 2.4) / 1.8)) * (t < ZUEND ? 1 : Math.max(0, 1 - (t - ZUEND) / .6));
+    const g = mosaik ? 0 : Math.min(1, Math.max(0, (t - 2.4) / 1.8)) * (t < ZUEND ? 1 : Math.max(0, 1 - (t - ZUEND) / .6));   // MOSAIK: kein Globus – der Teppich entsteht
     if (g > 0) {
       const R = Math.min(W, H) * .16 * (.6 + g * .4) * (1 + Math.max(0, t - 7.4) * .08), rot = t * (.5 + Math.max(0, t - 6) * .6);
       ctx.lineWidth = 1; ctx.strokeStyle = `rgba(0,229,255,${.32 * g})`;
@@ -2135,6 +2137,7 @@ let bootUebergabe = () => {};
 window.JARVIS_BOOT_UEBERGABE = new Promise((r) => { bootUebergabe = r; });
 async function bootSequenz(erzwingen = false) {
   if (document.querySelector(".boot")) return;
+  window.JARVIS_BOOT_LAEUFT = true;                    // MOSAIK wartet flach, bis die Sequenz zündet
   if (erzwingen) window.JARVIS_BOOT_UEBERGABE = new Promise((r) => { bootUebergabe = r; });
   let nachUpdate = false;
   try {
@@ -2146,6 +2149,7 @@ async function bootSequenz(erzwingen = false) {
   } catch (e) {}
   if (!erzwingen && (!bootAn() || nachUpdate)) {
     uiLog(`Startsequenz übersprungen (${!bootAn() ? "abgeschaltet" : "nach Update"})`);
+    window.JARVIS_BOOT_LAEUFT = false;
     bootUebergabe();
     setTimeout(() => window.jarvis3d?.ignite?.(), 300); return;
   }
@@ -2181,6 +2185,13 @@ async function bootSequenz(erzwingen = false) {
   const statusP = Promise.race([api("/status").catch(() => ({})), new Promise((r) => setTimeout(() => r({}), 800))]);
   const stabP = Promise.race([api("/stab").catch(() => null), new Promise((r) => setTimeout(() => r(null), 900))]);
   const ein = await Promise.race([api("/einstellungen").catch(() => ({})), new Promise((r) => setTimeout(() => r({}), 600))]);
+  // Zuletzt gewählter Stil bestimmt die Sequenz: MOSAIK → Teppich liegt dunkel hinter der Sequenz und entfaltet sich beim Zünden
+  let gemerkt = ""; try { gemerkt = localStorage.getItem("jarvis-stil") || ""; } catch (e) {}
+  const mosaikStart = ["mosaik", "aura", "nova", "milo"].includes(ein.stil || gemerkt) || document.body.dataset.avatar === "mosaik";
+  if (mosaikStart) {
+    b.classList.add("mosaik"); document.body.classList.add("boot-mosaik");   // nur Teppich und Sequenz sichtbar
+    try { if (!AV.person) avatarSetzen("mosaik"); else AV.inst?.warten?.(); } catch (e) {}
+  }
   const vorlauf = ein.klang !== false ? await tonStarten(ton.a) : null;
   const st = await statusP;
   const sd = await stabP;                       // läuft parallel zu /status – verzögert den Start nicht spürbar
@@ -2190,7 +2201,7 @@ async function bootSequenz(erzwingen = false) {
   b.classList.add("los");
   uiLog(`Startsequenz läuft (Ton: ${vorlauf === null ? (ein.klang === false ? "aus" : "blockiert") : "ja"}, `
         + `Bewegung reduziert: ${matchMedia("(prefers-reduced-motion: reduce)").matches ? "ja" : "nein"})`);
-  const stopLeinwand = bootLeinwand(b.querySelector(".boot-cv"), t0, ZUEND);
+  const stopLeinwand = bootLeinwand(b.querySelector(".boot-cv"), t0, ZUEND, mosaikStart);
   // Stab meldet sich: Embleme der aktiven Agenten erscheinen auf einem Ring um den Kern und werden beim Laden hineingezogen
   const agK = sd && sd.aktiv ? (sd.agenten || []).filter((a) => a.aktiv !== false).map((a) => a.kuerzel) : [];
   if (agK.length) {
@@ -2249,16 +2260,17 @@ async function bootSequenz(erzwingen = false) {
     }, 45);
   });
   spaeter(7.4, () => b.classList.add("laden"));
+  if (mosaikStart) [[3.6, 0.1], [5.0, 0.2], [6.3, 0.3], [7.4, 0.42]].forEach(([s, x]) => spaeter(s, () => { try { AV.inst?.laden?.(x); } catch (e) {} }));
   spaeter(8.2, () => b.classList.add("beben"));
-  spaeter(ZUEND, () => { b.classList.add("zuend"); window.jarvis3d?.ignite?.(); });
-  spaeter(ZUEND + .25, () => b.classList.add("weg"));
+  spaeter(ZUEND, () => { b.classList.add("zuend"); window.jarvis3d?.ignite?.(); try { AV.inst?.zuenden?.(); } catch (e) {} });
+  spaeter(ZUEND + .25, () => { b.classList.add("weg"); document.body.classList.remove("boot-mosaik"); });
   spaeter(ZUEND + .7, () => bootUebergabe());          // Stimme setzt im Ausklingen des Zündens ein
   const fertig = (abbruch) => {
-    if (ende) return; ende = true; bootUebergabe();
+    if (ende) return; ende = true; bootUebergabe(); window.JARVIS_BOOT_LAEUFT = false; document.body.classList.remove("boot-mosaik");
     timer.forEach(clearTimeout); clearInterval(hexIv);
     if (abbruch) {
       try { ton.a.volume = 0; ton.a.pause(); } catch (e) {}
-      window.jarvis3d?.ignite?.(); b.classList.add("weg");
+      window.jarvis3d?.ignite?.(); try { AV.inst?.zuenden?.(); } catch (e) {} b.classList.add("weg");
     }
     setTimeout(() => { stopLeinwand(); b.remove(); }, abbruch ? 900 : 200);
   };
@@ -6062,16 +6074,16 @@ vbAufbauen = async function (...a) { await _vbAufbauenZN(...a); zuhauseEinstAufb
 
 
 // =====================================================================
-//  AVATARE AURA · NOVA · MILO – zusätzliche Stilwelten (STIL-Knopf). Darstellung „Porträt“ (lebendes Hologramm
-//  aus den Konzeptbildern) oder „3D-Figur“ (mitgelieferte three.js-Prototypen). Der Kern bleibt für alle anderen Stile.
+//  MOSAIK – frontales Gesicht aus blauen Kacheln als Stilwelt (STIL-Knopf oder „Zeig dich als MOSAIK“).
+//  Umrahmt vom JARVIS-Sechseck; Mund folgt Stimme und Lauten, Augen bleiben geschlossen. Der Kern bleibt für alle anderen Stile.
 // =====================================================================
-const AV = { person: null, inst: null, laden: null, modus: "portraet" };
+const AV = { person: null, inst: null, laden: null };
 const AV_ZUSTAND = { idle: "ruhe", listen: "zuhoeren", think: "denken", tool: "denken", speak: "sprechen", ask: "warnung",
   error: "warnung", off: "ruhe" };
 function avatarLib() {
   if (window.JarvisAvatar) return Promise.resolve();
-  if (!AV.laden) AV.laden = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "avatar3d.bundle.js?v=20261028b";
-    s.onload = res; s.onerror = () => { AV.laden = null; rej(new Error("Avatar-Modul fehlt")); }; document.head.appendChild(s); });
+  if (!AV.laden) AV.laden = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "mosaik.bundle.js?v=20261029g";
+    s.onload = res; s.onerror = () => { AV.laden = null; rej(new Error("Mosaik-Modul fehlt")); }; document.head.appendChild(s); });
   return AV.laden;
 }
 async function avatarSetzen(person) {
@@ -6085,74 +6097,65 @@ async function avatarSetzen(person) {
   try {
     await avatarLib();
     if (AV.person !== person) return;
-    AV.inst = window.JarvisAvatar.erzeugen(box, { person, modus: AV.modus, qualitaet: MOBIL ? "niedrig" : "hoch",
-      meldung: (i) => { if (AV.modus === "modell" && i && i.modell === false) toast(`Für ${person.toUpperCase()} gibt es noch kein 3D-Modell – Porträt wird gezeigt`); } });
+    AV.inst = window.JarvisAvatar.erzeugen(box, { qualitaet: window.MOSAIK_QUALITAET || (MOBIL ? "niedrig" : "hoch") });
     AV.inst.zustand(AV_ZUSTAND[coreState] || "ruhe");
+    if (window.JARVIS_BOOT_LAEUFT && document.querySelector(".boot")) AV.inst.warten?.();
     document.body.dataset.avatar = person;
   } catch (e) {
-    console.warn("Avatar", e); AV.person = null; delete document.body.dataset.avatar; box.remove();
-    toast("Avatar ließ sich nicht laden – der Kern bleibt aktiv");
+    console.warn("Mosaik", e); AV.person = null; delete document.body.dataset.avatar; box.remove();
+    toast("MOSAIK ließ sich nicht laden – der Kern bleibt aktiv");
   }
 }
 const _setStateAvatar = setState;
-setState = function (s) { _setStateAvatar(s); try { AV.inst?.zustand(AV_ZUSTAND[s] || "ruhe"); } catch (e) {} };
+setState = function (s) { _setStateAvatar(s); avZustand(); };
+// Stilles Mitlesen: Kommt eine Antwort nur als Text (ohne Stimme), bewegt MOSAIK trotzdem den Mund, als läse er sie vor
+const LESEN = { puffer: "", schlange: [], bis: 0, timer: null };
+const lesenAktiv = () => performance.now() < LESEN.bis;
+function avZustand() { try { AV.inst?.zustand(lesenAktiv() ? "sprechen" : (AV_ZUSTAND[coreState] || "ruhe")); } catch (e) {} }
+function lesenText(s) {
+  return String(s).replace(/```[\s\S]*?```/g, " ").replace(/https?:\/\/\S+/g, " ").replace(/[#*_`>|\[\]]/g, " ").replace(/\s+/g, " ").trim();
+}
+function lesenWeiter() {
+  clearTimeout(LESEN.timer);
+  const s = AV.inst && !play.running ? LESEN.schlange.shift() : null;
+  if (!s) { LESEN.schlange = AV.inst && !play.running ? LESEN.schlange : []; LESEN.bis = 0; avZustand(); return; }
+  const ms = Math.min(12000, Math.max(500, s.length * 62));          // etwa Sprechtempo (16 Zeichen je Sekunde)
+  LESEN.bis = performance.now() + ms;
+  try { AV.inst.zustand("sprechen"); AV.inst.text(s, ms, { stumm: true }); } catch (e) {}
+  LESEN.timer = setTimeout(lesenWeiter, ms + 120);
+}
+function lesenFuettern(text, final = false) {
+  if (!AV.inst || V.turnSpeak) return;
+  LESEN.puffer += text || "";
+  let m;
+  while ((m = LESEN.puffer.match(/^[\s\S]{12,}?[.!?:\n](\s|$)/))) { LESEN.schlange.push(lesenText(m[0])); LESEN.puffer = LESEN.puffer.slice(m[0].length); }
+  if (final && LESEN.puffer.trim()) { LESEN.schlange.push(lesenText(LESEN.puffer)); LESEN.puffer = ""; }
+  LESEN.schlange = LESEN.schlange.filter(Boolean);
+  if (!lesenAktiv() && LESEN.schlange.length) lesenWeiter();
+}
+const _handleLesen = handle;
+handle = function (ev) {
+  _handleLesen(ev);
+  try {
+    if (ev.type === "route") { LESEN.puffer = ""; }
+    else if (ev.type === "delta") lesenFuettern(ev.text);
+    else if (ev.type === "done" || ev.type === "error") lesenFuettern("", true);
+  } catch (e) {}
+};
 window.atlasCore.setState = setState;
 const _setLevelAvatar = window.atlasCore.setLevel;
 window.atlasCore.setLevel = (v) => { _setLevelAvatar(v); try { AV.inst?.pegel(v); } catch (e) {} };
-const AV_MODI = ["portraet", "modell", "figur"], AV_MODUSNAME = { portraet: "PORTRÄT", modell: "3D-MODELL", figur: "3D-FIGUR (PROTOTYP)" };
-function avatarModusKnopf() { const b = $("avatarmodus"); if (b) b.textContent = AV_MODUSNAME[AV.modus] || "PORTRÄT"; }
-$("avatarmodus")?.addEventListener("click", () => {
-  AV.modus = AV_MODI[(AV_MODI.indexOf(AV.modus) + 1) % AV_MODI.length]; avatarModusKnopf(); sfx?.("tick");
-  api("/einstellungen", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ avatar_modus: AV.modus }) }).catch(() => {});
-  if (AV.person) { const p = AV.person; AV.person = null; avatarSetzen(p); }
-});
 const _handleStil = handle;
 handle = function (ev) {
-  if (ev.type === "stil") {
-    if (["figur", "portraet", "modell"].includes(ev.avatar_modus)) { AV.modus = ev.avatar_modus; avatarModusKnopf(); if (AV.person) AV.person = null; }
-    setStil(ev.stil); sfx?.("ok"); return;
-  }
+  if (ev.type === "stil") { setStil(ev.stil); sfx?.("ok"); return; }
   _handleStil(ev);
 };
-
-// Avatar: Mund folgt dem gesprochenen Text, „dreh dich“, 3D-Modelle hochladen
+// Mund folgt dem gesprochenen Text (Laute), sobald die Stimme wirklich einsetzt
 const _ttsSayAvatar = ttsSay;
 ttsSay = function (text, opt = {}) {
   const mund = () => { try { AV.inst?.text?.(String(text || "")); } catch (e) {} };
-  if (opt.ab) return _ttsSayAvatar(text, { ...opt, beiStart: () => { opt.beiStart?.(); mund(); } });
-  mund(); return _ttsSayAvatar(text, opt);
+  return _ttsSayAvatar(text, { ...opt, beiStart: () => { opt.beiStart?.(); mund(); } });
 };
-const _handleAvatar = handle;
-handle = function (ev) {
-  if (ev.type === "avatar") { if (ev.aktion === "drehen") AV.inst?.drehen?.(+ev.grad || 360); return; }
-  _handleAvatar(ev);
-};
-async function avatarModelleAufbauen() {
-  const box = $("avatar-modelle"); if (!box) return;
-  let d = {}; try { d = await api("/avatar-modelle"); } catch (e) { return; }
-  box.innerHTML = ["aura", "nova", "milo"].map((p) => { const m = d[p] || {};
-    return `<div class="einst-zeile"><span>${p.toUpperCase()} · 3D-Modell <small class="im-einst-sub">${m.hoch ? `✓ ${m.hoch.mb} MB vom ${esc(m.hoch.datum)}` : "noch keins"}${m.lod1 ? ` · iPhone-Fassung ✓` : ""}</small></span>
-      <span class="avm-knoepfe"><button type="button" data-avm="${p}" data-lod="0">.GLB LADEN</button><button type="button" data-avm="${p}" data-lod="1" title="Leichtere Fassung fürs iPhone (_lod1)">IPHONE</button></span></div>`; }).join("")
-    + `<input type="file" accept=".glb,model/gltf-binary" hidden id="avatar-glb">`;
-}
-document.addEventListener("click", (e) => {
-  const b = e.target.closest("[data-avm]"); if (!b) return;
-  const inp = $("avatar-glb"); inp.dataset.p = b.dataset.avm; inp.dataset.lod = b.dataset.lod; inp.value = ""; inp.click();
-});
-document.addEventListener("change", async (e) => {
-  if (e.target.id !== "avatar-glb" || !e.target.files[0]) return;
-  const f = e.target.files[0], p = e.target.dataset.p, lod = e.target.dataset.lod;
-  toast(`Lade ${f.name} für ${p.toUpperCase()} …`);
-  try {
-    const r = await fetch(`/avatar-modell/${p}?lod=${lod}`, { method: "POST", body: f, headers: TOKEN ? { "x-atlas-token": TOKEN } : {} });
-    const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.status);
-    toast(`✓ ${p.toUpperCase()}: ${j.formen} Gesichtsformen${j.viseme ? `, ${j.viseme} Viseme` : ""}${j.kopf ? ", Kopfknochen" : ""}${j.clips.length ? `, ${j.clips.length} Clips` : ""}`);
-    avatarModelleAufbauen();
-    if (AV.person === p && AV.modus === "modell") { AV.person = null; avatarSetzen(p); }
-  } catch (err) { toast("Modell: " + err.message); }
-});
-const _einstOeffnenAvatar = window.einstellungenOeffnen;
-window.einstellungenOeffnen = function () { _einstOeffnenAvatar(); avatarModelleAufbauen(); };
 
 // =====================================================================
 //  PROJEKTE: Vorhaben über Wochen – Beobachtungen (Internetrecherche), Funde, verknüpfte Vorgänge und Fristen

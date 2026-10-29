@@ -184,16 +184,10 @@ class Core:
             {"dokument_id": _S("id aus <dokument id=…>")}, ["dokument_id"])
         self.tools["darstellung_waehlen"] = _Tool(
             "darstellung_waehlen",
-            "Darstellung/Stilwelt des Dashboards wechseln – auch die Avatare: „Zeig dich als NOVA“, „Wechsel zu AURA“, "
-            "„Zurück zum Kern“ (= holo). Avatar-Darstellung optional 'portraet' oder 'figur' (3D-Prototyp).",
-            "anzeige", lambda stil, avatar_modus="": (self.broadcast({"type": "stil", "stil": stil, "avatar_modus": avatar_modus}),
-                                                      {"stil": stil})[1],
-            {"stil": _S("Stilwelt", enum=["plexus", "holo", "organisch", "taktisch", "minimal", "aura", "nova", "milo"]),
-             "avatar_modus": _S("portraet, modell (echtes 3D-Modell) oder figur, optional", enum=["portraet", "modell", "figur"])}, ["stil"])
-        self.tools["avatar_drehen"] = _Tool(
-            "avatar_drehen", "Den Avatar sich einmal (oder um 'grad') um sich selbst drehen lassen – „Dreh dich mal“.",
-            "anzeige", lambda grad=360: (self.broadcast({"type": "avatar", "aktion": "drehen", "grad": grad}), {"ok": True})[1],
-            {"grad": {"type": "integer", "description": "Standard 360"}})
+            "Darstellung/Stilwelt des Dashboards wechseln – auch das Kachelgesicht: „Zeig dich als MOSAIK“, „Zeig dein Gesicht“, "
+            "„Zurück zum Kern“ (= holo).",
+            "anzeige", lambda stil: (self.broadcast({"type": "stil", "stil": stil}), {"stil": stil})[1],
+            {"stil": _S("Stilwelt", enum=["plexus", "holo", "organisch", "taktisch", "minimal", "mosaik"])}, ["stil"])
         self.tools["einfuehrung_starten"] = _Tool(
             "einfuehrung_starten",
             "Die geführte Einführung (Tutorial) im Dashboard starten – wenn der Nutzer sie sehen oder wiederholen will.",
@@ -1081,90 +1075,22 @@ async def tesla_bild(modell: str = "my", lack: str = "", _: None = Depends(auth)
     return Response(erg[0], media_type=erg[1], headers={"Cache-Control": "no-cache"})
 
 
-# ------------------------------------------------------------------ Avatare: echte 3D-Modelle (.glb) je Person
-AVATAR_PERSONEN = ("aura", "nova", "milo")
-AVATAR_MAX = {0: 15_000_000, 1: 8_000_000}
-
-
-def _avatar_datei(person: str, lod: int):
+# ------------------------------------------------------------------ Frühere Avatar-Modelle (.glb) aufräumen
+def alte_avatare_aufraeumen() -> None:
+    """Einmalig: hochgeladene 3D-Modelle der früheren Avatare (Aura, Nova, Milo) in den Papierkorb legen."""
+    import shutil
     from atlas.paths import private_dir
-    if person not in AVATAR_PERSONEN:
-        raise HTTPException(404, "Unbekannter Avatar")
     ordner = private_dir() / "avatare"
-    ordner.mkdir(parents=True, exist_ok=True)
-    return ordner / f"avatar_{person}{'_lod1' if lod else ''}.glb"
-
-
-def _glb_pruefen(daten: bytes, lod: int) -> dict:
-    """Kurzprüfung: GLB-Kopf, Version 2, Größe, JSON-Teil lesbar; zählt Formen, Knochen und Clips."""
-    import struct
-    if len(daten) < 20 or daten[:4] != b"glTF":
-        raise HTTPException(400, "Keine .glb-Datei (glTF binär)")
-    version, laenge = struct.unpack("<II", daten[4:12])
-    if version != 2 or laenge != len(daten):
-        raise HTTPException(400, "glTF-Version oder Dateilänge passt nicht")
-    if len(daten) > AVATAR_MAX[lod]:
-        raise HTTPException(400, f"Zu groß ({len(daten) // 1_000_000} MB, erlaubt {AVATAR_MAX[lod] // 1_000_000} MB)")
-    jl, jt = struct.unpack("<II", daten[12:20])
-    if jt != 0x4E4F534A:
-        raise HTTPException(400, "JSON-Teil fehlt")
+    if not ordner.is_dir():
+        return
+    korb = Path.home() / ".Trash"
+    ziel = korb / f"JARVIS-Avatare-{datetime.now():%Y%m%d-%H%M%S}"
     try:
-        j = json.loads(daten[20:20 + jl])
-    except ValueError:
-        raise HTTPException(400, "JSON-Teil beschädigt")
-    formen = set()
-    for m in j.get("meshes", []):
-        formen.update((m.get("extras") or {}).get("targetNames") or [])
-    knoten = {n.get("name") for n in j.get("nodes", []) if n.get("name")}
-    return {"formen": len(formen), "viseme": len([f for f in formen if f.startswith("viseme_")]),
-            "kopf": "Head" in knoten, "augen": {"LeftEye", "RightEye"} <= knoten,
-            "clips": sorted(a.get("name", "") for a in j.get("animations", [])),
-            "erweiterungen": j.get("extensionsRequired", [])}
-
-
-@app.get("/avatar-modelle")
-def avatar_modelle(_: None = Depends(auth)):
-    out = {}
-    for p in AVATAR_PERSONEN:
-        out[p] = {}
-        for lod in (0, 1):
-            f = _avatar_datei(p, lod)
-            if f.exists():
-                out[p]["lod1" if lod else "hoch"] = {"mb": round(f.stat().st_size / 1e6, 1),
-                                                     "datum": datetime.fromtimestamp(f.stat().st_mtime).strftime("%d.%m.%Y")}
-    return out
-
-
-@app.get("/avatar-modell/{person}")
-def avatar_modell(person: str, lod: int = 0, _: None = Depends(auth)):
-    f = _avatar_datei(person, lod)
-    if lod and not f.exists():
-        f = _avatar_datei(person, 0)                 # kein LOD1: das hohe Modell tut es auch
-    if not f.exists():
-        raise HTTPException(404, "Noch kein Modell")
-    return FileResponse(f, media_type="model/gltf-binary", headers={"cache-control": "no-cache"})
-
-
-@app.post("/avatar-modell/{person}")
-async def avatar_modell_hochladen(person: str, request: Request, lod: int = 0, _: None = Depends(auth)):
-    daten = await request.body()
-    info = _glb_pruefen(daten, 1 if lod else 0)
-    f = _avatar_datei(person, lod)
-    if f.exists():                                   # vorige Fassung aufheben statt löschen
-        f.replace(f.with_suffix(".vorher.glb"))
-    tmp = f.with_suffix(".tmp")
-    tmp.write_bytes(daten)
-    tmp.replace(f)
-    get_core().audit.log("avatar_modell", person=person, lod=lod, mb=round(len(daten) / 1e6, 1))
-    return {"ok": True, **info}
-
-
-@app.delete("/avatar-modell/{person}")
-def avatar_modell_entfernen(person: str, lod: int = 0, _: None = Depends(auth)):
-    f = _avatar_datei(person, lod)
-    if f.exists():
-        f.replace(f.with_suffix(".entfernt.glb"))
-    return {"ok": True}
+        if korb.is_dir():
+            shutil.move(str(ordner), str(ziel))
+            get_core().audit.log("avatare_entfernt", ziel=str(ziel))
+    except OSError as e:
+        get_core().audit.log("fehler", bereich="avatare", text=str(e)[:200])
 
 
 @app.post("/tesla/bild")
@@ -2398,6 +2324,7 @@ def run():
         ("Zielregister", lambda: c.ziele.start(c.proaktiv.stop)),
         ("Zuhause", lambda: c.zuhause.start(c.proaktiv.stop)),
         ("Projektbeobachtung", lambda: c.projekte.start(c.proaktiv.stop)),
+        ("Alte Avatar-Modelle aufräumen", alte_avatare_aufraeumen),
         ("AEGIS Sicherheitsaudit", lambda: c.sicherheitsaudit.start(c.proaktiv.stop)),
         ("Timer", c.timer.start),
         ("Musik", c.musik.start),
