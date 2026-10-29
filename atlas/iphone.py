@@ -8,6 +8,7 @@ B · Siri: Kurzbefehl „Frag Jarvis“ (diktieren → /frage → vorlesen), sig
     jarvis iphone   richtet beides ein und zeigt den QR-Code.
 """
 import json
+import os
 import plistlib
 import shutil
 import subprocess
@@ -19,8 +20,29 @@ from atlas.paths import LOCAL_DIR, PORT
 
 ZUSTAND = LOCAL_DIR / "iphone.json"
 KURZBEFEHL = LOCAL_DIR / "Frag Jarvis.shortcut"
-TAILSCALE = ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/opt/homebrew/bin/tailscale",
-             "/usr/local/bin/tailscale"]
+# Eigenständige Befehlszeile zuerst, die Mac-App als letzte Wahl
+TAILSCALE = ["/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale", "tailscale",
+             "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]
+# Die Mac-App von Tailscale arbeitet nur dann als Befehlszeile, wenn sie nicht glaubt, als App gestartet worden zu sein.
+# Im Hintergrunddienst (launchd) fehlt TERM und es hängen App-Variablen an – dann meldet sie
+# „The Tailscale GUI failed to start … CLIError error 3“ (und beendet sich trotzdem mit 0).
+GUI_FEHLER = "GUI failed to start"
+APP_VARIABLEN = ("__CFBundleIdentifier", "XPC_SERVICE_NAME", "XPC_FLAGS")
+GUI_HINWEIS = ("Tailscale antwortet nicht als Befehlszeile. Bitte: 1) Tailscale-App öffnen und angemeldet sein "
+               "(Symbol in der Menüleiste, „Connected“). 2) In der Tailscale-App unter Settings „Install CLI“ "
+               "(bzw. „CLI integration“) wählen. 3) JARVIS neu starten (jarvis dienst neustart).")
+
+
+def _umgebung() -> dict:
+    env = {k: v for k, v in os.environ.items() if k not in APP_VARIABLEN}
+    if not env.get("TERM"):
+        env["TERM"] = "dumb"
+    pfad = env.get("PATH", "")
+    for d in ("/usr/local/bin", "/opt/homebrew/bin"):
+        if d not in pfad.split(":"):
+            pfad = f"{pfad}:{d}" if pfad else d
+    env["PATH"] = pfad
+    return env
 
 
 def tailscale() -> str | None:
@@ -37,8 +59,11 @@ def _ts(*args, timeout: int = 15) -> tuple[int, str]:
     if not ts:
         return 127, "Tailscale fehlt"
     try:
-        r = subprocess.run([ts, *args], capture_output=True, text=True, timeout=timeout)
-        return r.returncode, ((r.stdout or "") + (r.stderr or "")).strip()
+        r = subprocess.run([ts, *args], capture_output=True, text=True, timeout=timeout, env=_umgebung())
+        aus = ((r.stdout or "") + (r.stderr or "")).strip()
+        if GUI_FEHLER in aus:                     # trotz Rückgabe 0 kein Ergebnis
+            return 125, f"{aus}\n{GUI_HINWEIS}"
+        return r.returncode, aus
     except subprocess.TimeoutExpired as e:      # z. B. „Serve is not enabled … visit https://…“ – wartet auf Freigabe
         aus = e.stdout or b""
         aus = aus.decode(errors="ignore") if isinstance(aus, bytes) else aus
@@ -59,7 +84,8 @@ def tailscale_status() -> dict:
     except ValueError:
         j = {}
     if not j:
-        return {"installiert": True, "laeuft": False, "pfad": ts, "fehler": aus[:300]}
+        return {"installiert": True, "laeuft": False, "pfad": ts, "fehler": aus[:600],
+                **({"hinweis": GUI_HINWEIS} if code == 125 else {})}
     selbst = j.get("Self") or {}
     name = (selbst.get("DNSName") or "").rstrip(".")
     return {"installiert": True, "pfad": ts, "laeuft": j.get("BackendState") == "Running",

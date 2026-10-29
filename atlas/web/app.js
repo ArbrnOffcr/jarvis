@@ -855,9 +855,9 @@ function ohnePfade(s) {
     .replace(/\(\s*\)/g, "").replace(/\s+([.,;])/g, "$1").replace(/\s{2,}/g, " ");
 }
 // Gestreamte Stimme: der Kern liefert rohes PCM (24 kHz) – abgespielt wird ab dem ersten Stück
-function ttsSay(text) {
+function ttsSay(text, opt = {}) {
   const t = ohnePfade(text).trim(); if (!t || t.length < 2) return;
-  const job = { chunks: [], done: false, wake: null, ctrl: new AbortController(), rate: 24000, aus: false };
+  const job = { chunks: [], done: false, wake: null, ctrl: new AbortController(), rate: 24000, aus: false, ab: opt.ab || null };
   const weck = () => { const w = job.wake; job.wake = null; if (w) w(); };
   fetch("/tts/stream", { method: "POST", signal: job.ctrl.signal,
     headers: { "content-type": "application/json", ...(TOKEN ? { "x-atlas-token": TOKEN } : {}) },
@@ -884,6 +884,7 @@ function ttsSay(text) {
         job.chunks.push(f); weck();
       }
     }).catch(() => {}).finally(() => { job.done = true; weck(); });
+  if (opt.beiStart) job.beiStart = opt.beiStart;
   play.queue.push(job);
   if (!play.running) ttsRun();
 }
@@ -893,6 +894,10 @@ async function ttsRun() {
   while (play.queue.length) {
     const job = play.queue[0];
     if (job.szene) { play.queue.shift(); try { window.vortragSzene?.(job.szene); } catch (e) {} continue; }   // Abschnittsmarke
+    if (job.ab) {                       // vorgeladen, Einsatz erst zum Übergabezeitpunkt (höchstens 12 s warten)
+      await Promise.race([job.ab, new Promise((r) => setTimeout(r, 12000))]);
+      job.ab = null; if (job.beiStart) try { job.beiStart(); } catch (e) {}
+    }
     let t = 0, laeuft = false, puffer = [];
     const spiele = (f) => {
       const b = play.ctx.createBuffer(1, f.length, job.rate); b.copyToChannel(f, 0);
@@ -2124,8 +2129,13 @@ function bootLeinwand(cv, t0, ZUEND) {
 function uiLog(text) {
   api("/ui-log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) }).catch(() => {});
 }
+// Übergabe an die Begrüßung: Die Stimme setzt ein, während das Aufflammen des Kerns noch ausklingt und die
+// Startsequenz ausblendet – nicht erst, wenn alles zur Ruhe gekommen ist (sonst: Ruhe → plötzlicher Sprung ins Sprechen).
+let bootUebergabe = () => {};
+window.JARVIS_BOOT_UEBERGABE = new Promise((r) => { bootUebergabe = r; });
 async function bootSequenz(erzwingen = false) {
   if (document.querySelector(".boot")) return;
+  if (erzwingen) window.JARVIS_BOOT_UEBERGABE = new Promise((r) => { bootUebergabe = r; });
   let nachUpdate = false;
   try {
     nachUpdate = sessionStorage.getItem("jarvis-nach-update") === "1"; sessionStorage.removeItem("jarvis-nach-update");
@@ -2136,6 +2146,7 @@ async function bootSequenz(erzwingen = false) {
   } catch (e) {}
   if (!erzwingen && (!bootAn() || nachUpdate)) {
     uiLog(`Startsequenz übersprungen (${!bootAn() ? "abgeschaltet" : "nach Update"})`);
+    bootUebergabe();
     setTimeout(() => window.jarvis3d?.ignite?.(), 300); return;
   }
   const DAUER = 9.8, ZUEND = 8.4;
@@ -2241,8 +2252,9 @@ async function bootSequenz(erzwingen = false) {
   spaeter(8.2, () => b.classList.add("beben"));
   spaeter(ZUEND, () => { b.classList.add("zuend"); window.jarvis3d?.ignite?.(); });
   spaeter(ZUEND + .25, () => b.classList.add("weg"));
+  spaeter(ZUEND + .7, () => bootUebergabe());          // Stimme setzt im Ausklingen des Zündens ein
   const fertig = (abbruch) => {
-    if (ende) return; ende = true;
+    if (ende) return; ende = true; bootUebergabe();
     timer.forEach(clearTimeout); clearInterval(hexIv);
     if (abbruch) {
       try { ton.a.volume = 0; ton.a.pause(); } catch (e) {}
@@ -2767,8 +2779,11 @@ async function iphoneBereich() {
       try { const d = await api("/iphone/diagnose"); const t = d.tailscale || {};
         box.innerHTML = `<b>Tailscale:</b> ${t.installiert ? "installiert" : "nicht gefunden"}${t.version ? " · " + esc(t.version.split("-")[0]) : ""}<br>
           <b>Verbunden:</b> ${t.laeuft ? "ja" : "nein"} ${t.zustand ? "(" + esc(t.zustand) + ")" : ""}<br>
-          <b>Name im Tailnet:</b> ${esc(t.dns || "– (MagicDNS aus?)")}<br><b>HTTPS-Zertifikate:</b> ${t.zertifikate ? "an" : "aus / unbekannt"}<br>
-          ${t.fehler ? `<b>Meldung:</b> ${esc(t.fehler)}<br>` : ""}${d.serve ? `<b>Freigabe:</b> ${esc(d.serve)}` : ""}`;
+          ${t.fehler && !t.zustand ? `<b>Name im Tailnet / Zertifikate:</b> unbekannt – Tailscale hat nicht geantwortet<br>`
+            : `<b>Name im Tailnet:</b> ${esc(t.dns || "– (MagicDNS aus?)")}<br><b>HTTPS-Zertifikate:</b> ${t.zertifikate ? "an" : "aus / unbekannt"}<br>`}
+          ${t.pfad ? `<b>Befehl:</b> <code>${esc(t.pfad)}</code><br>` : ""}
+          ${t.fehler ? `<b>Meldung:</b> ${esc(t.fehler.split("\n")[0])}<br>` : ""}${t.hinweis ? `<b>So beheben:</b> ${esc(t.hinweis)}<br>` : ""}
+          ${d.serve && !t.hinweis ? `<b>Freigabe:</b> ${esc(d.serve)}` : ""}`;
       } catch (e) { box.textContent = "✕ " + e.message; }
     });
     return;
@@ -3544,14 +3559,15 @@ handle = function (ev) {
   if (GRUSS_FERTIG || ev.briefing) { GRUSS_FERTIG = true; return; }     // nur einmal je Start, nicht bei Neuverbindung
   GRUSS_FERTIG = true;
   if (window.JARVIS_NACH_UPDATE || V.out === "aus") return;
-  const sagen = (n = 0) => {
-    if (document.querySelector(".boot") && n < 60) { setTimeout(() => sagen(n + 1), 400); return; }   // nach der Startsequenz
+  // Stimme sofort vorladen; sie setzt ein, wenn die Startsequenz übergibt (Ende des Zündens) – ohne Pause dazwischen
+  const sagen = () => {
     try { unlockAudio(); } catch (e) { return; }
-    const los = () => { V.turnLang = "de"; V.privat = false; ttsSay(ev.text); };
+    const ab = document.querySelector(".boot") ? window.JARVIS_BOOT_UEBERGABE : null;
+    const los = () => { V.turnLang = "de"; V.privat = false; ttsSay(ev.text, { ab }); };
     if (play.ctx.state === "running") los();
     else play.ctx.resume().then(() => { if (play.ctx.state === "running") los(); }).catch(() => {});
   };
-  setTimeout(sagen, 700);
+  setTimeout(sagen, document.querySelector(".boot") ? 0 : 700);
 };
 
 // =====================================================================
@@ -6101,7 +6117,11 @@ handle = function (ev) {
 
 // Avatar: Mund folgt dem gesprochenen Text, „dreh dich“, 3D-Modelle hochladen
 const _ttsSayAvatar = ttsSay;
-ttsSay = function (text, ...rest) { try { AV.inst?.text?.(String(text || "")); } catch (e) {} return _ttsSayAvatar(text, ...rest); };
+ttsSay = function (text, opt = {}) {
+  const mund = () => { try { AV.inst?.text?.(String(text || "")); } catch (e) {} };
+  if (opt.ab) return _ttsSayAvatar(text, { ...opt, beiStart: () => { opt.beiStart?.(); mund(); } });
+  mund(); return _ttsSayAvatar(text, opt);
+};
 const _handleAvatar = handle;
 handle = function (ev) {
   if (ev.type === "avatar") { if (ev.aktion === "drehen") AV.inst?.drehen?.(+ev.grad || 360); return; }

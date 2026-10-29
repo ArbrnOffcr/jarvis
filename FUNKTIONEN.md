@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 29.10.2026 · Version 0.22.2
+Stand: 29.10.2026 · Version 0.22.4
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -17,6 +17,7 @@ Bedeutung der Zeichen:
 |---|---|---|
 | Text-Chat im Dashboard und im Terminal (`jarvis`) | ✅ | |
 | Start ohne Text: JARVIS begrüßt nur gesprochen („Guten Morgen/Tag/Abend, Sir“) und wartet; einmal am Tag kommt stattdessen das Tagesupdate mit Text | ✅ | Begrüßung entfällt, wenn die Stimme auf AUS steht |
+| Nahtloser Übergang: die Begrüßung wird während der Startsequenz vorgeladen und setzt ein, während das Zünden des Kerns ausklingt – keine Ruhepause mit anschließendem Sprung ins Sprechen | ✅ | |
 | Spracheingabe per Leertaste (gedrückt halten) | ✅ | Erkennung lokal mit Whisper, nichts geht ins Netz |
 | Weckwort „Hey Jarvis“ | ⚙️ | Knopf WECKWORT; lauscht lokal |
 | Gesprächsmodus: nach jeder Antwort 6 s weiter zuhören | ✅ | Knopf GESPRÄCH: AN / OHNE STOPP / AUS |
@@ -31,7 +32,7 @@ Bedeutung der Zeichen:
 | Dokumente per Drag & Drop in den Chat | ✅ | Vor dem Lesen durch Claude wird immer gefragt |
 | Fotos/Scans vom iPhone („Ablage → Dokument/Kontakt vom iPhone“) | ✅ | Continuity Camera |
 | Unterwegs per Telegram-Bot (Text, Fotos, PDFs, Briefing) | ⚙️ | ⚙ Einstellungen → Verbindungen → Telegram |
-| iPhone-Web-App auf dem Home-Bildschirm (Sprechen, Untertitel, Karte, Player) | ⚙️ | Tailscale auf Mac und iPhone, dann ⚙ Einstellungen → iPhone → IPHONE VERBINDEN; „VERBINDUNG PRÜFEN“ zeigt, woran es hakt (Anmeldung, MagicDNS, HTTPS, Serve-Freigabe) |
+| iPhone-Web-App auf dem Home-Bildschirm (Sprechen, Untertitel, Karte, Player) | ⚙️ | Tailscale auf Mac und iPhone, dann ⚙ Einstellungen → iPhone → IPHONE VERBINDEN; „VERBINDUNG PRÜFEN“ zeigt, woran es hakt (Anmeldung, MagicDNS, HTTPS, Serve-Freigabe) und wie es zu beheben ist; Tailscale-Befehle funktionieren auch aus dem Hintergrunddienst (Mac-App von Tailscale) |
 | Siri: „Hey Siri, frag Jarvis“ – Antwort wird vorgelesen | ⚙️ | Kurzbefehl aus ⚙ Einstellungen → iPhone; Bestätigungspflichtiges nur am Mac |
 | Schnellknöpfe: TAGESLAGE, POSTEINGANG, WOCHE PLANEN, FRISTEN, VERGESSEN? | ✅ | |
 | Telefonnotiz per ⌥⌘N | ✅ | Aufnahme → Zusammenfassung → Aufgaben |
