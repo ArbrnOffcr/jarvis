@@ -12,8 +12,16 @@ Prüft wöchentlich und auf Zuruf, rein lokal:
 - Selbsttest: Erkennung eingeschleuster Anweisungen und die Sicherheitstests (tests/)
 
 Ergebnis: Bericht mit Ampel und Befunden (kritisch/hoch/mittel/niedrig/ok/info), Empfehlung je Befund.
-Behebungen (chmod, abgelaufene Befugnis entziehen) nur nach Bestätigung. Kein Befund verlässt den Mac; der Bericht
-enthält Fundstellen nur maskiert.
+
+Behebung – jeder Befund bekommt einen Weg:
+- „klick“: JARVIS behebt selbst nach Bestätigung (Dateirechte, abgelaufene Befugnis, gelockerte Rechte zurücksetzen,
+  Python-Paket aktualisieren mit Testlauf und Rücksprung, .gitignore) und prüft danach sofort nach
+- „anleitung“: Schritte, Knopf für die passende Systemeinstellung, Befehl zum Kopieren, danach „Nachprüfen“
+- „claude“: Code-Änderung nötig → AEGIS schreibt einen Claude-Auftrag (Markdown, Fundstellen maskiert) nach
+  <Repo>/.aegis/AUFTRAG_aktuell.md (nicht versioniert). Weiter mit Claude Code im Terminal (falls installiert,
+  jede Änderung bestätigst du dort) oder in Claude/Cowork mit verbundenem atlas-Ordner.
+Bewusst hingenommene Befunde lassen sich mit Grund „akzeptieren“ (90 Tage, zählen nicht zur Ampel).
+Kein Befund verlässt den Mac ohne dein Zutun; der Bericht enthält Fundstellen nur maskiert.
 """
 import glob
 import importlib.metadata as md
@@ -21,6 +29,8 @@ import json
 import os
 import re
 import secrets
+import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -29,7 +39,7 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from atlas.paths import LOCAL_DIR, PORT, REPO_DIR, read_private_json, write_private_json
+from atlas.paths import LOCAL_DIR, PORT, REPO_DIR, private_dir, read_private_json, write_private_json
 from atlas.tools import S, Tool, ToolError
 
 DATEI = "sicherheitsaudit.json"
@@ -38,6 +48,76 @@ GEWICHT = {s: i for i, s in enumerate(STUFEN)}
 INTERVALL_TAGE = 7
 MAX_BERICHTE = 12
 OSV = "https://api.osv.dev/v1/querybatch"
+AUSNAHME_TAGE = 90
+AUFTRAG_ORDNER = ".aegis"
+WEGE = ("klick", "anleitung", "claude")
+# Systemeinstellungen, die das Dashboard öffnen darf (nur diese – kein freier URL-Aufruf)
+EINSTELLUNGEN = {
+    "filevault": "x-apple.systempreferences:com.apple.preference.security?FileVault",
+    "firewall": "x-apple.systempreferences:com.apple.preference.security?Firewall",
+    "sicherheit": "x-apple.systempreferences:com.apple.preference.security?General",
+    "updates": "x-apple.systempreferences:com.apple.preferences.softwareupdate",
+    "timemachine": "x-apple.systempreferences:com.apple.prefs.backup",
+    "teilen": "x-apple.systempreferences:com.apple.preferences.sharing",
+}
+CLAUDE_CLI = ["claude", "~/.claude/local/claude", "~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+              "~/.npm-global/bin/claude"]
+SCHLUESSEL_ERNEUERN = ["Schlüssel beim Anbieter widerrufen und neu erzeugen (er gilt als offengelegt)",
+                       "Neuen Schlüssel unter ⚙ Einstellungen → Konten & Schlüssel eintragen (landet im Schlüsselbund)"]
+# (Bereich, Titel-Muster) → Weg, Schritte, Systemeinstellung, Befehl
+REGELN = [
+    ("macOS", r"FileVault", "anleitung", ["Systemeinstellungen → Datenschutz & Sicherheit → FileVault → Einschalten",
+                                          "Wiederherstellungsschlüssel ausdrucken und zu den Notfallunterlagen legen (nicht nur in iCloud)",
+                                          "Mac am Strom lassen, bis die Verschlüsselung fertig ist"], "filevault", ""),
+    ("macOS", r"Firewall", "anleitung", ["Systemeinstellungen → Netzwerk → Firewall → Einschalten"], "firewall",
+     "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on"),
+    ("macOS", r"SIP", "anleitung", ["Mac ausschalten, Ein-Taste halten bis „Startoptionen“ → Optionen → Dienstprogramme → Terminal",
+                                     "csrutil enable eingeben und neu starten"], "", "csrutil enable"),
+    ("macOS", r"Gatekeeper", "anleitung", ["Terminal öffnen, Befehl ausführen, Passwort eingeben"], "sicherheit",
+     "sudo spctl --master-enable"),
+    ("macOS", r"[Uu]pdates", "anleitung", ["Systemeinstellungen → Allgemein → Softwareupdate → Automatische Updates → alles einschalten"],
+     "updates", ""),
+    ("macOS", r"Time-Machine", "anleitung", ["Sicherungsplatte anschließen oder Time Machine einrichten",
+                                              "„Jetzt sichern“ wählen"], "timemachine", "tmutil startbackup"),
+    ("Netz", r"JARVIS-Kern", "claude", [], "", ""),
+    ("Netz", r"Funnel", "anleitung", ["Funnel abschalten – das iPhone braucht nur Serve im eigenen Tailnet",
+                                       "Danach in JARVIS ⚙ iPhone → Verbindung prüfen"], "", "tailscale funnel --https=443 off"),
+    ("Netz", r"\(Port \d+\)", "anleitung", ["Systemeinstellungen → Allgemein → Teilen → Dienst ausschalten, falls nicht gebraucht"],
+     "teilen", ""),
+    ("Netz", r"weitere Dienste", "anleitung", ["Prozessnamen prüfen; unbekannte Programme beenden oder deinstallieren",
+                                                "Firewall eingeschaltet lassen – sie schirmt eingehende Verbindungen ab"], "firewall", ""),
+    ("Geheimnisse", r"Code|Historie|versioniert", "claude", SCHLUESSEL_ERNEUERN, "", ""),
+    ("Geheimnisse", r" in .+\.(ya?ml|json)$", "anleitung",
+     SCHLUESSEL_ERNEUERN[1:] + ["Die Zeile mit dem Schlüssel aus der genannten Datei in ~/.atlas löschen"], "", ""),
+    ("Geheimnisse", r"Dashboard-Token", "anleitung", ["Datei ~/.atlas/token löschen und JARVIS neu starten (erzeugt 43 Zeichen)",
+                                                       "iPhone und weitere Geräte unter ⚙ iPhone neu verbinden"], "", "rm ~/.atlas/token"),
+    ("Befugnisse", r"unbefristet", "anleitung", ["⚙ Einstellungen → Autopilot → Befugnis → Ablaufdatum oder Wochenlimit setzen"], "", ""),
+    ("Abhängigkeiten", r".", "claude", [], "", ""),
+    ("Selbsttest", r".", "claude", [], "", ""),
+    ("Protokoll", r".", "anleitung", ["Rechenschaft öffnen („Was hast du heute gemacht?“) und die Quelle der Vorfälle prüfen",
+                                      "Wiederholte Absender im Mailprogramm sperren; bei Notfall-Fehlversuchen den Code erneuern"], "", ""),
+    ("Rechte", r"ohne Rückfrage", "anleitung", ["In ATLAS-Privat/config.yaml unter permissions die Aktion auf MELDEN oder BESTAETIGEN setzen"],
+     "", ""),
+]
+
+
+def wege(b: dict) -> dict:
+    """Behebungsweg für einen Befund festlegen (klick / anleitung / claude)."""
+    if b["stufe"] in ("ok", "info"):
+        return b
+    if b.get("fix"):
+        b.setdefault("weg", "klick")
+    for bereich, muster, weg, schritte, einst, befehl in REGELN:
+        if b["bereich"] == bereich and re.search(muster, b["titel"]):
+            b.setdefault("weg", weg)
+            b.setdefault("schritte", schritte)
+            if einst:
+                b.setdefault("einstellung", einst)
+            if befehl:
+                b.setdefault("befehl", befehl)
+            break
+    b.setdefault("weg", "anleitung")
+    return b
 
 GEHEIMNIS_MUSTER = [
     (re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"), "Anthropic-API-Schlüssel"),
@@ -82,7 +162,7 @@ def befund(bereich: str, titel: str, stufe: str, detail: str = "", empfehlung: s
 
 
 def ampel(befunde: list[dict]) -> str:
-    st = {b["stufe"] for b in befunde}
+    st = {b["stufe"] for b in befunde if not b.get("akzeptiert") and not b.get("behoben")}
     if st & {"kritisch", "hoch"}:
         return "rot"
     if "mittel" in st:
@@ -147,7 +227,7 @@ class Sicherheitsaudit:
                 stufe = "kritisch" if std == Level.VERBOTEN else ("hoch" if std == Level.BESTAETIGEN else "mittel")
                 out.append(befund("Rechte", f"„{aktion}“ gelockert", stufe,
                                   f"Grundeinstellung {std.name}, eingestellt {ist.name} (config.yaml → permissions).",
-                                  f"Zurück auf {std.name} setzen, falls nicht bewusst so gewollt."))
+                                  f"Zurück auf {std.name} setzen, falls nicht bewusst so gewollt.", fix=f"policy:{aktion}"))
         for aktion, ist in gate.policy.items():
             if aktion not in DEFAULT_POLICY and ist == Level.FREI and re.search(r"senden|loeschen|steuern|zahl", aktion):
                 out.append(befund("Rechte", f"„{aktion}“ ohne Rückfrage", "mittel",
@@ -405,7 +485,7 @@ class Sicherheitsaudit:
             out.append(befund("Abhängigkeiten", f"{n} {v}: {len(vulns)} bekannte Schwachstelle(n)",
                               "hoch" if haupt else "mittel", ", ".join(vulns[:6]),
                               f"Aktualisieren ({'npm-Bundle neu bauen' if e == 'npm' else f'pip install -U {n}'}) und "
-                              "Sicherheitstests laufen lassen."))
+                              "Sicherheitstests laufen lassen.", fix=f"pip:{n}" if e == "PyPI" else ""))
         if not out:
             out.append(befund("Abhängigkeiten", f"{len(pakete)} Pakete ohne bekannte Schwachstellen", "ok"))
         return out
@@ -505,7 +585,8 @@ class Sicherheitsaudit:
                 except Exception as e:
                     befunde.append(befund(name[2:].capitalize(), "Prüfung abgebrochen", "info", f"{type(e).__name__}: {e}"[:200]))
             befunde.sort(key=lambda b: (GEWICHT.get(b["stufe"], 9), b["bereich"]))
-            zaehlung = {s: sum(1 for b in befunde if b["stufe"] == s) for s in STUFEN}
+            self._einordnen(befunde)
+            zaehlung = self._zaehlen(befunde)
             vorher = self._z()["berichte"]
             alt_ids = {b["id"] for b in (vorher[-1]["befunde"] if vorher else [])}
             for b in befunde:
@@ -526,7 +607,7 @@ class Sicherheitsaudit:
             self.c.broadcast({"type": "sicherheit", "phase": "fertig"})
 
     def _melden(self, b: dict) -> None:
-        neu_ernst = [x for x in b["befunde"] if x["neu"] and x["stufe"] in ("kritisch", "hoch")]
+        neu_ernst = [x for x in b["befunde"] if x["neu"] and x["stufe"] in ("kritisch", "hoch") and not x.get("akzeptiert")]
         z = b["zaehlung"]
         text = (f"AEGIS: Sicherheitsaudit – Ampel {b['ampel'].upper()} ({z['kritisch']} kritisch, {z['hoch']} hoch, "
                 f"{z['mittel']} mittel).")
@@ -540,6 +621,7 @@ class Sicherheitsaudit:
 
     # ------------------------------------------------------------------ Behebung (nur nach Bestätigung)
     def beheben(self, fix: str) -> dict:
+        hinweis = ""
         b = self.bericht()
         erlaubt = {x["fix"] for x in b.get("befunde", []) if x.get("fix")}
         if fix not in erlaubt:
@@ -553,14 +635,15 @@ class Sicherheitsaudit:
         elif fix.startswith("befugnis:"):
             self.c.befugnisse.entziehen(wer=fix.split(":", 1)[1])
         elif fix == "gitignore":
-            p = REPO_DIR / ".gitignore"
-            alt = p.read_text(encoding="utf-8") if p.exists() else ""
-            zusatz = [m for m in ("*.pem", ".env") if m not in alt]
-            p.write_text(alt.rstrip("\n") + "\n# Schlüsseldateien nie versionieren (AEGIS)\n" + "\n".join(zusatz) + "\n",
-                         encoding="utf-8")
+            self._gitignore(["*.pem", ".env"])
+        elif fix.startswith("policy:"):
+            hinweis = self._policy_zurueck(fix.split(":", 1)[1])
+        elif fix.startswith("pip:"):
+            hinweis = self._pip_update(fix.split(":", 1)[1])
         else:
             raise ToolError("Unbekannte Behebung.")
         self.c.audit.log("sicherheitsaudit_behebung", fix=fix)
+        bereich = next((x["bereich"] for x in b.get("befunde", []) if x.get("fix") == fix), "")
         with self.lock:
             z = self._z()
             if z["berichte"]:
@@ -568,7 +651,235 @@ class Sicherheitsaudit:
                     if x.get("fix") == fix:
                         x["behoben"] = datetime.now().isoformat(timespec="minutes")
                 write_private_json(DATEI, z)
-        return {"ok": True, "behoben": fix}
+        nach = self.nachpruefen(bereich) if bereich and not fix.startswith("pip:") else {}
+        return {"ok": True, "behoben": fix, "hinweis": hinweis or "Behoben und nachgeprüft.",
+                **({"ampel": nach.get("ampel")} if nach else {})}
+
+    def _gitignore(self, muster: list[str]) -> None:
+        p = REPO_DIR / ".gitignore"
+        alt = p.read_text(encoding="utf-8") if p.exists() else ""
+        zeilen = {z.strip() for z in alt.splitlines()}
+        zusatz = [m for m in muster if m not in zeilen]
+        if zusatz:
+            p.write_text(alt.rstrip("\n") + "\n# nie versionieren (AEGIS)\n" + "\n".join(zusatz) + "\n", encoding="utf-8")
+
+    def _policy_zurueck(self, aktion: str) -> str:
+        """Gelockerte Aktion aus config.yaml entfernen → es gilt wieder die sichere Grundeinstellung."""
+        from atlas.permissions import DEFAULT_POLICY
+        if aktion not in DEFAULT_POLICY:
+            raise ToolError("Unbekannte Aktion.")
+        p = private_dir() / "config.yaml"
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        neu = re.sub(rf"(?m)^[ \t]+[\"']?{re.escape(aktion)}[\"']?[ \t]*:[^\n]*\n?", "", text)
+        if neu != text:
+            (p.with_suffix(".yaml.vor-aegis")).write_text(text, encoding="utf-8")
+            p.write_text(neu, encoding="utf-8")
+        self.c.gate.policy[aktion] = DEFAULT_POLICY[aktion]       # wirkt sofort, ohne Neustart
+        return f"„{aktion}“ steht wieder auf {DEFAULT_POLICY[aktion].name} (Sicherung: config.yaml.vor-aegis)."
+
+    def _pip_update(self, name: str) -> str:
+        """Paket aktualisieren, Sicherheitstests laufen lassen; bei Fehlern zurück auf die alte Version."""
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,80}", name):
+            raise ToolError("Ungültiger Paketname.")
+        try:
+            alt = md.version(name)
+        except md.PackageNotFoundError:
+            raise ToolError("Paket ist nicht installiert.")
+        pip = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "-q"]
+        rc, aus = _lauf(pip + ["-U", name], 300)
+        if rc != 0:
+            raise ToolError(f"Aktualisierung fehlgeschlagen: {aus[-200:]}")
+        rc, aus = self._tests()
+        if rc != 0:
+            _lauf(pip + [f"{name}=={alt}"], 300)
+            raise ToolError(f"Nach dem Update schlugen die Sicherheitstests fehl – zurück auf {name} {alt}.")
+        try:
+            neu = md.version(name)
+        except md.PackageNotFoundError:
+            neu = "?"
+        return f"{name} {alt} → {neu}, Sicherheitstests grün. Wirkt nach dem nächsten Neustart von JARVIS."
+
+    # ------------------------------------------------------------------ Einordnen, Ausnahmen, Nachprüfen
+    def _einordnen(self, befunde: list[dict]) -> None:
+        ausn = self._z().get("ausnahmen", {})
+        heute = date.today().isoformat()
+        for b in befunde:
+            wege(b)
+            a = ausn.get(b["id"])
+            if a and a.get("bis", "") >= heute and b["stufe"] not in ("ok", "info"):
+                b["akzeptiert"] = a
+
+    @staticmethod
+    def _zaehlen(befunde: list[dict]) -> dict:
+        z = {s: sum(1 for b in befunde if b["stufe"] == s and not b.get("akzeptiert") and not b.get("behoben"))
+             for s in STUFEN}
+        z["akzeptiert"] = sum(1 for b in befunde if b.get("akzeptiert"))
+        return z
+
+    def ausnahme(self, befund_id: str, grund: str = "", aufheben: bool = False) -> dict:
+        """Befund bewusst hinnehmen (90 Tage) – zählt dann nicht mehr zur Ampel und wird nicht gemeldet."""
+        with self.lock:
+            z = self._z()
+            ausn = z.setdefault("ausnahmen", {})
+            if aufheben:
+                ausn.pop(befund_id, None)
+            else:
+                if not str(grund).strip():
+                    raise ToolError("Bitte einen Grund angeben.")
+                b = next((x for x in (z["berichte"][-1]["befunde"] if z["berichte"] else []) if x["id"] == befund_id), None)
+                if not b:
+                    raise ToolError("Befund nicht im aktuellen Bericht.")
+                if b["stufe"] == "kritisch":
+                    raise ToolError("Kritische Befunde lassen sich nicht hinnehmen – bitte beheben.")
+                ausn[befund_id] = {"grund": str(grund).strip()[:200], "seit": date.today().isoformat(),
+                                   "bis": (date.today() + timedelta(days=AUSNAHME_TAGE)).isoformat(), "titel": b["titel"]}
+            if z["berichte"]:
+                letzter = z["berichte"][-1]
+                for x in letzter["befunde"]:
+                    x.pop("akzeptiert", None)
+                    a = ausn.get(x["id"])
+                    if a:
+                        x["akzeptiert"] = a
+                letzter["zaehlung"] = self._zaehlen(letzter["befunde"])
+                letzter["ampel"] = ampel(letzter["befunde"])
+            write_private_json(DATEI, z)
+        self.c.audit.log("sicherheitsaudit_ausnahme", befund=befund_id, aufheben=aufheben, grund=str(grund)[:120])
+        return {"ok": True, "aufgehoben" if aufheben else "akzeptiert": befund_id}
+
+    BEREICHE = {"Rechte": "p_rechte", "Befugnisse": "p_befugnisse", "Geheimnisse": "p_geheimnisse", "Dateirechte": "p_dateirechte",
+                "Netz": "p_netz", "macOS": "p_macos", "Abhängigkeiten": "p_abhaengigkeiten", "Protokoll": "p_protokoll",
+                "Selbsttest": "p_selbsttest"}
+
+    def nachpruefen(self, bereich: str) -> dict:
+        """Nur einen Bereich erneut prüfen und im aktuellen Bericht ersetzen (nach einer Behebung)."""
+        name = self.BEREICHE.get(bereich)
+        if not name:
+            raise ToolError("Unbekannter Bereich.")
+        f = getattr(self, name)
+        neu = f(True) if name == "p_selbsttest" else f()
+        self._einordnen(neu)
+        with self.lock:
+            z = self._z()
+            if not z["berichte"]:
+                raise ToolError("Noch kein Bericht.")
+            letzter = z["berichte"][-1]
+            alt = {x["id"] for x in letzter["befunde"] if x["bereich"] == bereich and x["stufe"] not in ("ok", "info")}
+            for x in neu:
+                x["neu"] = False
+            letzter["befunde"] = [x for x in letzter["befunde"] if x["bereich"] != bereich] + neu
+            letzter["befunde"].sort(key=lambda b: (GEWICHT.get(b["stufe"], 9), b["bereich"]))
+            letzter["zaehlung"] = self._zaehlen(letzter["befunde"])
+            letzter["ampel"] = ampel(letzter["befunde"])
+            letzter["nachgeprueft"] = datetime.now().isoformat(timespec="seconds")
+            write_private_json(DATEI, z)
+        erledigt = len(alt - {x["id"] for x in neu if x["stufe"] not in ("ok", "info")})
+        self.c.broadcast({"type": "sicherheit", "phase": "fertig"})
+        return {"bereich": bereich, "erledigt": erledigt, "offen": sum(1 for x in neu if x["stufe"] not in ("ok", "info")),
+                "ampel": letzter["ampel"]}
+
+    # ------------------------------------------------------------------ Claude-Auftrag
+    def auftrag(self, ids: list | None = None, alle: bool = False) -> dict:
+        """Markdown-Auftrag für Claude (Claude Code oder Cowork) aus offenen Befunden – Fundstellen bleiben maskiert."""
+        b = self.bericht()
+        if not b.get("vorhanden"):
+            raise ToolError("Noch kein Bericht – erst das Audit laufen lassen.")
+        offen = [x for x in b["befunde"] if x["stufe"] not in ("ok", "info") and not x.get("akzeptiert") and not x.get("behoben")]
+        if ids:
+            wahl = [x for x in offen if x["id"] in set(ids)]
+        elif alle:
+            wahl = offen
+        else:
+            wahl = [x for x in offen if x.get("weg") == "claude"]
+        if not wahl:
+            raise ToolError("Keine offenen Befunde für Claude ausgewählt.")
+        try:
+            from atlas import __version__ as version
+        except ImportError:
+            version = "?"
+        zeilen = [f"# AEGIS-Auftrag: Sicherheitsbefunde in JARVIS beheben ({date.today():%d.%m.%Y})", "",
+                  f"Repository: `{REPO_DIR}` (Paket `atlas`, JARVIS {version}; Python/FastAPI-Kern, Web-Oberfläche in "
+                  f"`atlas/web`, Tests in `tests/`).",
+                  f"Bericht vom {b['zeit'][:16].replace('T', ' ')} · Ampel {b['ampel'].upper()} · {len(wahl)} Befund(e) in diesem Auftrag.",
+                  "Detailangaben zu Schlüsseln sind absichtlich maskiert – suche die Stelle über Datei und Muster, gib den Wert nie aus.",
+                  "", "## Befunde", ""]
+        for i, x in enumerate(wahl, 1):
+            zeilen += [f"### {i}. [{x['stufe'].upper()}] {x['titel']}", f"- Bereich: {x['bereich']}"]
+            if x.get("detail"):
+                zeilen.append(f"- Befund: {x['detail']}")
+            if x.get("empfehlung"):
+                zeilen.append(f"- Empfehlung: {x['empfehlung']}")
+            if x.get("weg") != "claude":
+                zeilen.append(f"- Hinweis: eigentlich {'per Klick im Dashboard' if x['weg'] == 'klick' else 'manuell'} behebbar – "
+                              "prüfe, ob eine Code-Änderung sinnvoll ist, sonst nur erklären.")
+            for s in x.get("schritte") or []:
+                zeilen.append(f"- Manueller Schritt für Richard (nicht selbst ausführen): {s}")
+            zeilen.append("")
+        zeilen += ["## Vorgaben (verbindlich)",
+                   "- Bestehende Sicherheitsregeln von JARVIS bleiben unverändert: Zugangsdaten (Passwörter, PINs, IBAN) nie in die "
+                   "Cloud, API-Schlüssel nur im Schlüsselbund, Bestätigungspflichten nicht lockern, Notfallordner nie öffnen oder "
+                   "indizieren, keine Tesla-Entriegelung, NUKI nur Status/Abschließen.",
+                   "- Keine Rechte lockern, keine Tests abschwächen oder überspringen, keine Schlüssel im Klartext in Code, Tests "
+                   "oder Antworten.",
+                   "- Je Befund die kleinste wirksame Änderung; zu jeder Code-Änderung einen Test in `tests/`.",
+                   "- Danach `python -m unittest discover -s tests -t .` – alles muss grün sein.",
+                   "- FUNKTIONEN.md mitpflegen und die Version in `atlas/__init__.py` erhöhen.",
+                   "- Nicht committen oder hochladen – Richard speichert selbst mit `jarvis speichern`.",
+                   "", "## Rückmeldung",
+                   "Je Befund eine Zeile: behoben (Datei/Änderung) · manueller Schritt nötig (welcher) · Rückfrage. "
+                   "Zum Schluss: „In JARVIS: Sicherheitsaudit → Jetzt prüfen“ zur Nachprüfung."]
+        text = "\n".join(zeilen) + "\n"
+        ordner = REPO_DIR / AUFTRAG_ORDNER
+        ordner.mkdir(exist_ok=True)
+        self._gitignore([f"{AUFTRAG_ORDNER}/"])
+        datei = ordner / f"AUFTRAG_{datetime.now():%Y-%m-%d_%H%M}.md"
+        for d in (datei, ordner / "AUFTRAG_aktuell.md"):
+            d.write_text(text, encoding="utf-8")
+            try:
+                d.chmod(0o600)
+            except OSError:
+                pass
+        self.c.audit.log("sicherheitsaudit_auftrag", befunde=[x["id"] for x in wahl])
+        rel = f"{AUFTRAG_ORDNER}/AUFTRAG_aktuell.md"
+        return {"ok": True, "datei": str(datei), "relativ": rel, "befunde": len(wahl), "text": text,
+                "claude_code": bool(self.claude_cli()),
+                "cowork": f"Lies im verbundenen atlas-Ordner die Datei {rel} und setze den AEGIS-Auftrag um."}
+
+    @staticmethod
+    def claude_cli() -> str | None:
+        for k in CLAUDE_CLI:
+            p = shutil.which(k) if "/" not in k else (os.path.expanduser(k) if Path(os.path.expanduser(k)).exists() else None)
+            if p:
+                return p
+        return None
+
+    def mit_claude_code(self) -> dict:
+        """Terminal öffnen und Claude Code im Repository mit dem aktuellen Auftrag starten (Änderungen bestätigst du dort)."""
+        cli = self.claude_cli()
+        if not cli:
+            raise ToolError("Claude Code ist auf diesem Mac nicht installiert (claude.ai/code). Den Auftrag kannst du kopieren "
+                            "oder in Claude/Cowork mit verbundenem atlas-Ordner einlesen lassen.")
+        datei = REPO_DIR / AUFTRAG_ORDNER / "AUFTRAG_aktuell.md"
+        if not datei.exists():
+            raise ToolError("Noch kein Auftrag – erst „Claude-Auftrag erstellen“.")
+        befehl = (f"cd {shlex.quote(str(REPO_DIR))} && {shlex.quote(cli)} "
+                  f"\"$(cat {shlex.quote(str(datei.relative_to(REPO_DIR)))})\"")
+        skript = ('tell application "Terminal"\nactivate\ndo script "' + befehl.replace("\\", "\\\\").replace('"', '\\"')
+                  + '"\nend tell')
+        rc, aus = _lauf(["osascript", "-e", skript], 20)
+        if rc != 0:
+            raise ToolError(f"Terminal ließ sich nicht öffnen: {aus[:160]}")
+        self.c.audit.log("sicherheitsaudit_claude_code", datei=str(datei.name))
+        return {"ok": True, "hinweis": "Claude Code läuft im Terminal – jede Änderung bestätigst du dort."}
+
+    def einstellung_oeffnen(self, ziel: str) -> dict:
+        url = EINSTELLUNGEN.get(ziel)
+        if not url:
+            raise ToolError("Unbekannte Einstellung.")
+        rc, aus = _lauf(["open", url], 10)
+        return {"ok": rc == 0}
 
     # ------------------------------------------------------------------ Wöchentlicher Lauf
     def faellig(self) -> bool:
@@ -620,4 +931,18 @@ def tools(core) -> list[Tool]:
              "befugnis:<id>, gitignore). Nur nach Bestätigung.", "sicherheit.beheben",
              lambda fix: sa.beheben(fix), {"fix": S("Kennung der Behebung aus dem Bericht")}, ["fix"],
              label=lambda a: f"Sicherheitsbefund beheben: {a.get('fix')}"),
+        Tool("sicherheit_auftrag", "AEGIS: Claude-Auftrag (Markdown) aus offenen Befunden erstellen, damit Claude den Code "
+             "anpasst. Standard: alle Befunde mit Weg „claude“; alle=true nimmt alle offenen. Legt .aegis/AUFTRAG_aktuell.md im "
+             "Repository ab (Fundstellen maskiert).", "sicherheit.pruefen",
+             lambda ids=None, alle=False: {k: v for k, v in sa.auftrag(ids, alle).items() if k != "text"},
+             {"ids": {"type": "array", "items": {"type": "string"}}, "alle": {"type": "boolean"}}),
+        Tool("sicherheit_claude_code", "AEGIS: Claude Code im Terminal mit dem aktuellen Auftrag starten (nur wenn installiert).",
+             "sicherheit.claude_code", lambda: sa.mit_claude_code(), label=lambda a: "Claude Code mit dem AEGIS-Auftrag starten"),
+        Tool("sicherheit_nachpruefen", "AEGIS: einen Bereich nach einer Behebung erneut prüfen (Rechte, Befugnisse, Geheimnisse, "
+             "Dateirechte, Netz, macOS, Abhängigkeiten, Protokoll, Selbsttest).", "sicherheit.pruefen",
+             lambda bereich: sa.nachpruefen(bereich), {"bereich": S("", enum=list(Sicherheitsaudit.BEREICHE))}, ["bereich"]),
+        Tool("sicherheit_ausnahme", "AEGIS: Befund bewusst hinnehmen (90 Tage, mit Grund) oder die Ausnahme aufheben.",
+             "sicherheit.ausnahme", lambda befund, grund="", aufheben=False: sa.ausnahme(befund, grund, aufheben),
+             {"befund": S("id des Befunds"), "grund": S(""), "aufheben": {"type": "boolean"}}, ["befund"],
+             label=lambda a: f"Sicherheitsbefund {'wieder melden' if a.get('aufheben') else 'hinnehmen'}: {a.get('befund')}"),
     ]

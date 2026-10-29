@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 29.10.2026 · Version 0.21
+Stand: 29.10.2026 · Version 0.22
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -315,8 +315,14 @@ Bedeutung der Zeichen:
 | Bekannte Schwachstellen der Abhängigkeiten (Python-Pakete, Kartenbibliothek, Three.js) | ✅ | nur Paketnamen und Versionen an die öffentliche OSV-Datenbank |
 | Auffälligkeiten im Protokoll (eingeschleuste Anweisungen, falsche Notfall-Codes, verweigerte Werkzeuge) und Selbsttest inkl. Sicherheitstests | ✅ | |
 | Bericht mit Ampel, Schweregrad (kritisch bis niedrig), Empfehlung, Verlauf; neue kritische/hohe Befunde sofort, der Rest in den Entscheidungsstapel | ✅ | |
-| Behebung per Klick (Dateirechte, abgelaufene Befugnis, .gitignore) | 🔒 | nur nach Bestätigung |
-| Rechte lockern, Updates installieren oder Schlüssel automatisch erneuern | ❌ | bewusst nicht – nur Empfehlung |
+| Jeder Befund mit Behebungsweg: JARVIS BEHEBT (Klick) · DU (Anleitung) · CLAUDE (Code-Auftrag); Übersicht „So wird es behoben“ | ✅ | ⚙ Einstellungen → Sicherheit → Bericht & Beheben |
+| JARVIS behebt per Klick: Dateirechte, abgelaufene Befugnis, gelockerte Rechte zurück auf die Grundeinstellung, .gitignore, Python-Paket aktualisieren (mit Sicherheitstests, bei Fehlern automatisch zurück) – danach automatische Nachprüfung | 🔒 | nur nach Bestätigung; Sicherung config.yaml.vor-aegis |
+| Anleitung: Schritte, Knopf zur passenden Systemeinstellung (FileVault, Firewall, Updates, Time Machine, Teilen), Befehl zum Kopieren, „Nachprüfen“ nur für diesen Bereich | ✅ | |
+| Claude-Auftrag: ausgewählte Befunde als Markdown-Auftrag mit verbindlichen Sicherheitsvorgaben, Fundstellen maskiert, gespeichert unter .aegis/AUFTRAG_aktuell.md (nicht versioniert) | ✅ | „Schreib einen Claude-Auftrag für die Sicherheitsbefunde“ |
+| Auftrag direkt in Claude Code im Terminal starten | 🔒 | nur wenn Claude Code installiert ist; jede Änderung bestätigst du dort |
+| Auftrag in Claude/Cowork übergeben (Satz kopieren, Claude liest die Datei im verbundenen atlas-Ordner) oder kompletten Text kopieren | ✅ | |
+| Befund bewusst hinnehmen (mit Grund, 90 Tage): zählt nicht zur Ampel, wird nicht gemeldet, jederzeit „Wieder melden“ | 🔒 | kritische Befunde nicht hinnehmbar |
+| Rechte lockern, macOS-Einstellungen ändern oder Schlüssel automatisch erneuern | ❌ | bewusst nicht – Anleitung bzw. Claude-Auftrag |
 
 ## 13. Stab – JARVIS als Chef des Stabes
 

@@ -852,6 +852,16 @@ def sicherheit_audit_start(data: dict | None = None, _: None = Depends(auth)):
     return {"ok": True}
 
 
+@app.post("/sicherheit/audit/auftrag")
+def sicherheit_audit_auftrag(data: dict | None = None, _: None = Depends(auth)):
+    from atlas.tools import ToolError
+    d = data or {}
+    try:
+        return get_core().sicherheitsaudit.auftrag(d.get("ids") or None, bool(d.get("alle")))
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/sicherheit/audit/beheben")
 def sicherheit_audit_beheben(data: dict, _: None = Depends(auth)):
     from atlas.tools import ToolError
@@ -863,6 +873,27 @@ def sicherheit_audit_beheben(data: dict, _: None = Depends(auth)):
         raise HTTPException(400, str(e))
     c.audit.log("bestaetigung", werkzeug="sicherheit_beheben", quelle="dashboard", fix=fix)
     return erg
+
+
+@app.post("/sicherheit/audit/{aktion}")
+def sicherheit_audit_aktion(aktion: str, data: dict | None = None, _: None = Depends(auth)):
+    from atlas.tools import ToolError
+    c, d = get_core(), data or {}
+    sa = c.sicherheitsaudit
+    try:
+        if aktion == "nachpruefen":
+            return sa.nachpruefen(str(d.get("bereich") or ""))
+        if aktion == "ausnahme":                      # Klick im Dashboard mit Grund = Bestätigung
+            c.audit.log("bestaetigung", werkzeug="sicherheit_ausnahme", quelle="dashboard")
+            return sa.ausnahme(str(d.get("id") or ""), str(d.get("grund") or ""), bool(d.get("aufheben")))
+        if aktion == "claude_code":                   # Klick nach Rückfrage = Bestätigung
+            c.audit.log("bestaetigung", werkzeug="sicherheit_claude_code", quelle="dashboard")
+            return sa.mit_claude_code()
+        if aktion == "einstellung":
+            return sa.einstellung_oeffnen(str(d.get("ziel") or ""))
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+    raise HTTPException(404, "unbekannt")
 
 
 @app.post("/projekte/fund/{fid}/oeffnen")

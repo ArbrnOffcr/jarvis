@@ -88,6 +88,8 @@ DEFAULT_POLICY = {
     "sicherheit.lesen": Level.FREI,        # AEGIS: Bericht lesen
     "sicherheit.pruefen": Level.FREI,      # Audit läuft lokal; nach außen gehen nur Paketnamen/Versionen (OSV)
     "sicherheit.beheben": Level.BESTAETIGEN,
+    "sicherheit.ausnahme": Level.BESTAETIGEN,     # Befund hinnehmen = weniger Warnungen → nur mit Ja
+    "sicherheit.claude_code": Level.BESTAETIGEN,  # startet Claude Code im Terminal (Änderungen bestätigt Richard dort)
     "zuhause.lesen": Level.FREI,
     "zuhause.steuern": Level.MELDEN,        # Licht, Lautsprecher, Szenen (Kurzbefehle) – Türen nie
     "nuki.abschliessen": Level.MELDEN,      # nur Abschließen; Aufschließen/Öffnen gibt es nicht

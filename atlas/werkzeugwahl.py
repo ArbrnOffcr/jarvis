@@ -37,7 +37,7 @@ GRUPPEN = {
     "notfall": ["notfall_"],
     "zuhause": ["zuhause_", "nuki_"],
     "projekte": ["projekt", "beobachtung_", "recherche_jetzt"],
-    "sicherheit": ["sicherheitsaudit", "audit_bericht", "sicherheit_beheben"],
+    "sicherheit": ["sicherheitsaudit", "audit_bericht", "sicherheit_"],
 }
 
 # Wortanfänge → Gruppen

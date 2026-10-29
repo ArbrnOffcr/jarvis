@@ -6250,41 +6250,89 @@ const _einstOeffnenPJ = window.einstellungenOeffnen;
 window.einstellungenOeffnen = function () { _einstOeffnenPJ(); projekteEinstAufbauen(); };
 
 // =====================================================================
-//  AEGIS: Sicherheitsaudit (Stab-Agent SICH) – Bericht mit Ampel, Befunden, Behebung nur nach Rückfrage
+//  AEGIS: Sicherheitsaudit (Stab-Agent SICH) – Bericht mit Ampel, Befunden und drei Behebungswegen:
+//  KLICK (JARVIS behebt nach Rückfrage) · ANLEITUNG (Schritte, Systemeinstellung, Befehl) · CLAUDE (Auftrag für Code-Änderungen)
 // =====================================================================
-const AG = { d: null, el: null, warten: null };
+const AG = { d: null, el: null, warten: null, wahl: new Set(), auftrag: null };
 const AG_STUFE = { kritisch: "KRITISCH", hoch: "HOCH", mittel: "MITTEL", niedrig: "NIEDRIG", info: "INFO", ok: "OK" };
 const AG_AMPEL = { rot: "ROT", gelb: "GELB", gruen: "GRÜN" };
+const AG_WEG = { klick: ["JARVIS BEHEBT", "Per Klick – JARVIS fragt vorher nach"], anleitung: ["DU", "Schritt-für-Schritt-Anleitung"], claude: ["CLAUDE", "Code-Änderung – als Auftrag an Claude"] };
 async function aegisOeffnen() {
   try { AG.d = await fdGet("/sicherheit/audit"); } catch (e) { return toast("Sicherheitsaudit: " + e.message); }
   if (!AG.el || !document.body.contains(AG.el)) {
     AG.el = btFenster("SICHERHEITSAUDIT · AEGIS", "", "ag-fenster");
     AG.el.querySelector(".bt-kopf-rechts").innerHTML = `<button type="button" data-ag="start">⟳ JETZT PRÜFEN</button>`;
+    AG.wahl = new Set((AG.d.befunde || []).filter((b) => b.weg === "claude" && !b.akzeptiert && !b.behoben).map((b) => b.id));
   }
   agZeichnen();
 }
+async function agKopieren(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+  const t = document.createElement("textarea"); t.value = text; t.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(t); t.select();
+  let ok = false; try { ok = document.execCommand("copy"); } catch (e) {} t.remove(); return ok;
+}
 function agBefund(b) {
-  return `<li class="ag-b ag-${b.stufe} ${b.behoben ? "behoben" : ""}"><i>${AG_STUFE[b.stufe] || b.stufe}</i>
-    <div><b>${esc(b.titel)}${b.neu ? ` <em class="ag-neu">NEU</em>` : ""}</b><small>${esc(b.bereich)}${b.detail ? " · " + esc(b.detail) : ""}</small>
-    ${b.empfehlung ? `<p>${esc(b.empfehlung)}</p>` : ""}</div>
-    ${b.fix && !b.behoben ? `<button type="button" data-ag="fix" data-fix="${esc(b.fix)}" data-titel="${esc(b.titel)}">BEHEBEN</button>` : b.behoben ? `<span class="ag-erledigt">✓ behoben</span>` : ""}</li>`;
+  const offen = !["ok", "info"].includes(b.stufe) && !b.behoben && !b.akzeptiert;
+  const weg = offen && b.weg ? `<em class="ag-weg ag-weg-${b.weg}" title="${esc(AG_WEG[b.weg]?.[1] || "")}">${AG_WEG[b.weg]?.[0] || ""}</em>` : "";
+  let aktion = "";
+  if (b.behoben) aktion = `<span class="ag-erledigt">✓ behoben</span>`;
+  else if (b.akzeptiert) aktion = `<button type="button" class="ag-leise" data-ag="ausnahme-weg" data-id="${esc(b.id)}">WIEDER MELDEN</button>`;
+  else if (offen) {
+    const k = [];
+    if (b.fix) k.push(`<button type="button" class="ag-haupt" data-ag="fix" data-fix="${esc(b.fix)}" data-titel="${esc(b.titel)}">BEHEBEN</button>`);
+    if (b.weg === "claude") k.push(`<label class="ag-wahl" title="In den Claude-Auftrag aufnehmen"><input type="checkbox" data-ag-wahl="${esc(b.id)}" ${AG.wahl.has(b.id) ? "checked" : ""}> CLAUDE</label>`);
+    if (b.einstellung) k.push(`<button type="button" data-ag="einstellung" data-ziel="${esc(b.einstellung)}">EINSTELLUNG ÖFFNEN</button>`);
+    if (b.befehl) k.push(`<button type="button" data-ag="befehl" data-befehl="${esc(b.befehl)}" title="${esc(b.befehl)}">BEFEHL KOPIEREN</button>`);
+    if (b.weg !== "klick") k.push(`<button type="button" data-ag="nachpruefen" data-bereich="${esc(b.bereich)}" title="Nur diesen Bereich erneut prüfen">NACHPRÜFEN</button>`);
+    if (b.stufe !== "kritisch") k.push(`<button type="button" class="ag-leise" data-ag="ausnahme" data-id="${esc(b.id)}" data-titel="${esc(b.titel)}" title="Bewusst so lassen (90 Tage)">HINNEHMEN</button>`);
+    aktion = `<div class="ag-knoepfe">${k.join("")}</div>`;
+  }
+  const schritte = offen && b.schritte?.length ? `<ol class="ag-schritte">${b.schritte.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : "";
+  const befehl = offen && b.befehl ? `<code class="ag-befehl">${esc(b.befehl)}</code>` : "";
+  const akz = b.akzeptiert ? `<p class="ag-akz">Hingenommen bis ${esc(b.akzeptiert.bis.split("-").reverse().join("."))}: ${esc(b.akzeptiert.grund)}</p>` : "";
+  return `<li class="ag-b ag-${b.stufe} ${b.behoben ? "behoben" : ""} ${b.akzeptiert ? "akzeptiert" : ""}"><i>${AG_STUFE[b.stufe] || b.stufe}</i>
+    <div><b>${esc(b.titel)}${b.neu ? ` <em class="ag-neu">NEU</em>` : ""}${weg}</b><small>${esc(b.bereich)}${b.detail ? " · " + esc(b.detail) : ""}</small>
+    ${b.empfehlung && !b.akzeptiert ? `<p>${esc(b.empfehlung)}</p>` : ""}${schritte}${befehl}${akz}${aktion}</div></li>`;
 }
 function agZeichnen() {
   const d = AG.d, box = AG.el?.querySelector(".bt-inhalt"); if (!box) return;
   const st = AG.el.querySelector(".bt-status");
   if (st) st.textContent = d.laeuft ? "AEGIS prüft … (bis 1–2 Minuten)" : "";
   if (!d.vorhanden) { box.innerHTML = `<p class="vb-hilfe">${esc(d.hinweis)}</p>`; return; }
-  const z = d.zaehlung, ernst = d.befunde.filter((b) => !["ok", "info"].includes(b.stufe));
+  const z = d.zaehlung, ernst = d.befunde.filter((b) => !["ok", "info"].includes(b.stufe) && !b.akzeptiert);
+  const akz = d.befunde.filter((b) => b.akzeptiert);
   const ok = d.befunde.filter((b) => b.stufe === "ok"), info = d.befunde.filter((b) => b.stufe === "info");
+  const offen = ernst.filter((b) => !b.behoben);
+  const n = { klick: 0, anleitung: 0, claude: 0 }; offen.forEach((b) => { n[b.weg] = (n[b.weg] || 0) + 1; });
   const verlauf = (d.verlauf || []).slice(-12).map((v) => `<i class="ag-punkt ag-${v.ampel}" title="${esc(v.zeit.slice(0, 10))}: ${AG_AMPEL[v.ampel]} – ${v.zaehlung.kritisch + v.zaehlung.hoch} ernst, ${v.zaehlung.mittel} mittel"></i>`).join("");
   box.innerHTML = `<div class="ag-kopf"><div class="ag-ampel ag-${d.ampel}"><i></i><i></i><i></i></div>
-      <div><h3>Ampel ${AG_AMPEL[d.ampel]}</h3><small>${pjZeit(d.zeit)} · ${esc(d.anlass)} · ${d.dauer_s} s · nächster Lauf automatisch nach 7 Tagen</small></div>
+      <div><h3>Ampel ${AG_AMPEL[d.ampel]}</h3><small>${pjZeit(d.zeit)} · ${esc(d.anlass)} · ${d.dauer_s} s${d.nachgeprueft ? ` · nachgeprüft ${pjZeit(d.nachgeprueft)}` : ""} · nächster Lauf automatisch nach 7 Tagen</small></div>
       <div class="ag-zahlen">${["kritisch", "hoch", "mittel", "niedrig"].map((s) => `<span class="ag-${s}"><b>${z[s]}</b>${AG_STUFE[s]}</span>`).join("")}</div></div>
     <div class="ag-verlauf"><span>VERLAUF</span>${verlauf}</div>
+    ${offen.length ? `<div class="ag-plan"><b>SO WIRD ES BEHOBEN</b>
+      <span><em class="ag-weg ag-weg-klick">JARVIS BEHEBT</em> ${n.klick} per Klick</span>
+      <span><em class="ag-weg ag-weg-anleitung">DU</em> ${n.anleitung} mit Anleitung</span>
+      <span><em class="ag-weg ag-weg-claude">CLAUDE</em> ${n.claude} als Code-Auftrag</span>
+      <button type="button" class="ag-haupt" data-ag="auftrag">CLAUDE-AUFTRAG ERSTELLEN (<span data-ag-zahl>${AG.wahl.size}</span>)</button></div>` : ""}
+    <div class="ag-auftrag-box"></div>
     <h5>HANDLUNGSBEDARF</h5><ul class="ag-liste">${ernst.map(agBefund).join("") || "<li class='leer'>Keine Schwachstellen gefunden.</li>"}</ul>
+    ${akz.length ? `<h5>BEWUSST HINGENOMMEN</h5><ul class="ag-liste">${akz.map(agBefund).join("")}</ul>` : ""}
     ${info.length ? `<h5>HINWEISE</h5><ul class="ag-liste">${info.map(agBefund).join("")}</ul>` : ""}
     <details class="ag-gut"><summary>${ok.length} PRÜFUNGEN OHNE BEFUND</summary><ul class="ag-liste">${ok.map(agBefund).join("")}</ul></details>
-    <p class="vb-hilfe">Alle Prüfungen laufen lokal auf dem Mac. Nach außen geht nur die Liste der Paketnamen und Versionen an die öffentliche Schwachstellendatenbank OSV. Fundstellen von Schlüsseln werden nur maskiert gespeichert.</p>`;
+    <p class="vb-hilfe">Alle Prüfungen laufen lokal auf dem Mac. Nach außen geht nur die Liste der Paketnamen und Versionen an die öffentliche Schwachstellendatenbank OSV. Fundstellen von Schlüsseln stehen nur maskiert im Bericht und im Claude-Auftrag.</p>`;
+  if (AG.auftrag) agAuftragZeigen(AG.auftrag);
+}
+function agAuftragZeigen(r) {
+  const box = AG.el?.querySelector(".ag-auftrag-box"); if (!box) return;
+  box.innerHTML = `<section class="ag-auftrag"><div class="ag-auftrag-kopf"><b>CLAUDE-AUFTRAG · ${r.befunde} BEFUND${r.befunde > 1 ? "E" : ""}</b><button type="button" class="vt-zu" data-ag="auftrag-zu">✕</button></div>
+    <p>Gespeichert im atlas-Ordner unter <code>${esc(r.relativ)}</code> (wird nicht hochgeladen). Drei Wege:</p>
+    <ol class="ag-wege">
+      <li><b>Claude Code im Terminal</b>${r.claude_code ? ` – startet im Repository mit dem Auftrag; jede Änderung bestätigst du dort.<br><button type="button" class="ag-haupt" data-ag="claude-code">IN CLAUDE CODE STARTEN</button>` : ` – auf diesem Mac nicht installiert (claude.ai/code).`}</li>
+      <li><b>Claude / Cowork</b> mit verbundenem atlas-Ordner – diesen Satz einfügen:<br><code class="ag-befehl">${esc(r.cowork)}</code> <button type="button" data-ag="kopieren" data-was="cowork">SATZ KOPIEREN</button></li>
+      <li><b>Beliebiger Chat</b> – kompletten Auftrag kopieren und einfügen: <button type="button" data-ag="kopieren" data-was="text">AUFTRAG KOPIEREN</button></li>
+    </ol>
+    <details><summary>AUFTRAG ANSEHEN</summary><pre>${esc(r.text)}</pre></details>
+    <p class="vb-hilfe">Nach den Änderungen: „jarvis speichern“, JARVIS neu starten, dann hier „Jetzt prüfen“.</p></section>`;
 }
 function agWarten() {
   clearTimeout(AG.warten);
@@ -6294,24 +6342,56 @@ function agWarten() {
     if (AG.d.laeuft) agWarten(); else if (!$("einst").hidden) aegisEinstAufbauen();
   }, 2500);
 }
+document.addEventListener("change", (e) => {
+  const c = e.target.closest("[data-ag-wahl]"); if (!c) return;
+  c.checked ? AG.wahl.add(c.dataset.agWahl) : AG.wahl.delete(c.dataset.agWahl);
+  const z = AG.el?.querySelector("[data-ag-zahl]"); if (z) z.textContent = AG.wahl.size;
+});
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-ag]"); if (!b) return;
   e.preventDefault();
   const a = b.dataset.ag;
+  const melde = (t) => { const st = AG.el?.querySelector(".bt-status"); if (st) st.textContent = t; else toast(t); };
   try {
     if (a === "oeffnen") { typeof einstZu === "function" && einstZu(); return aegisOeffnen(); }
     if (a === "start") {
       const r = await vbPost("/sicherheit/audit/start", { tests: true });
       if (!r.ok) toast(r.hinweis || "Läuft bereits");
+      AG.auftrag = null;
       if (!AG.el || !document.body.contains(AG.el)) await aegisOeffnen();
       AG.d = { ...(AG.d || {}), laeuft: true }; agZeichnen(); return agWarten();
     }
     if (a === "fix") {
       if (!confirm(`AEGIS soll beheben:\n„${b.dataset.titel}“\n\nAusführen?`)) return;
-      await vbPost("/sicherheit/audit/beheben", { fix: b.dataset.fix });
-      toast("✓ behoben"); return aegisOeffnen();
+      b.disabled = true; melde("AEGIS behebt …" + (b.dataset.fix.startsWith("pip:") ? " (Update + Sicherheitstests, bis 2 Minuten)" : ""));
+      const r = await vbPost("/sicherheit/audit/beheben", { fix: b.dataset.fix });
+      toast("✓ " + (r.hinweis || "behoben")); await aegisOeffnen(); return melde("✓ " + (r.hinweis || "behoben"));
     }
-  } catch (err) { toast("⚠ " + err.message); }
+    if (a === "nachpruefen") {
+      b.disabled = true; melde(`Prüfe ${b.dataset.bereich} erneut …`);
+      const r = await vbPost("/sicherheit/audit/nachpruefen", { bereich: b.dataset.bereich });
+      await aegisOeffnen(); return melde(r.erledigt ? `✓ ${r.erledigt} Befund(e) erledigt` : `${b.dataset.bereich}: noch ${r.offen} offen`);
+    }
+    if (a === "einstellung") { await vbPost("/sicherheit/audit/einstellung", { ziel: b.dataset.ziel }); return melde("Systemeinstellungen geöffnet – danach „Nachprüfen“."); }
+    if (a === "befehl") { const ok = await agKopieren(b.dataset.befehl); return melde(ok ? "✓ Befehl kopiert – im Terminal einfügen." : b.dataset.befehl); }
+    if (a === "ausnahme") {
+      const grund = prompt(`„${b.dataset.titel}“ bewusst hinnehmen (90 Tage, zählt nicht zur Ampel).\nGrund:`);
+      if (!grund) return;
+      await vbPost("/sicherheit/audit/ausnahme", { id: b.dataset.id, grund }); AG.wahl.delete(b.dataset.id); return aegisOeffnen();
+    }
+    if (a === "ausnahme-weg") { await vbPost("/sicherheit/audit/ausnahme", { id: b.dataset.id, aufheben: true }); return aegisOeffnen(); }
+    if (a === "auftrag") {
+      if (!AG.wahl.size) return melde("Erst bei mindestens einem Befund „CLAUDE“ ankreuzen.");
+      AG.auftrag = await vbPost("/sicherheit/audit/auftrag", { ids: [...AG.wahl] });
+      agAuftragZeigen(AG.auftrag); AG.el.querySelector(".ag-auftrag")?.scrollIntoView({ behavior: "smooth", block: "start" }); return;
+    }
+    if (a === "auftrag-zu") { AG.auftrag = null; const x = AG.el?.querySelector(".ag-auftrag-box"); if (x) x.innerHTML = ""; return; }
+    if (a === "kopieren" && AG.auftrag) { const ok = await agKopieren(b.dataset.was === "cowork" ? AG.auftrag.cowork : AG.auftrag.text); return melde(ok ? "✓ kopiert" : "Kopieren nicht möglich – Text unten markieren."); }
+    if (a === "claude-code") {
+      if (!confirm("Terminal öffnen und Claude Code im atlas-Ordner mit diesem Auftrag starten?\nJede Änderung bestätigst du dort selbst.")) return;
+      const r = await vbPost("/sicherheit/audit/claude_code"); return melde("✓ " + r.hinweis);
+    }
+  } catch (err) { melde("⚠ " + err.message); b.disabled = false; }
 });
 const _handleAegis = handle;
 handle = function (ev) {
@@ -6328,9 +6408,10 @@ async function aegisEinstAufbauen() {
   let d; try { d = await fdGet("/sicherheit/audit"); } catch (e) { return; }
   const z = d.zaehlung || {};
   box.innerHTML = (d.vorhanden ? `<div class="einst-zeile"><span><b class="ag-text-${d.ampel}">Ampel ${AG_AMPEL[d.ampel]}</b>
-      <small class="im-einst-sub">${pjZeit(d.zeit)} · ${z.kritisch} kritisch · ${z.hoch} hoch · ${z.mittel} mittel · ${z.niedrig} niedrig</small></span>
-      <button type="button" data-ag="oeffnen">BERICHT</button></div>` : `<p class="vb-hilfe">${esc(d.hinweis)}</p>`)
-    + `<p class="vb-hilfe">AEGIS prüft wöchentlich rein lokal: Rechte und Befugnisse, Schlüssel im Code und in der Git-Historie, Dateirechte, offene Ports und Tailscale (Funnel = öffentlich), FileVault/Firewall/SIP/Gatekeeper/Updates/Time Machine, bekannte Schwachstellen der Abhängigkeiten, Auffälligkeiten im Protokoll und die Sicherheitstests. Kritisches meldet AEGIS sofort, der Rest landet im Entscheidungsstapel. Behebungen nur nach deiner Bestätigung.</p>
+      <small class="im-einst-sub">${pjZeit(d.zeit)} · ${z.kritisch} kritisch · ${z.hoch} hoch · ${z.mittel} mittel · ${z.niedrig} niedrig${z.akzeptiert ? ` · ${z.akzeptiert} hingenommen` : ""}</small></span>
+      <button type="button" data-ag="oeffnen">BERICHT &amp; BEHEBEN</button></div>` : `<p class="vb-hilfe">${esc(d.hinweis)}</p>`)
+    + `<p class="vb-hilfe">AEGIS prüft wöchentlich rein lokal: Rechte und Befugnisse, Schlüssel im Code und in der Git-Historie, Dateirechte, offene Ports und Tailscale (Funnel = öffentlich), FileVault/Firewall/SIP/Gatekeeper/Updates/Time Machine, bekannte Schwachstellen der Abhängigkeiten, Auffälligkeiten im Protokoll und die Sicherheitstests. Kritisches meldet AEGIS sofort, der Rest landet im Entscheidungsstapel.</p>
+    <p class="vb-hilfe">Behebung je Befund: <b>JARVIS behebt</b> per Klick (nach Rückfrage, danach automatische Nachprüfung) · <b>Du</b> mit Anleitung, Knopf zur Systemeinstellung und Befehl zum Kopieren · <b>Claude</b> als Auftrag für Code-Änderungen (Claude Code im Terminal oder Cowork). Bewusst Gewolltes lässt sich mit Grund 90 Tage hinnehmen.</p>
     <div class="vb-reihe"><button type="button" class="primary" data-ag="start" ${d.laeuft ? "disabled" : ""}>${d.laeuft ? "PRÜFT …" : "JETZT PRÜFEN"}</button></div>`;
 }
 const _einstOeffnenAG = window.einstellungenOeffnen;

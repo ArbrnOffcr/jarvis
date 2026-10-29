@@ -158,7 +158,8 @@ AGENTEN_STANDARD = {
              "auftrag": "Prüft wöchentlich und auf Zuruf rein lokal Rechte, Befugnisse, Schlüssel, Dateirechte, offene Ports, "
                         "Tailscale, macOS-Schutz, Abhängigkeiten und Protokoll-Auffälligkeiten; meldet Schwachstellen mit "
                         "Ampel und konkreter Empfehlung.",
-             "darf": ["Sicherheitsaudit ausführen und den Bericht lesen", "Behebungen vorschlagen"],
+             "darf": ["Sicherheitsaudit ausführen und den Bericht lesen", "Behebungen vorschlagen",
+                      "Bereiche nachprüfen", "Claude-Aufträge für Code-Änderungen schreiben (Fundstellen maskiert)"],
              "darf_nicht": ["Behebungen ohne ausdrückliche Bestätigung ausführen", "Schlüssel oder Fundstellen im Klartext nennen",
                             "Rechte oder Befugnisse lockern"],
              "werkzeuge": ["sicherheit"], "modell": "haiku", "datenschutz": "hoch",
