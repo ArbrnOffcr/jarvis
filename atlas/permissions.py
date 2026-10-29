@@ -83,6 +83,11 @@ DEFAULT_POLICY = {
     "ziele.schreiben": Level.MELDEN,
     "notfall.lesen": Level.FREI,
     "notfall.schreiben": Level.MELDEN,
+    "projekte.lesen": Level.FREI,
+    "projekte.schreiben": Level.MELDEN,
+    "sicherheit.lesen": Level.FREI,        # AEGIS: Bericht lesen
+    "sicherheit.pruefen": Level.FREI,      # Audit läuft lokal; nach außen gehen nur Paketnamen/Versionen (OSV)
+    "sicherheit.beheben": Level.BESTAETIGEN,
     "zuhause.lesen": Level.FREI,
     "zuhause.steuern": Level.MELDEN,        # Licht, Lautsprecher, Szenen (Kurzbefehle) – Türen nie
     "nuki.abschliessen": Level.MELDEN,      # nur Abschließen; Aufschließen/Öffnen gibt es nicht

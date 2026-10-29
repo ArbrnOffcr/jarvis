@@ -158,6 +158,12 @@ class Core:
         self.notfall = _notfall.Notfall(self)
         self.tools.update({t.name: t for t in _notfall.tools(self)})
         _persona.NOTFALL_FN = self.notfall.persona
+        from atlas import projekte as _pr
+        self.projekte = _pr.Projekte(self)
+        self.tools.update({t.name: t for t in _pr.tools(self)})
+        from atlas import sicherheitsaudit as _sa
+        self.sicherheitsaudit = _sa.Sicherheitsaudit(self)
+        self.tools.update({t.name: t for t in _sa.tools(self)})
         from atlas import zuhause as _zh
         self.zuhause = _zh.Zuhause(self)
         self.tools.update({t.name: t for t in _zh.tools(self)})
@@ -798,6 +804,78 @@ async def notfall_aktion(aktion: str, request: Request, data: dict | None = None
         return await asyncio.to_thread(aufrufe[aktion])
     except (ToolError, ValueError) as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/projekte")
+def projekte_uebersicht(_: None = Depends(auth)):
+    return get_core().projekte.uebersicht()
+
+
+@app.post("/projekte/{aktion}")
+async def projekte_aktion(aktion: str, data: dict | None = None, _: None = Depends(auth)):
+    """Klicks in der Projektübersicht (gelten als Auftrag des Nutzers)."""
+    pr, d = get_core().projekte, data or {}
+    aufrufe = {
+        "anlegen": lambda: pr.anlegen(str(d.get("name") or ""), str(d.get("ziel") or ""), d.get("stichwoerter"), str(d.get("ordner") or "")),
+        "aendern": lambda: pr.aendern(str(d.get("projekt") or ""), **{k: d.get(k) for k in
+                                      ("name", "ziel", "status", "stichwoerter", "notiz", "ordner", "vorgaenge", "fristen")}),
+        "beobachtung": lambda: pr.beobachtung(str(d.get("projekt") or ""), str(d.get("titel") or ""), d.get("suchbegriffe") or [],
+                                              d.get("intervall_h") or 12, d.get("alarmwoerter"), d.get("ausschluss"), d.get("feeds"),
+                                              str(d.get("sprache") or "de")),
+        "beobachtung_aendern": lambda: pr.beobachtung_aendern(str(d.get("projekt") or ""), str(d.get("beobachtung") or ""),
+                                                              **{k: d.get(k) for k in ("suchbegriffe", "alarmwoerter", "ausschluss",
+                                                                                      "intervall_h", "aktiv", "titel", "loeschen")}),
+        "lauf": lambda: [pr.lauf(str(d.get("projekt")), b["id"]) for b in pr._finde(pr._z(), str(d.get("projekt")))["beobachtungen"]
+                         if b["aktiv"]],
+        "gelesen": lambda: pr.gelesen(str(d.get("projekt") or ""), str(d.get("fund") or ""), bool(d.get("alle"))),
+    }
+    if aktion not in aufrufe:
+        raise HTTPException(404, "unbekannt")
+    try:
+        return await asyncio.to_thread(aufrufe[aktion])
+    except (ToolError, ValueError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/sicherheit/audit")
+def sicherheit_audit(_: None = Depends(auth)):
+    return get_core().sicherheitsaudit.bericht()
+
+
+@app.post("/sicherheit/audit/start")
+def sicherheit_audit_start(data: dict | None = None, _: None = Depends(auth)):
+    sa = get_core().sicherheitsaudit
+    if sa.laeuft:
+        return {"ok": False, "hinweis": "Läuft bereits."}
+    threading.Thread(target=sa.pruefen, kwargs={"anlass": "Dashboard", "tests": bool((data or {}).get("tests", True))},
+                     daemon=True).start()
+    return {"ok": True}
+
+
+@app.post("/sicherheit/audit/beheben")
+def sicherheit_audit_beheben(data: dict, _: None = Depends(auth)):
+    from atlas.tools import ToolError
+    c = get_core()
+    fix = str(data.get("fix") or "")
+    try:
+        erg = c.sicherheitsaudit.beheben(fix)       # Klick im Dashboard nach Rückfrage = Bestätigung
+    except ToolError as e:
+        raise HTTPException(400, str(e))
+    c.audit.log("bestaetigung", werkzeug="sicherheit_beheben", quelle="dashboard", fix=fix)
+    return erg
+
+
+@app.post("/projekte/fund/{fid}/oeffnen")
+async def projekt_fund_oeffnen(fid: str, _: None = Depends(auth)):
+    """Nur Links aus gespeicherten Funden – keine beliebigen URLs."""
+    try:
+        url = get_core().projekte.fund_url(fid)
+    except ToolError as e:
+        raise HTTPException(404, str(e))
+    if not url.startswith("https://"):
+        raise HTTPException(400, "Nur https-Links")
+    await asyncio.to_thread(subprocess.run, ["open", url], capture_output=True)
+    return {"ok": True, "url": url}
 
 
 @app.get("/zuhause")
@@ -2288,6 +2366,8 @@ def run():
         ("Aufmerksamkeit", lambda: c.aufmerksamkeit.start(c.proaktiv.stop)),
         ("Zielregister", lambda: c.ziele.start(c.proaktiv.stop)),
         ("Zuhause", lambda: c.zuhause.start(c.proaktiv.stop)),
+        ("Projektbeobachtung", lambda: c.projekte.start(c.proaktiv.stop)),
+        ("AEGIS Sicherheitsaudit", lambda: c.sicherheitsaudit.start(c.proaktiv.stop)),
         ("Timer", c.timer.start),
         ("Musik", c.musik.start),
         ("Beihilfe-Workflow", lambda: c.archiv and c.beihilfe.start(c.proaktiv.stop)),

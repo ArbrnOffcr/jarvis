@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 28.10.2026 · Version 0.20
+Stand: 29.10.2026 · Version 0.21
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -288,6 +288,36 @@ Bedeutung der Zeichen:
 | NUKI aufschließen oder öffnen | ❌ | bewusst nicht – wie beim Tesla |
 | Abendkontrolle 21:45: Tür nicht abgeschlossen oder Batterie fast leer → Meldung | ✅ | |
 
+## 12e. Projekte und Internetrecherche
+
+| Funktion | Stand | Hinweis |
+|---|---|---|
+| Projekte als Klammer für Vorhaben über Wochen (z. B. Auslandsverwendung, Fahrzeugkauf): Ziel, Status aktiv/pausiert/abgeschlossen, Stichwörter, Notiz | ✅ | Fenster PROJEKTE (Schnellleiste links), ⚙ Einstellungen → Projekte oder „Zeig meine Projekte“ |
+| Vorgänge und Fristen werden über die Stichwörter automatisch dem Projekt zugeordnet | ✅ | |
+| Beobachtungen: regelmäßige Internetrecherche (Nachrichten) je Projekt mit Suchbegriffen, Intervall (3 h bis 1 Woche), Alarmwörtern, Ausschlusswörtern, Sprache und eigenen RSS-Feeds | ✅ | „Halte mich zu Dienstposten in Norfolk auf dem Laufenden“ |
+| Erst Feeds, dann Claude: Google-News-Feed und eigene Feeds kostenlos holen, Bekanntes aussortieren, lokal filtern; nur neue Treffer bewertet Claude Haiku (Relevanz 0–10, ein Satz) | ✅ | ohne Claude: lokales Modell bzw. Stichwortregel |
+| Alarm-Funde: Claude recherchiert nach und fasst den Stand mit Quellen zusammen | ✅ | Monatsgrenze 400 Bewertungen / 40 Nachrecherchen |
+| Abgestufte Meldung: Alarm sofort (auch in Ruhezeiten), alles andere in den Entscheidungsstapel und ins Morgenbriefing | ✅ | in der Notfallbegleitung pausiert |
+| Funde mit Relevanzbalken, Quelle, Kurzsatz; Klick öffnet den Artikel | ✅ | nur https-Links |
+| Meldungen werden vor jeder Auswertung auf eingeschleuste Anweisungen geprüft und eingerahmt | ✅ | Feeds sind fremde Inhalte |
+| Bezahlschranken-Artikel vollständig lesen | ❌ | nur Titel und Anriss |
+
+## 12f. Sicherheitsaudit – AEGIS
+
+| Funktion | Stand | Hinweis |
+|---|---|---|
+| Neuer Stab-Agent AEGIS (SICH) prüft JARVIS und den Mac wöchentlich und auf Zuruf | ✅ | „Mach ein Sicherheitsaudit“, ⚙ Einstellungen → Sicherheit |
+| Rechte-Politik gegen die sichere Grundeinstellung, Not-Aus, abgelaufene oder unbefristete Befugnisse | ✅ | |
+| Schlüssel, Tokens, private Schlüssel, IBAN im Code, in der Git-Historie und in Konfigurationsdateien; Länge des Dashboard-Tokens | ✅ | Fundstellen nur maskiert |
+| Dateirechte von ~/.atlas, Token und Tesla-Schlüssel | ✅ | |
+| Offene Ports, JARVIS-Kern nur lokal, Tailscale Funnel (öffentlich) vs. Serve (Tailnet) | ✅ | |
+| macOS: FileVault, Firewall, SIP, Gatekeeper, automatische Updates, letzte Time-Machine-Sicherung | ✅ | |
+| Bekannte Schwachstellen der Abhängigkeiten (Python-Pakete, Kartenbibliothek, Three.js) | ✅ | nur Paketnamen und Versionen an die öffentliche OSV-Datenbank |
+| Auffälligkeiten im Protokoll (eingeschleuste Anweisungen, falsche Notfall-Codes, verweigerte Werkzeuge) und Selbsttest inkl. Sicherheitstests | ✅ | |
+| Bericht mit Ampel, Schweregrad (kritisch bis niedrig), Empfehlung, Verlauf; neue kritische/hohe Befunde sofort, der Rest in den Entscheidungsstapel | ✅ | |
+| Behebung per Klick (Dateirechte, abgelaufene Befugnis, .gitignore) | 🔒 | nur nach Bestätigung |
+| Rechte lockern, Updates installieren oder Schlüssel automatisch erneuern | ❌ | bewusst nicht – nur Empfehlung |
+
 ## 13. Stab – JARVIS als Chef des Stabes
 
 | Funktion | Stand | Hinweis |
@@ -311,12 +341,13 @@ Bedeutung der Zeichen:
 | Morgenbriefing vom Stab erstellt | ✅ | automatisch wie bisher |
 | Agenten mit eigener Stimme | ❌ | bewusst nicht – nur JARVIS spricht |
 | Agent HESTIA (IMMO) für Immobilien im Stab, mit eigenem Emblem | ✅ | |
+| Agent AEGIS (SICH) für IT-Sicherheit im Stab, mit eigenem Emblem (Schild) | ✅ | siehe 12f |
 
 ## 14. Technik und Betrieb
 
 | Funktion | Stand | Hinweis |
 |---|---|---|
-| Einstellungen in Reitern (Allgemein, Stimme & Gespräch, Stab, Konten & Schlüssel, Daten & Postfächer, Fahrzeuge, Immobilien, iPhone, Autopilot, Zuhause, Notfall) mit Suche über alle Reiter | ✅ | merkt sich den letzten Reiter; auf dem iPhone wischbare Leiste |
+| Einstellungen in Reitern (Allgemein, Stimme & Gespräch, Stab, Konten & Schlüssel, Daten & Postfächer, Fahrzeuge, Immobilien, iPhone, Autopilot, Zuhause, Notfall, Projekte, Sicherheit) mit Suche über alle Reiter | ✅ | merkt sich den letzten Reiter; auf dem iPhone wischbare Leiste |
 | Läuft als Hintergrunddienst mit Autostart | ✅ | |
 | Mehrere Macs und Benutzer, Wache-Übergabe | ✅ | |
 | Automatische Updates; startet eine neue Version nicht, kommt die vorige zurück | ✅ | |

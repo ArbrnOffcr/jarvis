@@ -23,7 +23,7 @@ from atlas.paths import read_private_json, write_private_json
 FREMD_WERKZEUGE = {
     "mail_posteingang", "mail_suchen", "mail_lesen", "mail_wache_liste", "werbefilter_status",
     "dokument_lesen", "dokument_ablage_vorschlag", "datei_lesen", "datei_zeigen", "archiv_suchen",
-    "post_offen", "kontakt_aus_dokument", "stab_einsatz", "abstimmen",
+    "post_offen", "kontakt_aus_dokument", "stab_einsatz", "abstimmen", "projekt_funde", "projekte_liste",
 }
 # Werkzeuge mit überwiegend eigenen Daten, in denen aber Fremdtext stecken kann (Einladungstitel, Dateinamen,
 # Kontaktnotizen, Webtitel): nur prüfen und bereinigen, ohne den Durchlauf zu färben

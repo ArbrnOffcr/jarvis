@@ -36,6 +36,8 @@ GRUPPEN = {
     "ziele": ["ziele_", "arbeitsort_", "dienststelle_"],
     "notfall": ["notfall_"],
     "zuhause": ["zuhause_", "nuki_"],
+    "projekte": ["projekt", "beobachtung_", "recherche_jetzt"],
+    "sicherheit": ["sicherheitsaudit", "audit_bericht", "sicherheit_beheben"],
 }
 
 # Wortanfänge → Gruppen
@@ -45,6 +47,10 @@ SIGNALE = [
      r"was liegt an|stapel|entscheidungen", ["autopilot"]),
     (r"notfall|verstorben|gestorben|\btod\b|todesfall|beerdigung|bestattung|trauer|erbe\b|erbschaft|witwe|leitfaden",
      ["notfall", "fristen", "kontakte", "mail"]),
+    (r"sicherheitsaudit|sicherheitsbericht|schwachstelle|sicherheitslücke|audit\b|aegis|wie sicher|abgesichert|"
+     r"filevault|firewall|offene ports|angriff", ["sicherheit", "autopilot"]),
+    (r"projekt|beobacht|recherchier|nachrichtenlage|news|meldungen zu|halte mich .*auf dem laufenden|informier mich|"
+     r"alarmier|funde", ["projekte", "gedaechtnis", "fristen"]),
     (r"licht|lampe|beleuchtung|lautsprecher|homepod|szene|zuhause|haustür|tür\b|abgeschlossen|abschließ|schloss|nuki|"
      r"smart ?home|homekit", ["zuhause"]),
     (r"avatar|aura\b|nova\b|milo\b|stil\b|stilwelt|darstellung|zeig dich|dreh dich|umdrehen|kern\b", ["faehigkeiten"]),

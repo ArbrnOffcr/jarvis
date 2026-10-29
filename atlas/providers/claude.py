@@ -81,7 +81,7 @@ class ClaudeProvider(Provider):
                 return m
         raise ProviderError(f"Kein Claude-Modell für '{alias}' gefunden")
 
-    def step(self, model, system, messages, tools, max_tokens):
+    def step(self, model, system, messages, tools, max_tokens, websuche: bool = True):
         if not self.client:
             raise ProviderError("Kein Anthropic API-Key – bitte 'jarvis setup'")
         fest, _, wechselnd = system.partition(CACHE_MARKE)
@@ -93,7 +93,7 @@ class ClaudeProvider(Provider):
                       max_tokens=max_tokens)
         tool_list = [{"name": t.name, "description": t.description,
                       "input_schema": t.schema()} for t in tools or []]
-        if self.recherche.get("aktiv"):            # Websuche läuft bei Anthropic (Servertool)
+        if self.recherche.get("aktiv") and websuche:   # Websuche läuft bei Anthropic (Servertool)
             tool_list.append({"type": self.recherche.get("werkzeug", "web_search_20250305"),
                               "name": "web_search", "max_uses": self.recherche.get("max_suchen", 5),
                               "user_location": {"type": "approximate", "city": self.ort or "Berlin",

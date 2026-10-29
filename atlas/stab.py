@@ -21,7 +21,7 @@ import yaml
 
 from atlas.paths import private_dir
 
-REIHENFOLGE = ["zeit", "kom", "dienst", "fin", "akte", "aufkl", "log", "immo"]
+REIHENFOLGE = ["zeit", "kom", "dienst", "fin", "akte", "aufkl", "log", "immo", "sich"]
 EUR_JE_USD = 0.92
 MAX_TIEFE = 2            # höchstens zwei Weiterleitungen zwischen Agenten
 MAX_SCHRITTE = 5
@@ -63,6 +63,7 @@ def _vorabruf(k: str, v: date, b: date) -> list[tuple[str, dict]]:
         "aufkl": [("wetter", {"tage": min(7, max(2, tage))})],
         "log": [("einkaufsliste", {})],
         "immo": [("immobilie_kennzahlen", {}), ("nebenkosten_status", {})],
+        "sich": [("audit_bericht", {})],
     }.get(k, [])
 
 # ---------------------------------------------------------------- Persönlichkeit JARVIS
@@ -153,9 +154,18 @@ AGENTEN_STANDARD = {
                             "Namen oder Kontaktdaten von Mietern an die Cloud geben"],
              "werkzeuge": ["immo", "fristen"], "modell": "haiku", "datenschutz": "hoch",
              "tonfall": "gewissenhafte Hausverwalterin – ruhig, genau, fristbewusst, knapp"},
+    "sich": {"name": "Aegis", "sachgebiet": "IT-Sicherheit von JARVIS und dem Mac",
+             "auftrag": "Prüft wöchentlich und auf Zuruf rein lokal Rechte, Befugnisse, Schlüssel, Dateirechte, offene Ports, "
+                        "Tailscale, macOS-Schutz, Abhängigkeiten und Protokoll-Auffälligkeiten; meldet Schwachstellen mit "
+                        "Ampel und konkreter Empfehlung.",
+             "darf": ["Sicherheitsaudit ausführen und den Bericht lesen", "Behebungen vorschlagen"],
+             "darf_nicht": ["Behebungen ohne ausdrückliche Bestätigung ausführen", "Schlüssel oder Fundstellen im Klartext nennen",
+                            "Rechte oder Befugnisse lockern"],
+             "werkzeuge": ["sicherheit"], "modell": "haiku", "datenschutz": "hoch",
+             "tonfall": "ruhig, präzise, priorisiert nach Schwere – erst das Kritische, dann der Rest"},
 }
 KUERZEL = {"zeit": "ZEIT", "kom": "KOM", "dienst": "DIENST", "fin": "FIN", "akte": "AKTE", "aufkl": "AUFKL", "log": "LOG",
-           "immo": "IMMO"}
+           "immo": "IMMO", "sich": "SICH"}
 FEST_LOKAL = {"fin"}
 RECHTE = {"auftrag", "darf", "darf_nicht"}
 TECHNIK = {"werkzeuge", "modell", "aktiv"}

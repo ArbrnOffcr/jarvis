@@ -92,6 +92,12 @@ class Proaktiv:
         if hestia:
             text = (text or "").rstrip() + "\n\n" + hestia
         try:
+            proj = self.c.projekte.briefing_zeile()
+        except Exception:
+            proj = ""
+        if proj:
+            text = (text or "").rstrip() + "\n\n" + proj
+        try:
             nacht = self.c.aufmerksamkeit.briefing_zeile()
         except Exception:
             nacht = ""

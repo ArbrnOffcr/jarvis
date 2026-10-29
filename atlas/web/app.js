@@ -3429,6 +3429,7 @@ function stabGlyph(k) {
     AKTE: `<rect x="21" y="17" width="22" height="30" rx="1.5"/><path d="M21 27 H43 M21 37 H43"/><path d="M28.5 21.5 H35.5 M28.5 31.5 H35.5 M28.5 41.5 H35.5" class="sl-dick"/>`,
     AUFKL: `<circle cx="32" cy="32" r="13"/><circle cx="32" cy="32" r="6.5" class="sl-fein"/><path d="M32 32 L41.2 22.8"/><path d="M32 32 L41.2 22.8 A13 13 0 0 1 45 32 Z" class="sl-schwenk"/><path d="M32 15 V19 M32 45 V49 M15 32 H19 M45 32 H49" class="sl-fein"/><circle cx="37" cy="36.5" r="1.8" class="sl-voll"/>`,
     LOG: `<path d="M32 45 C27 38.5 24.5 34.5 24.5 30 A7.5 7.5 0 0 1 39.5 30 C39.5 34.5 37 38.5 32 45 Z"/><circle cx="32" cy="30" r="2.8"/><path d="M16 47 Q22 41 27 46 M37 46 Q42 41 48 47" class="sl-weg"/>`,
+    SICH: `<path d="M32 15.5 L44.5 20 V30.5 C44.5 38.5 39 44.5 32 47.5 C25 44.5 19.5 38.5 19.5 30.5 V20 Z"/><path d="M32 20 V43.5" class="sl-fein"/><path d="M26 31.5 L30.5 36 L38.5 27.5" class="sl-dick"/>`,
     IMMO: `<path d="M17.5 31.5 L32 19 L46.5 31.5"/><path d="M21.5 28.5 V45 H42.5 V28.5"/><path d="M38.5 23.2 V18.5 H41.5 V25.8" class="sl-fein"/><path d="M32 43 C27 40.2 27 35.6 30.6 31.2 C30.8 34.2 32.6 35 33.4 33.2 C36 35.8 37 40.2 32 43 Z" class="sl-voll"/><path d="M26 45 H38" class="sl-fein"/>`,
   };
   return G[k] || "";
@@ -3440,7 +3441,7 @@ function stabLogo(k, cls = "") {
     <path class="sl-ecken" d="M32 0.5 V4 M32 60 V63.5 M3 16 L7.8 18 M61 16 L56.2 18 M3 48 L7.8 46 M61 48 L56.2 46"/>
     <g class="sl-glyph">${stabGlyph(k)}</g></svg>`;
 }
-const STAB_NAMEN = { JARVIS: "JARVIS", ZEIT: "CHRONOS", KOM: "HERMES", DIENST: "ADJUTANT", FIN: "QUAESTOR", AKTE: "ARCHIVAR", AUFKL: "SCOUT", LOG: "QUARTIERMEISTER", IMMO: "HESTIA" };
+const STAB_NAMEN = { JARVIS: "JARVIS", ZEIT: "CHRONOS", KOM: "HERMES", DIENST: "ADJUTANT", FIN: "QUAESTOR", AKTE: "ARCHIVAR", AUFKL: "SCOUT", LOG: "QUARTIERMEISTER", IMMO: "HESTIA", SICH: "AEGIS" };
 
 // ---------- Stab: Animation beim Delegieren (Kern → Agenten → Meldung zurück) ----------
 const SA = { el: null, svg: null, ag: {}, c: [0, 0], weg: null, ruhig: false };
@@ -6129,3 +6130,208 @@ document.addEventListener("change", async (e) => {
 });
 const _einstOeffnenAvatar = window.einstellungenOeffnen;
 window.einstellungenOeffnen = function () { _einstOeffnenAvatar(); avatarModelleAufbauen(); };
+
+// =====================================================================
+//  PROJEKTE: Vorhaben über Wochen – Beobachtungen (Internetrecherche), Funde, verknüpfte Vorgänge und Fristen
+// =====================================================================
+const PJ = { d: null, aktiv: null, el: null };
+const pjZeit = (iso) => { if (!iso) return "–"; const d = new Date(iso); return isNaN(d) ? "–" : d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
+const pjListe = (s) => String(s || "").split(",").map((x) => x.trim()).filter(Boolean);
+async function projekteOeffnen(id) {
+  try { PJ.d = await fdGet("/projekte"); } catch (e) { return toast("Projekte: " + e.message); }
+  if (id) PJ.aktiv = id;
+  if (!PJ.d.projekte.find((p) => p.id === PJ.aktiv)) PJ.aktiv = PJ.d.projekte[0]?.id || null;
+  if (!PJ.el || !document.body.contains(PJ.el)) {
+    PJ.el = btFenster("PROJEKTE", "", "pj-fenster");
+    PJ.el.querySelector(".bt-kopf-rechts").innerHTML = `<button type="button" data-pj="neu">＋ PROJEKT</button>`;
+  }
+  pjZeichnen();
+}
+function pjZeichnen() {
+  const d = PJ.d, box = PJ.el?.querySelector(".bt-inhalt"); if (!box) return;
+  const v = d.verbrauch || {};
+  const liste = d.projekte.map((p) => `<button type="button" class="pj-karte ${p.id === PJ.aktiv ? "an" : ""} pj-${p.status}" data-pj="waehlen" data-id="${esc(p.id)}">
+      <b>${esc(p.name)}</b><span>${esc({ aktiv: "aktiv", pausiert: "pausiert", abgeschlossen: "abgeschlossen" }[p.status])}${p.beobachtungen.length ? ` · ${p.beobachtungen.length} Beobachtung${p.beobachtungen.length > 1 ? "en" : ""}` : ""}</span>
+      ${p.alarme ? `<em class="pj-alarm">${p.alarme} ALARM</em>` : p.ungelesen ? `<em>${p.ungelesen} neu</em>` : ""}</button>`).join("")
+    || `<p class="vb-hilfe">Noch kein Projekt. Rechts oben „＋ PROJEKT“ – oder per Sprache: „Leg ein Projekt Auslandsverwendung an und halte mich zu Dienstposten in Norfolk auf dem Laufenden.“</p>`;
+  const p = d.projekte.find((x) => x.id === PJ.aktiv);
+  box.innerHTML = `<div class="pj-raster"><aside class="pj-liste">${liste}<p class="pj-verbrauch">Claude-Auswertungen ${new Date().toLocaleString("de-DE", { month: "long" })}: ${v.bewertungen || 0}/${v.grenzen?.bewertungen || "–"} Bewertungen · ${v.nachrecherchen || 0}/${v.grenzen?.nachrecherchen || "–"} Nachrecherchen</p></aside>
+    <section class="pj-detail vb">${p ? pjDetail(p) : ""}</section></div>`;
+}
+function pjDetail(p) {
+  const beob = p.beobachtungen.map((b) => `<li class="${b.aktiv ? "" : "aus"}"><div><b>${esc(b.titel)}</b>
+      <small>${esc(b.suchbegriffe.join(", "))} · alle ${b.intervall_h} h · zuletzt ${pjZeit(b.letzter_lauf)}${b.alarmwoerter.length ? ` · Alarm bei: ${esc(b.alarmwoerter.join(", "))}` : ""}${b.feeds.length ? ` · ${b.feeds.length} eigene Feeds` : ""}</small></div>
+      <button type="button" data-pj="b-aktiv" data-b="${esc(b.id)}">${b.aktiv ? "PAUSE" : "AN"}</button><button type="button" data-pj="b-weg" data-b="${esc(b.id)}" title="Beobachtung entfernen">✕</button></li>`).join("");
+  const funde = p.funde.map((f) => `<li class="pj-fund ${f.alarm ? "pj-alarm-fund" : ""} ${f.gelesen ? "gelesen" : ""}">
+      <i class="pj-rel" style="--r:${f.relevanz / 10}" title="Relevanz ${f.relevanz}/10"></i>
+      <div><a href="#" data-pj="fund" data-f="${esc(f.id)}">${esc(f.titel)}</a>
+        <small>${esc(f.quelle)} · ${pjZeit(f.datum || f.gefunden)} · ${esc(f.beobachtung)}</small>${f.satz ? `<p>${esc(f.satz)}</p>` : ""}${f.stand ? `<p class="pj-stand">${esc(f.stand)}</p>` : ""}</div></li>`).join("");
+  const vg = p.vorgaenge.map((x) => `<li><b>${esc(x.titel)}</b><small>${esc(x.status)}${x.frist && x.frist !== "–" ? ` · Frist ${esc(x.frist)}` : ""}${x.naechster_schritt && x.naechster_schritt !== "–" ? ` · nächster Schritt: ${esc(x.naechster_schritt)}` : ""}</small></li>`).join("");
+  const fr = p.fristen.map((x) => `<li><b>${esc(x.titel)}</b><small>${esc(x.datum.split("-").reverse().join("."))} · ${x.in_tagen < 0 ? `${-x.in_tagen} Tage überfällig` : `in ${x.in_tagen} Tagen`}</small></li>`).join("");
+  return `<div class="pj-kopf"><h3>${esc(p.name)}</h3><select data-pj="status">${["aktiv", "pausiert", "abgeschlossen"].map((s) => `<option ${s === p.status ? "selected" : ""}>${s}</option>`).join("")}</select>
+      <button type="button" data-pj="lauf" title="Alle Beobachtungen jetzt ausführen">⟳ JETZT RECHERCHIEREN</button></div>
+    <div class="vb-feld"><label>Ziel</label><input data-pjf="ziel" value="${esc(p.ziel)}" placeholder="Worum geht es, was soll erreicht werden?"></div>
+    <div class="vb-feld"><label>Stichwörter (verknüpfen Vorgänge und Fristen, Komma-getrennt)</label><input data-pjf="stichwoerter" value="${esc(p.stichwoerter.join(", "))}"></div>
+    <div class="bt-reihe"><button type="button" data-pj="speichern">SPEICHERN</button><span class="pj-hinweis">angelegt ${pjZeit(p.erstellt)}${p.naechster_lauf ? ` · nächste Recherche ${pjZeit(p.naechster_lauf)}` : ""}</span></div>
+    <h5>BEOBACHTUNGEN</h5><ul class="pj-beob">${beob || "<li class='leer'>Noch keine – unten anlegen.</li>"}</ul>
+    <details class="pj-neu"><summary>＋ BEOBACHTUNG</summary>
+      <div class="vb-feld"><label>Titel</label><input data-pjb="titel" placeholder="z. B. Dienstposten Norfolk"></div>
+      <div class="vb-feld"><label>Suchbegriffe (Komma-getrennt; Wortgruppen werden zusammen gesucht)</label><input data-pjb="suchbegriffe" placeholder="NATO Norfolk, Allied Command Transformation"></div>
+      <div class="vb-feld"><label>Alarm sofort bei (Komma-getrennt, optional)</label><input data-pjb="alarm" placeholder="Ausschreibung, Frist, Auflösung"></div>
+      <div class="vb-feld"><label>Ausschließen (optional)</label><input data-pjb="aus" placeholder="Sport, Börse"></div>
+      <div class="vb-feld"><label>Eigene RSS-Feeds (https, optional)</label><input data-pjb="feeds" placeholder="https://…/feed"></div>
+      <div class="bt-reihe"><span>Alle</span><select data-pjb="int"><option value="3">3 Stunden</option><option value="6">6 Stunden</option><option value="12" selected>12 Stunden</option><option value="24">24 Stunden</option><option value="72">3 Tage</option><option value="168">Woche</option></select>
+        <span>Sprache</span><select data-pjb="sprache"><option value="de">Deutsch</option><option value="en">Englisch</option></select>
+        <button type="button" class="primary" data-pj="b-neu">ANLEGEN</button></div></details>
+    <h5>FUNDE ${p.ungelesen ? `<button type="button" class="pj-mini" data-pj="gelesen">ALLE GELESEN</button>` : ""}</h5>
+    <ul class="pj-funde">${funde || "<li class='leer'>Noch keine Meldungen.</li>"}</ul>
+    <div class="pj-zwei"><div><h5>VORGÄNGE</h5><ul class="pj-mini-liste">${vg || "<li class='leer'>keine verknüpft</li>"}</ul></div>
+      <div><h5>FRISTEN</h5><ul class="pj-mini-liste">${fr || "<li class='leer'>keine verknüpft</li>"}</ul></div></div>`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-pj]"); if (!b) return;
+  if (b.tagName === "SELECT") return;
+  e.preventDefault();
+  const a = b.dataset.pj, st = PJ.el?.querySelector(".bt-status"), p = PJ.d?.projekte.find((x) => x.id === PJ.aktiv);
+  const f = (k) => PJ.el.querySelector(`[data-pjf="${k}"]`), g = (k) => PJ.el.querySelector(`[data-pjb="${k}"]`);
+  const melde = (t, ok = true) => { if (st) { st.textContent = t; st.className = "im-form-status bt-status " + (ok ? "ok" : "fehler"); } };
+  try {
+    if (a === "waehlen") { PJ.aktiv = b.dataset.id; return pjZeichnen(); }
+    if (a === "neu") { const name = prompt("Name des Projekts:"); if (!name) return; const r = await vbPost("/projekte/anlegen", { name }); PJ.aktiv = r.id; return projekteOeffnen(); }
+    if (a === "speichern") { await vbPost("/projekte/aendern", { projekt: p.id, ziel: f("ziel").value, stichwoerter: pjListe(f("stichwoerter").value) }); melde("✓ gespeichert"); return projekteOeffnen(); }
+    if (a === "b-neu") {
+      const r = await vbPost("/projekte/beobachtung", { projekt: p.id, titel: g("titel").value, suchbegriffe: pjListe(g("suchbegriffe").value),
+        alarmwoerter: pjListe(g("alarm").value), ausschluss: pjListe(g("aus").value), feeds: pjListe(g("feeds").value), intervall_h: +g("int").value, sprache: g("sprache").value });
+      melde("✓ " + r.hinweis); return setTimeout(projekteOeffnen, 400);
+    }
+    if (a === "b-aktiv") { const bb = p.beobachtungen.find((x) => x.id === b.dataset.b); await vbPost("/projekte/beobachtung_aendern", { projekt: p.id, beobachtung: bb.id, aktiv: !bb.aktiv }); return projekteOeffnen(); }
+    if (a === "b-weg") { if (!confirm("Beobachtung entfernen?")) return; await vbPost("/projekte/beobachtung_aendern", { projekt: p.id, beobachtung: b.dataset.b, loeschen: true }); return projekteOeffnen(); }
+    if (a === "lauf") { melde("Recherchiere …"); b.disabled = true; const r = await vbPost("/projekte/lauf", { projekt: p.id });
+      const n = (r || []).reduce((s, x) => s + (x.funde || 0), 0); melde(`✓ ${n} neue Meldung(en)`); return projekteOeffnen(); }
+    if (a === "gelesen") { await vbPost("/projekte/gelesen", { projekt: p.id, alle: true }); return projekteOeffnen(); }
+    if (a === "fund") {
+      const r = await vbPost(`/projekte/fund/${encodeURIComponent(b.dataset.f)}/oeffnen`).catch((err) => ({ fehler: err.message }));
+      if (MOBIL && r.url) window.open(r.url, "_blank");
+      vbPost("/projekte/gelesen", { projekt: p.id, fund: b.dataset.f }).catch(() => {}); return;
+    }
+    if (a === "einst-oeffnen") { typeof einstZu === "function" && einstZu(); return projekteOeffnen(b.dataset.id); }
+  } catch (err) { melde("⚠ " + err.message, false); }
+});
+document.addEventListener("change", async (e) => {
+  if (!e.target.matches('[data-pj="status"]')) return;
+  try { await vbPost("/projekte/aendern", { projekt: PJ.aktiv, status: e.target.value }); projekteOeffnen(); } catch (err) { toast(err.message); }
+});
+const _handleProjekte = handle;
+handle = function (ev) {
+  if (ev.type === "projekte") {
+    if (ev.zeigen) projekteOeffnen();
+    else if (PJ.el && document.body.contains(PJ.el)) projekteOeffnen();
+    if (!$("einst").hidden) projekteEinstAufbauen();
+    return;
+  }
+  _handleProjekte(ev);
+};
+// Schnellleiste: dritter Knopf
+(function () {
+  const l = $("schnell"); if (!l) return;
+  l.insertAdjacentHTML("beforeend", `<button type="button" data-sl="projekte" title="Projekte"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 9.5h7l2 2.5h11v12.5H6z"/><path d="M6 14h20"/><path d="M11 19h7M11 22h4"/></svg><span>PROJEKTE</span></button>`);
+  l.addEventListener("click", (e) => { if (e.target.closest('[data-sl="projekte"]')) { e.stopImmediatePropagation(); projekteOeffnen(); } }, true);
+})();
+// Einstellungen → Reiter PROJEKTE
+async function projekteEinstAufbauen() {
+  const box = $("einst-projekte"); if (!box) return;
+  let d; try { d = await fdGet("/projekte"); } catch (e) { return; }
+  box.innerHTML = (d.projekte.map((p) => `<div class="einst-zeile"><span><b>${esc(p.name)}</b><small class="im-einst-sub">${esc(p.status)} · ${p.beobachtungen.length} Beobachtung(en)${p.ungelesen ? ` · ${p.ungelesen} neu` : ""}${p.alarme ? ` · ${p.alarme} Alarm` : ""}${p.ziel ? " · " + esc(p.ziel.slice(0, 60)) : ""}</small></span>
+      <button type="button" data-pj="einst-oeffnen" data-id="${esc(p.id)}">ÖFFNEN</button></div>`).join("") || `<p class="vb-hilfe">Noch keine Projekte.</p>`)
+    + `<p class="vb-hilfe">Recherche: erst kostenlose Nachrichten-Feeds, nur neue Treffer bewertet Claude (Monat: ${d.verbrauch.bewertungen}/${d.verbrauch.grenzen.bewertungen}), Alarme kommen sofort, alles andere gesammelt im Entscheidungsstapel und Briefing.</p>
+      <div class="vb-reihe"><button type="button" class="primary" data-pj="einst-oeffnen">ÜBERSICHT ÖFFNEN</button></div>`;
+}
+const _einstOeffnenPJ = window.einstellungenOeffnen;
+window.einstellungenOeffnen = function () { _einstOeffnenPJ(); projekteEinstAufbauen(); };
+
+// =====================================================================
+//  AEGIS: Sicherheitsaudit (Stab-Agent SICH) – Bericht mit Ampel, Befunden, Behebung nur nach Rückfrage
+// =====================================================================
+const AG = { d: null, el: null, warten: null };
+const AG_STUFE = { kritisch: "KRITISCH", hoch: "HOCH", mittel: "MITTEL", niedrig: "NIEDRIG", info: "INFO", ok: "OK" };
+const AG_AMPEL = { rot: "ROT", gelb: "GELB", gruen: "GRÜN" };
+async function aegisOeffnen() {
+  try { AG.d = await fdGet("/sicherheit/audit"); } catch (e) { return toast("Sicherheitsaudit: " + e.message); }
+  if (!AG.el || !document.body.contains(AG.el)) {
+    AG.el = btFenster("SICHERHEITSAUDIT · AEGIS", "", "ag-fenster");
+    AG.el.querySelector(".bt-kopf-rechts").innerHTML = `<button type="button" data-ag="start">⟳ JETZT PRÜFEN</button>`;
+  }
+  agZeichnen();
+}
+function agBefund(b) {
+  return `<li class="ag-b ag-${b.stufe} ${b.behoben ? "behoben" : ""}"><i>${AG_STUFE[b.stufe] || b.stufe}</i>
+    <div><b>${esc(b.titel)}${b.neu ? ` <em class="ag-neu">NEU</em>` : ""}</b><small>${esc(b.bereich)}${b.detail ? " · " + esc(b.detail) : ""}</small>
+    ${b.empfehlung ? `<p>${esc(b.empfehlung)}</p>` : ""}</div>
+    ${b.fix && !b.behoben ? `<button type="button" data-ag="fix" data-fix="${esc(b.fix)}" data-titel="${esc(b.titel)}">BEHEBEN</button>` : b.behoben ? `<span class="ag-erledigt">✓ behoben</span>` : ""}</li>`;
+}
+function agZeichnen() {
+  const d = AG.d, box = AG.el?.querySelector(".bt-inhalt"); if (!box) return;
+  const st = AG.el.querySelector(".bt-status");
+  if (st) st.textContent = d.laeuft ? "AEGIS prüft … (bis 1–2 Minuten)" : "";
+  if (!d.vorhanden) { box.innerHTML = `<p class="vb-hilfe">${esc(d.hinweis)}</p>`; return; }
+  const z = d.zaehlung, ernst = d.befunde.filter((b) => !["ok", "info"].includes(b.stufe));
+  const ok = d.befunde.filter((b) => b.stufe === "ok"), info = d.befunde.filter((b) => b.stufe === "info");
+  const verlauf = (d.verlauf || []).slice(-12).map((v) => `<i class="ag-punkt ag-${v.ampel}" title="${esc(v.zeit.slice(0, 10))}: ${AG_AMPEL[v.ampel]} – ${v.zaehlung.kritisch + v.zaehlung.hoch} ernst, ${v.zaehlung.mittel} mittel"></i>`).join("");
+  box.innerHTML = `<div class="ag-kopf"><div class="ag-ampel ag-${d.ampel}"><i></i><i></i><i></i></div>
+      <div><h3>Ampel ${AG_AMPEL[d.ampel]}</h3><small>${pjZeit(d.zeit)} · ${esc(d.anlass)} · ${d.dauer_s} s · nächster Lauf automatisch nach 7 Tagen</small></div>
+      <div class="ag-zahlen">${["kritisch", "hoch", "mittel", "niedrig"].map((s) => `<span class="ag-${s}"><b>${z[s]}</b>${AG_STUFE[s]}</span>`).join("")}</div></div>
+    <div class="ag-verlauf"><span>VERLAUF</span>${verlauf}</div>
+    <h5>HANDLUNGSBEDARF</h5><ul class="ag-liste">${ernst.map(agBefund).join("") || "<li class='leer'>Keine Schwachstellen gefunden.</li>"}</ul>
+    ${info.length ? `<h5>HINWEISE</h5><ul class="ag-liste">${info.map(agBefund).join("")}</ul>` : ""}
+    <details class="ag-gut"><summary>${ok.length} PRÜFUNGEN OHNE BEFUND</summary><ul class="ag-liste">${ok.map(agBefund).join("")}</ul></details>
+    <p class="vb-hilfe">Alle Prüfungen laufen lokal auf dem Mac. Nach außen geht nur die Liste der Paketnamen und Versionen an die öffentliche Schwachstellendatenbank OSV. Fundstellen von Schlüsseln werden nur maskiert gespeichert.</p>`;
+}
+function agWarten() {
+  clearTimeout(AG.warten);
+  AG.warten = setTimeout(async () => {
+    try { AG.d = await fdGet("/sicherheit/audit"); } catch (e) { return; }
+    if (AG.el && document.body.contains(AG.el)) agZeichnen();
+    if (AG.d.laeuft) agWarten(); else if (!$("einst").hidden) aegisEinstAufbauen();
+  }, 2500);
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-ag]"); if (!b) return;
+  e.preventDefault();
+  const a = b.dataset.ag;
+  try {
+    if (a === "oeffnen") { typeof einstZu === "function" && einstZu(); return aegisOeffnen(); }
+    if (a === "start") {
+      const r = await vbPost("/sicherheit/audit/start", { tests: true });
+      if (!r.ok) toast(r.hinweis || "Läuft bereits");
+      if (!AG.el || !document.body.contains(AG.el)) await aegisOeffnen();
+      AG.d = { ...(AG.d || {}), laeuft: true }; agZeichnen(); return agWarten();
+    }
+    if (a === "fix") {
+      if (!confirm(`AEGIS soll beheben:\n„${b.dataset.titel}“\n\nAusführen?`)) return;
+      await vbPost("/sicherheit/audit/beheben", { fix: b.dataset.fix });
+      toast("✓ behoben"); return aegisOeffnen();
+    }
+  } catch (err) { toast("⚠ " + err.message); }
+});
+const _handleAegis = handle;
+handle = function (ev) {
+  if (ev.type === "sicherheit") {
+    if (ev.zeigen) aegisOeffnen();
+    else if (AG.el && document.body.contains(AG.el)) { aegisOeffnen(); if (ev.phase === "start") agWarten(); }
+    if (!$("einst").hidden) aegisEinstAufbauen();
+    return;
+  }
+  _handleAegis(ev);
+};
+async function aegisEinstAufbauen() {
+  const box = $("einst-sicherheit"); if (!box) return;
+  let d; try { d = await fdGet("/sicherheit/audit"); } catch (e) { return; }
+  const z = d.zaehlung || {};
+  box.innerHTML = (d.vorhanden ? `<div class="einst-zeile"><span><b class="ag-text-${d.ampel}">Ampel ${AG_AMPEL[d.ampel]}</b>
+      <small class="im-einst-sub">${pjZeit(d.zeit)} · ${z.kritisch} kritisch · ${z.hoch} hoch · ${z.mittel} mittel · ${z.niedrig} niedrig</small></span>
+      <button type="button" data-ag="oeffnen">BERICHT</button></div>` : `<p class="vb-hilfe">${esc(d.hinweis)}</p>`)
+    + `<p class="vb-hilfe">AEGIS prüft wöchentlich rein lokal: Rechte und Befugnisse, Schlüssel im Code und in der Git-Historie, Dateirechte, offene Ports und Tailscale (Funnel = öffentlich), FileVault/Firewall/SIP/Gatekeeper/Updates/Time Machine, bekannte Schwachstellen der Abhängigkeiten, Auffälligkeiten im Protokoll und die Sicherheitstests. Kritisches meldet AEGIS sofort, der Rest landet im Entscheidungsstapel. Behebungen nur nach deiner Bestätigung.</p>
+    <div class="vb-reihe"><button type="button" class="primary" data-ag="start" ${d.laeuft ? "disabled" : ""}>${d.laeuft ? "PRÜFT …" : "JETZT PRÜFEN"}</button></div>`;
+}
+const _einstOeffnenAG = window.einstellungenOeffnen;
+window.einstellungenOeffnen = function () { _einstOeffnenAG(); aegisEinstAufbauen(); };
