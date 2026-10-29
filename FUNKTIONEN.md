@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 29.10.2026 · Version 0.23.5
+Stand: 29.10.2026 · Version 0.23.6
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -26,7 +26,7 @@ Bedeutung der Zeichen:
 | Deutsch und Englisch (Antwort in der Sprache der Frage) | ✅ | |
 | Eigene Mac-App mit Dauer-Mikrofon, Fenster frei verschiebbar | ✅ | `jarvis app` |
 | Reduzierte Ansicht (nur Kern und Untertitel) und Dashboard-Ansicht | ✅ | Untertitel scrollbar |
-| Stilwelt MOSAIK: abstraktes, frontales Gesicht mit dunklen Augenhöhlen, flacher Nase und flachem Mund, eingebettet in einen feinen Kachelteppich in Plexus-Farben, der kräftig wie eine zähe Masse wabert (treibende Wölbungen ohne Vorzugsrichtung, echte Tiefe, im Gesicht gedämpft); das Gesicht folgt ganz leicht der Maus | ✅ | STIL-Knopf oder „Zeig dich als MOSAIK“; am Mac ca. 40.000 Kacheln |
+| Stilwelt MOSAIK: abstraktes, frontales Gesicht mit dunklen Augenhöhlen, flacher Nase und flachem Mund, eingebettet in einen feinen Kachelteppich in Plexus-Farben, der kräftig wie eine zähe Masse wabert (treibende Wölbungen ohne Vorzugsrichtung, echte Tiefe, im Gesicht gedämpft); das Gesicht folgt ganz leicht der Maus; bei Bildern, Videos und Dokumenten bleibt MOSAIK erhalten (Gesicht gedämpft dahinter, kein Wechsel zum Kern) | ✅ | STIL-Knopf oder „Zeig dich als MOSAIK“; am Mac ca. 40.000 Kacheln |
 | MOSAIK lebt: dezente Mimik, Mund passend zu Stimme und Lauten – auch bei reinen Textantworten liest er stumm mit; Zuhören färbt das Gesicht Plexus-Grün; Nachdenken zeigt gedämpfte Datenströme wie bei Plexus, die seitlich um den Kopf schwingen und oben hinter der Stirn – im Gehirn – verlöschen (nie über dem Gesicht) – je Quelle in eigener, zurückhaltender Farbe | ✅ | Mimik aus neun Posen (ChatGPT), neu aufbereiten: werkzeuge/mosaik/aufbereiten.py |
 | Startsequenz je nach zuletzt gewähltem Stil: bei MOSAIK liegt der Teppich dunkel hinter der Sequenz, wächst beim Aufladen von der Mitte her und entfaltet sich beim Zünden nahtlos zum Gesicht | ✅ | bei Plexus wie bisher mit Globus |
 | Avatare AURA, NOVA, MILO und eigene 3D-Modelle (.glb) | ❌ | entfernt, ersetzt durch MOSAIK; hochgeladene Modelle wandern beim ersten Start in den Papierkorb |

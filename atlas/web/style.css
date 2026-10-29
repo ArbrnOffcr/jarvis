@@ -1759,8 +1759,9 @@ body.mobil #schnell{top:auto;bottom:110px;transform:none}
 #avatar-box{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:0;transition:opacity 1.2s ease}
 body[data-avatar] #avatar-box{opacity:1}
 body[data-avatar] #core3d,body[data-avatar] #core{opacity:0;transition:opacity .9s ease}
-body[data-avatar].bilder #core3d,body[data-avatar].youtube #core3d{opacity:1}
-body[data-avatar].bilder #avatar-box,body[data-avatar].youtube #avatar-box{opacity:.12}
+body[data-avatar].bilder #core3d,body[data-avatar].youtube #core3d{opacity:1;z-index:2}   /* nur Bilder – der Kern bleibt unsichtbar (kernAus) */
+body[data-avatar].bilder #avatar-box,body[data-avatar].youtube #avatar-box{opacity:.45;filter:blur(.5px)}   /* Gesicht bleibt, gedämpft hinter den Bildern */
+body[data-avatar].zeigt #core{opacity:0}
 body.rein.zeigt[data-avatar] #avatar-box{opacity:.6;filter:blur(1px)}
 #avatar-box .mosaik-cv{position:absolute;inset:0;width:100%;height:100%;display:block}
 /* Startsequenz im MOSAIK-Stil: Teppich liegt dunkel dahinter und entfaltet sich beim Zünden */

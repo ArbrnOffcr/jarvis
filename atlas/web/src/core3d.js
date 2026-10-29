@@ -938,8 +938,12 @@ class Core3D {
     this.orbit.update(dt, t, Math.max(this.fokus, this.orbitAus ? 1 : 0));
     this.bloom.strength = this.theme.bloom[0] * (1 + this.st.e * (ruhig ? .12 : .35) + this.ignT * .6) * (1 - this.mood.dim * .45);
     this.gallery.update(dt);
+    // Gesicht (MOSAIK) aktiv: Kern, Ströme und Netz bleiben unsichtbar – nur Bilder/Dokumente erscheinen über dem Gesicht
+    const kern = !this.kernAus;
+    this.world.group.visible = kern; this.streams.points.visible = kern; this.ripples.group.visible = kern;
+    this.orbit.group.visible = kern; if (this.net.obj) this.net.obj.visible = kern;
     this.renderer.autoClear = true;
-    if (this.bloom.enabled) this.composer.render(); else this.renderer.render(this.scene, this.camera);
+    if (this.bloom.enabled && kern) this.composer.render(); else this.renderer.render(this.scene, this.camera);
     if (this.gallery.overlay.children.length) {          // Fotos ohne Bloom darüber zeichnen
       this.renderer.autoClear = false; this.renderer.clearDepth();
       this.renderer.render(this.gallery.overlay, this.camera); this.renderer.autoClear = true;
@@ -966,7 +970,7 @@ function start() {
       setTheme: (n) => c.setTheme(n), setState: (s) => c.setState(s), setLevel: (v) => c.setLevel(v),
       tool: (n) => c.tool(n), showImages: (d) => c.gallery.show(d), hideImages: () => c.gallery.hide(),
       hasImages: () => c.gallery.aktiv,
-      setOrbit: (items) => c.orbit.set(items), orbitAus: (b) => { c.orbitAus = !!b; },
+      setOrbit: (items) => c.orbit.set(items), orbitAus: (b) => { c.orbitAus = !!b; }, kernAus: (b) => { c.kernAus = !!b; },
       setMood: (m) => { Object.assign(c.mood, m || {}); }, ignite: () => { c.ignT = 1.4; c.setState("idle"); }, swapImage: (i, m) => c.gallery.swap(i, m), setFocus: (b) => { c.extFokus = !!b; }, setQuality: (q) => { c.auto = false; c.setQuality(q); }, info: () => ({ fps: c.fps, quality: c.quality, theme: c.themeName }),
     };
     document.body.classList.add("gl");

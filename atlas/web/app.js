@@ -6082,16 +6082,19 @@ const AV_ZUSTAND = { idle: "ruhe", listen: "zuhoeren", think: "denken", tool: "d
   error: "warnung", off: "ruhe" };
 function avatarLib() {
   if (window.JarvisAvatar) return Promise.resolve();
-  if (!AV.laden) AV.laden = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "mosaik.bundle.js?v=20261029g";
+  if (!AV.laden) AV.laden = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "mosaik.bundle.js?v=20261029h";
     s.onload = res; s.onerror = () => { AV.laden = null; rej(new Error("Mosaik-Modul fehlt")); }; document.head.appendChild(s); });
   return AV.laden;
 }
+// Bei Bildern, Videos und Dokumenten bleibt MOSAIK MOSAIK: der 3D-Kern zeigt dann nur die Bilder, nie seinen eigenen Stil
+function kernFuerAvatar() { try { window.jarvis3d?.kernAus?.(!!document.body.dataset.avatar); } catch (e) {} }
+window.addEventListener("jarvis3d-ready", kernFuerAvatar);
 async function avatarSetzen(person) {
   if (AV.person === person && (AV.inst || !person)) return;
   try { AV.inst?.entfernen(); } catch (e) {}
   AV.inst = null; AV.person = person;
   let box = $("avatar-box");
-  if (!person) { delete document.body.dataset.avatar; if (box) setTimeout(() => { if (!AV.person) box.remove(); }, 900); return; }
+  if (!person) { delete document.body.dataset.avatar; kernFuerAvatar(); if (box) setTimeout(() => { if (!AV.person) box.remove(); }, 900); return; }
   if (!box) { box = document.createElement("div"); box.id = "avatar-box"; box.setAttribute("aria-hidden", "true"); $("stage").insertBefore(box, $("state")); }
   box.textContent = "";
   try {
@@ -6100,9 +6103,9 @@ async function avatarSetzen(person) {
     AV.inst = window.JarvisAvatar.erzeugen(box, { qualitaet: window.MOSAIK_QUALITAET || (MOBIL ? "niedrig" : "hoch") });
     AV.inst.zustand(AV_ZUSTAND[coreState] || "ruhe");
     if (window.JARVIS_BOOT_LAEUFT && document.querySelector(".boot")) AV.inst.warten?.();
-    document.body.dataset.avatar = person;
+    document.body.dataset.avatar = person; kernFuerAvatar();
   } catch (e) {
-    console.warn("Mosaik", e); AV.person = null; delete document.body.dataset.avatar; box.remove();
+    console.warn("Mosaik", e); AV.person = null; delete document.body.dataset.avatar; kernFuerAvatar(); box.remove();
     toast("MOSAIK ließ sich nicht laden – der Kern bleibt aktiv");
   }
 }
