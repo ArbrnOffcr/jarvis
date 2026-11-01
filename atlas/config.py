@@ -58,6 +58,10 @@ DEFAULTS: dict = {
         "antrag_uhrzeit": "18:00",
         "zahlung_tage_vorher": 2,
         "intervall_min": 3,
+        # PKV im uniVersa-Kundenportal einreichen (eingelernter Ablauf, Zugang im Schlüsselbund)
+        "pkv_portal": {"aktiv": True, "start_url": "https://www.universa.de/kundenportal", "uhrzeit": "19:00",
+                       "sichtbar": True, "code_warten_s": 180,
+                       "browser": "webkit"},   # webkit = Safari-Technik; alternativ "chromium" oder "chrome"
     },  # neue Versionen automatisch von GitHub holen      # Ordner im DATENARCHIV für neue Dokumente
     # Posteingang: jeder Scan ohne Rechnung/Bescheid ist ein Brief; Ablage nach Bestätigung,
     # bekannte Absender nach 3 Bestätigungen und frühestens 30 Tagen automatisch

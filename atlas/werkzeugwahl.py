@@ -22,7 +22,7 @@ GRUPPEN = {
     "archiv": ["archiv_", "datei_", "dokument_", "word_", "excel_", "pptx_", "post_", "steuer_"],
     "gedaechtnis": ["gedaechtnis_", "vorgang", "vorgaenge"],
     "fristen": ["frist", "vertra", "was_vergessen"],
-    "beihilfe": ["beihilfe_"],
+    "beihilfe": ["beihilfe_", "pkv_"],
     "nachrichten": ["nachricht"],
     "werbung": ["werbefilter"],
     "karte": ["karte_", "route_", "wo_ist"],

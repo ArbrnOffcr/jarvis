@@ -23,6 +23,7 @@ BEREICHE = {
     "notizen": ("Notizen ergänzen", ["notiz_ergaenzen"]),
     "tesla_klima": ("Tesla vorklimatisieren und Ladeplan setzen", ["tesla_klima", "tesla_ladeplan"]),
     "gedaechtnis": ("Gedächtnis pflegen", ["gedaechtnis_vergessen", "vorgang_aktualisieren"]),
+    "pkv_einreichen": ("PKV-Anträge selbstständig im uniVersa-Portal einreichen", ["pkv_einreichen"]),
 }
 STANDARD = [{
     "id": "b-kalender", "bereich": "kalender_privat", "titel": "Private Termine (Handwerker, Privates) anlegen und "

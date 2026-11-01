@@ -11,9 +11,11 @@
   jarvis stimme [de|en <Voice-ID> | test]   ElevenLabs-Stimmen festlegen / testen
   jarvis setup sprache    ElevenLabs-Schlüssel hinterlegen
   jarvis setup telegram   Telegram-Bot verbinden
+  jarvis setup universa   Zugang zum uniVersa-Kundenportal (PKV) in den Schlüsselbund + Browsersteuerung
   jarvis briefing [jetzt]   Morgenbriefing anzeigen / sofort neu erstellen
   jarvis weckwort [hey_jarvis | hey_atlas.onnx | empfindlichkeit 0.5]   Weckwort wählen
   jarvis dienst start|stop|neustart|log
+  jarvis neustart     JARVIS-Core neu starten (lädt den neuen Stand)
   jarvis update       neueste Version von GitHub holen (alle Macs)
   jarvis speichern "Text"   Änderungen sichern und zu GitHub hochladen
   jarvis iphone       JARVIS aufs iPhone: Web-App über Tailscale + Siri-Kurzbefehl „Frag Jarvis“
@@ -625,6 +627,39 @@ def setup_bilder() -> None:
         console.print(f"  [red]✗ Schlüssel abgelehnt – nicht gespeichert[/] ({info})")
 
 
+def setup_universa() -> None:
+    """Zugang zum uniVersa-Kundenportal: nur in den Schlüsselbund. Danach Playwright + Browser bereitstellen."""
+    console.print(Panel.fit("[bold cyan]uniVersa-Kundenportal (PKV)[/]", border_style="cyan"))
+    console.print("[dim]Benutzername und Passwort landen ausschließlich im macOS-Schlüsselbund. Sie gehen nie an\n"
+                  "Claude, nie ins Protokoll. Den Anmeldecode holt JARVIS beim Einreichen selbst aus deiner Mail.[/]")
+    benutzer = input("Benutzername / E-Mail fürs Kundenportal (Enter = unverändert): ").strip()
+    passwort = getpass.getpass("Passwort (Enter = unverändert): ")
+    if benutzer:
+        set_secret("universa_benutzer", benutzer)
+    if passwort:
+        set_secret("universa_passwort", passwort)
+    if benutzer or passwort:
+        console.print("[green]✓ Im Schlüsselbund gespeichert.[/]")
+    passwort = None
+    try:
+        import playwright  # noqa: F401
+    except ImportError:
+        console.print("Browsersteuerung (Playwright) wird installiert …")
+        uv = subprocess.run(["which", "uv"], capture_output=True, text=True).stdout.strip()
+        cmd = [uv, "pip", "install", "-q", "--python", sys.executable, "playwright>=1.45"] if uv else \
+            [sys.executable, "-m", "pip", "install", "-q", "playwright>=1.45"]
+        if subprocess.run(cmd).returncode != 0:
+            console.print("[red]Installation fehlgeschlagen.[/]")
+            return
+    console.print("Lade die Safari-Browsertechnik (WebKit) für die Steuerung (einmalig, ca. 80 MB) …")
+    if subprocess.run([sys.executable, "-m", "playwright", "install", "webkit"]).returncode != 0:
+        console.print("[yellow]WebKit ließ sich nicht laden – ich nehme Chromium.[/]")
+        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"])
+    dienst("neustart")                           # neuer Stand + PKV-Werkzeuge sofort aktiv
+    console.print("[green]✓ Fertig.[/] Jetzt in JARVIS sagen: [bold]„Lerne die PKV-Einreichung“[/] – dann reichst du einen "
+                  "offenen Antrag einmal selbst im JARVIS-Browserfenster ein, und ich schaue zu.")
+
+
 def setup_youtube() -> None:
     console.print(Panel.fit("[bold cyan]YouTube einrichten[/]", border_style="cyan"))
     console.print("[dim]1. console.cloud.google.com → Projekt anlegen (z. B. „JARVIS“)\n"
@@ -753,6 +788,8 @@ def main() -> None:
         setup_youtube()
     elif cmd == "setup" and args[1:2] == ["telegram"]:
         setup_telegram()
+    elif cmd == "setup" and args[1:2] == ["universa"]:
+        setup_universa()
     elif cmd == "briefing":
         briefing(args[1:])
     elif cmd == "setup":
@@ -792,6 +829,8 @@ def main() -> None:
         dashboard(args[1:])
     elif cmd == "dienst":
         dienst(args[1] if len(args) > 1 else "")
+    elif cmd == "neustart":                  # Kurzform von „jarvis dienst neustart“
+        dienst("neustart")
     elif cmd == "update":
         update()
     elif cmd == "messen":

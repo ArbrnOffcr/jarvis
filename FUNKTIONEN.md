@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 29.10.2026 · Version 0.23.6
+Stand: 01.11.2026 · Version 0.24.3
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -121,6 +121,7 @@ Bedeutung der Zeichen:
 | Steuer-Sammelmappe: Excel-Liste für den Steuerberater | ✅ | |
 | Haushaltsbuch: Verträge, Abos, Versicherungen; Beitragsänderungen melden | ✅ | |
 | Beihilfe/PKV: Arztrechnungen erfassen, Anträge und Zahlungen erinnern, Bescheide zuordnen | ⚙️ | Excel-Übersicht im passenden Format nötig |
+| PKV-Antrag selbst im uniVersa-Kundenportal einreichen: einmal einlernen (du reichst im JARVIS-Browserfenster ein, er schreibt mit – ohne Passwort), danach meldet er sich an, holt den Anmeldecode aus deiner Mail, lädt alle offenen Rechnungen (beider Kinder) in einem Antrag hoch, sendet ab und legt die Bestätigung ins PKV-Archiv; Browser: Safari-Technik (WebKit), kein Chrome nötig | 🔒 | `jarvis setup universa` (Zugang nur im Schlüsselbund), dann „Lerne die PKV-Einreichung“ / „Reiche die PKV ein“; mit Befugnis „pkv_einreichen“ täglich 19 Uhr selbstständig; bei Captcha, verändertem Portal oder fehlendem Code hört er auf; Beihilfe Bund nur per App – dort weiter du |
 | Überweisungen, Online-Banking, Käufe | ❌ | bewusst nicht |
 | Passwörter, PINs, Kontonummern merken | ❌ | bewusst nicht; Kontonummern werden für die Cloud unkenntlich gemacht |
 

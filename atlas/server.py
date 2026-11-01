@@ -79,8 +79,11 @@ class Core:
         self.proaktiv = Proaktiv(self)
         from atlas.workflows import beihilfe as wf_beihilfe
         self.beihilfe = wf_beihilfe.Beihilfe(self)
+        from atlas.workflows import pkv_portal as wf_pkv
+        self.pkv = wf_pkv.PkvPortal(self)
         if self.beihilfe.aktiv and self.archiv:
             self.tools.update({t.name: t for t in wf_beihilfe.tools(self)})
+            self.tools.update({t.name: t for t in wf_pkv.tools(self)})
         from atlas import nachrichten
         from atlas.workflows import werbung
         self.nachrichten = nachrichten.Nachrichten(self)
@@ -2329,6 +2332,7 @@ def run():
         ("Timer", c.timer.start),
         ("Musik", c.musik.start),
         ("Beihilfe-Workflow", lambda: c.archiv and c.beihilfe.start(c.proaktiv.stop)),
+        ("PKV-Portal", lambda: c.archiv and c.pkv.start(c.proaktiv.stop)),
         ("lokales Modell vorwärmen", lambda: c.cfg["router"].get("einfach") == "lokal" and
             threading.Thread(target=c.providers["lokal"].warmup, daemon=True).start()),
     ]

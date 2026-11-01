@@ -45,6 +45,7 @@ DEFAULT_POLICY = {
     "timer": Level.FREI,
     "nachrichten.lesen": Level.FREI,      # iMessage: nur Absender/Uhrzeit an die KI, Inhalt nur lokal         # Workflow Arztrechnungen (lokal)
     "beihilfe.verarbeiten": Level.FREI,   # vom Nutzer ausdrücklich so gewünscht: automatisch ablegen/eintragen
+    "beihilfe.einreichen": Level.BESTAETIGEN,  # PKV im Portal absenden – mit Befugnis „pkv_einreichen“ selbstständig
     "beihilfe.schreiben": Level.MELDEN,              # frei lizenzierte Bilder (Wikimedia) suchen und zeigen
     "office.anlegen": Level.MELDEN,       # neue Dokumente nur im Ausgabeordner
     "office.aendern": Level.BESTAETIGEN,  # bestehende Dokumente (mit Sicherungskopie)
