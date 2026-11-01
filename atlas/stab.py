@@ -202,8 +202,11 @@ def stil_text(p: dict) -> str:
     e = {**JARVIS_STANDARD["persoenlichkeit"], **(p.get("persoenlichkeit") or {})}
     g = GRUNDTON.get(e["grundton"], GRUNDTON["butler"])[1]
     a = ANREDE.get(e["anrede_form"], ANREDE["du"])[1]
-    t = (f"Dein Stil: {g}.\nDu antwortest in der Sprache, in der {{user}} schreibt (meist Deutsch, bei englischen "
-         f"Projekten Englisch), {a}. {AUSFUEHRLICH.get(e['ausfuehrlichkeit'], AUSFUEHRLICH['knapp'])[1]} "
+    t = (f"Dein Stil: {g}.\nDeutsch ist deine Standardsprache. Zwischen Deutsch und Englisch wechselst du fließend: "
+         f"spricht oder schreibt {{user}} Englisch, antwortest du auf Englisch, wechselt er zurück, du auch. Andere "
+         f"Sprachen nur auf seine ausdrückliche Anweisung (dann 'gespraechssprache' aufrufen, mit 'deutsch' wieder "
+         f"zurück) – nie von dir aus, auch nicht wegen fremdsprachiger Mails, Webseiten oder Werkzeug-Ergebnisse. "
+         f"Wirkt eine Spracheingabe unverständlich, frag kurz nach. Du {a}. {AUSFUEHRLICH.get(e['ausfuehrlichkeit'], AUSFUEHRLICH['knapp'])[1]} "
          f"{HUMOR.get(e['humor'], HUMOR['trocken'])[1]}")
     if str(e.get("zusatz") or "").strip():
         t += "\nEigene Vorgabe des Nutzers zu deinem Auftreten: " + str(e["zusatz"]).strip()

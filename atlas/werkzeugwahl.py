@@ -13,7 +13,7 @@ GRUPPEN = {
     "kalender": ["kalender_", "wochenplan", "geburtstage"],
     "erinnerungen": ["erinnerung"],
     "einkauf": ["einkauf"],
-    "faehigkeiten": ["faehigkeiten", "einfuehrung", "darstellung_"],
+    "faehigkeiten": ["faehigkeiten", "einfuehrung", "darstellung_", "gespraechssprache"],
     "notizen": ["notiz"],
     "kontakte": ["kontakt", "geburtstage"],
     "mail": ["mail_", "schreibstil", "kontakte_suchen"],
@@ -53,6 +53,8 @@ SIGNALE = [
      r"alarmier|funde", ["projekte", "gedaechtnis", "fristen"]),
     (r"licht|lampe|beleuchtung|lautsprecher|homepod|szene|zuhause|haustür|tür\b|abgeschlossen|abschließ|schloss|nuki|"
      r"smart ?home|homekit", ["zuhause"]),
+    (r"französisch|franzoesisch|italienisch|spanisch|arabisch|niederländisch|portugiesisch|türkisch|polnisch|"
+     r"russisch|sprache\b|sprich (mit mir )?(auf|in)|zurück (auf|zu) deutsch|wieder deutsch", ["faehigkeiten"]),
     (r"avatar|mosaik|gesicht\b|dein gesicht|stil\b|stilwelt|darstellung|zeig dich|kern\b", ["faehigkeiten"]),
     (r"ziel|sport|training|mobil|homeoffice|dienststelle|arbeitszeit|feierabend|wochenende|dienstbeginn",
      ["ziele", "kalender"]),

@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 01.11.2026 · Version 0.24.3
+Stand: 01.11.2026 · Version 0.24.7
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -20,6 +20,7 @@ Bedeutung der Zeichen:
 | Nahtloser Übergang: die Begrüßung wird während der Startsequenz vorgeladen und setzt ein, während das Zünden des Kerns ausklingt – keine Ruhepause mit anschließendem Sprung ins Sprechen | ✅ | |
 | Spracheingabe per Leertaste (gedrückt halten) | ✅ | Erkennung lokal mit Whisper, nichts geht ins Netz |
 | Weckwort „Hey Jarvis“ | ⚙️ | Knopf WECKWORT; lauscht lokal |
+| Sprache: Deutsch als Standard, fließender Wechsel zwischen Deutsch und Englisch (er antwortet in der Sprache, in der du gerade sprichst/schreibst); andere Sprachen (Französisch, Italienisch, Arabisch …) nur auf Anweisung, z. B. „Lass uns Französisch sprechen“ – zurück mit „wieder Deutsch“ | ✅ | gilt bis zum Zurückschalten, Neustart oder 4 Stunden; ohne Anweisung erkennt die Spracherkennung fremde Sprachen fest als Deutsch; erkannte Sprache steht im Protokoll |
 | Gesprächsmodus: nach jeder Antwort 6 s weiter zuhören | ✅ | Knopf GESPRÄCH: AN / OHNE STOPP / AUS |
 | Unterbrechen: Dazwischenreden oder Leertaste stoppt JARVIS | ✅ | Bei Lautsprechern evtl. Echo → OHNE STOPP |
 | Sprachausgabe mit ElevenLabs-Stimme, gestreamt | ⚙️ | Ohne Schlüssel: Mac-Stimme; mit Schlüssel: Standardstimme oder eigene Auswahl |
@@ -121,7 +122,7 @@ Bedeutung der Zeichen:
 | Steuer-Sammelmappe: Excel-Liste für den Steuerberater | ✅ | |
 | Haushaltsbuch: Verträge, Abos, Versicherungen; Beitragsänderungen melden | ✅ | |
 | Beihilfe/PKV: Arztrechnungen erfassen, Anträge und Zahlungen erinnern, Bescheide zuordnen | ⚙️ | Excel-Übersicht im passenden Format nötig |
-| PKV-Antrag selbst im uniVersa-Kundenportal einreichen: einmal einlernen (du reichst im JARVIS-Browserfenster ein, er schreibt mit – ohne Passwort), danach meldet er sich an, holt den Anmeldecode aus deiner Mail, lädt alle offenen Rechnungen (beider Kinder) in einem Antrag hoch, sendet ab und legt die Bestätigung ins PKV-Archiv; Browser: Safari-Technik (WebKit), kein Chrome nötig | 🔒 | `jarvis setup universa` (Zugang nur im Schlüsselbund), dann „Lerne die PKV-Einreichung“ / „Reiche die PKV ein“; mit Befugnis „pkv_einreichen“ täglich 19 Uhr selbstständig; bei Captcha, verändertem Portal oder fehlendem Code hört er auf; Beihilfe Bund nur per App – dort weiter du |
+| PKV-Antrag selbst im uniVersa-Kundenportal einreichen: einmal einlernen (du reichst im JARVIS-Browserfenster ein, er schreibt mit – ohne Passwort; bei „Durchsuchen“ legt er die Belege selbst ein), danach meldet er sich an, holt den Anmeldecode aus deiner Mail, lädt alle offenen Rechnungen (beider Kinder) in einem Antrag hoch, sendet ab und legt die Bestätigung ins PKV-Archiv; Browser: Safari-Technik (WebKit), kein Chrome nötig | 🔒 | `jarvis setup universa` (Zugang nur im Schlüsselbund), dann „Lerne die PKV-Einreichung“ / „Reiche die PKV ein“; mit Befugnis „pkv_einreichen“ täglich 19 Uhr selbstständig; bei Captcha, verändertem Portal oder fehlendem Code hört er auf; Beihilfe Bund nur per App – dort weiter du |
 | Überweisungen, Online-Banking, Käufe | ❌ | bewusst nicht |
 | Passwörter, PINs, Kontonummern merken | ❌ | bewusst nicht; Kontonummern werden für die Cloud unkenntlich gemacht |
 

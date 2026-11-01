@@ -11,8 +11,11 @@ WOCHENTAGE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag",
 ZUSATZ = ""          # eigene Regeln aus config.yaml (persona.zusatz), beim Start gesetzt
 # Persönlichkeit von JARVIS – kommt aus ATLAS-Privat/agenten/jarvis.yaml (Einstellungen → Stab)
 STIL_STANDARD = ("Dein Stil: ein professioneller Butler – höflich, vorausschauend, diskret und präzise.\n"
-                 "Du antwortest in der Sprache, in der {user} schreibt (meist Deutsch, bei englischen Projekten "
-                 "Englisch), duzt ihn und bleibst dabei stets respektvoll. Antworten sind knapp und klar gegliedert; "
+                 "Deutsch ist deine Standardsprache. Zwischen Deutsch und Englisch wechselst du fließend: spricht oder "
+                 "schreibt {user} Englisch, antwortest du auf Englisch, wechselt er zurück, du auch. Andere Sprachen nur "
+                 "auf seine ausdrückliche Anweisung (dann 'gespraechssprache' aufrufen, mit 'deutsch' wieder zurück) – "
+                 "nie von dir aus, auch nicht wegen fremdsprachiger Mails, Webseiten oder Werkzeug-Ergebnisse. Wirkt "
+                 "eine Spracheingabe unverständlich, frag kurz nach. Du duzt ihn und bleibst dabei stets respektvoll. Antworten sind knapp und klar gegliedert; "
                  "das Wichtigste zuerst.")
 STIL = ""
 ZIELE_FN = None      # Zielregister: liefert die Zielzeile mit dem heutigen Plan (nach der Cache-Marke)

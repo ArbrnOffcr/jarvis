@@ -27,7 +27,11 @@ HALLUZINATION = re.compile(r"^\W*(untertitel(ung)?\b.{0,60}|vielen dank (fürs|f
 SETTINGS = "sprache.json"
 DEFAULTS = {"stimme_de": "", "stimme_en": "", "modell": "eleven_flash_v2_5",
             "lokal_de": "Anna", "lokal_en": "Samantha",
+            "lokal_fr": "Thomas", "lokal_it": "Alice", "lokal_es": "Mónica", "lokal_ar": "Majed",
             "whisper": "mlx-community/whisper-large-v3-turbo",
+            # Sprachen, die die Erkennung annehmen darf; alles andere ist fast immer eine Fehlerkennung kurzer
+            # deutscher Sätze (z. B. als Niederländisch) → dann noch einmal fest auf Deutsch erkennen
+            "erkennung_sprachen": ["de", "en"],
             # fertiges Modell (z. B. "hey_jarvis") oder eigene .onnx-Datei in ATLAS-Privat
             "weckwort_modell": "hey_jarvis", "empfindlichkeit": 0.5,
             # False = immer ElevenLabs (auch bei sensiblen Themen); True = sensible Inhalte mit Mac-Stimme
@@ -52,6 +56,35 @@ def save_settings(**kw) -> dict:
     cur.update({k: v for k, v in kw.items() if k in DEFAULTS})
     write_private_json(SETTINGS, cur)
     return cur
+
+
+# Weitere Sprache nur auf ausdrückliche Anweisung (Werkzeug 'gespraechssprache') – gilt bis „zurück auf Deutsch“,
+# bis zum Neustart oder nach einigen Stunden. Deutsch und Englisch gehen immer, fließend.
+SPRACHEN = {"fr": "Französisch", "it": "Italienisch", "es": "Spanisch", "ar": "Arabisch", "nl": "Niederländisch",
+            "pt": "Portugiesisch", "tr": "Türkisch", "pl": "Polnisch", "ru": "Russisch"}
+ZUSATZ = {"code": "", "bis": 0.0}
+
+
+def zusatzsprache() -> str:
+    return ZUSATZ["code"] if ZUSATZ["code"] and time.time() < ZUSATZ["bis"] else ""
+
+
+def zusatzsprache_setzen(sprache: str = "", stunden: float = 4) -> dict:
+    s = (sprache or "").strip().lower()
+    if s in ("", "de", "deutsch", "en", "englisch", "aus", "zurück"):
+        ZUSATZ.update(code="", bis=0.0)
+        return {"ok": True, "sprache": "Deutsch und Englisch (Standard)"}
+    code = next((k for k, v in SPRACHEN.items() if s in (k, v.lower())), "")
+    if not code:
+        raise ValueError("Unbekannte Sprache. Möglich: " + ", ".join(SPRACHEN.values()))
+    ZUSATZ.update(code=code, bis=time.time() + float(stunden) * 3600)
+    return {"ok": True, "sprache": SPRACHEN[code], "gilt_stunden": stunden}
+
+
+def _antwortsprache(text: str, lang: str) -> str:
+    lang = lang or detect_lang(text)
+    z = zusatzsprache()
+    return z if z and lang == "de" else lang
 
 
 def detect_lang(text: str) -> str:
@@ -97,7 +130,7 @@ class Speaker:
         text = clean_for_speech(text)[:2000]
         if not text:
             return "", lang
-        lang = lang or detect_lang(text)
+        lang = _antwortsprache(text, lang)
         from atlas.sprechtext import normalisieren
         return normalisieren(text, lang)[:2500], lang
 
@@ -154,7 +187,7 @@ class Speaker:
                 self._sem.release()
                 grund = f"ElevenLabs nicht erreichbar: {e}"[:160]
         self.last = {"engine": "macOS", "grund": grund, "lang": lang}
-        pcm = self._macos_pcm(text, s[f"lokal_{lang}"])
+        pcm = self._macos_pcm(text, (s.get(f"lokal_{lang}") or s["lokal_de"]))
         return {**self.last, "rate": RATE_TTS}, iter([pcm])
 
     @staticmethod
@@ -173,7 +206,7 @@ class Speaker:
         text = clean_for_speech(text)[:2000]
         if not text:
             return b"", "audio/mpeg"
-        lang = lang or detect_lang(text)
+        lang = _antwortsprache(text, lang)
         from atlas.sprechtext import normalisieren
         text = normalisieren(text, lang)[:2500]           # Zahlen, Beträge, Daten ausschreiben
         s = settings()
@@ -194,7 +227,7 @@ class Speaker:
             except httpx.HTTPError as e:
                 grund = f"ElevenLabs nicht erreichbar: {e}"[:160]
         self.last = {"engine": "macOS", "grund": grund, "lang": lang}
-        return self._macos(text, s[f"lokal_{lang}"]), "audio/wav"
+        return self._macos(text, (s.get(f"lokal_{lang}") or s["lokal_de"])), "audio/wav"
 
     _sem = threading.BoundedSemaphore(3)            # ElevenLabs verträgt wenige parallele Anfragen
 
@@ -239,11 +272,22 @@ class Transcriber:
             extra["language"] = sprache
         if vorher:
             extra["initial_prompt"] = vorher[-120:]
+        erlaubt = list(settings().get("erkennung_sprachen") or ["de", "en"])
+        if zusatzsprache():
+            erlaubt.append(zusatzsprache())
         with self.lock:
             r = mlx_whisper.transcribe(audio, path_or_hf_repo=settings()["whisper"],
                                        condition_on_previous_text=False, **extra)
-        lang = r.get("language") or sprache or "de"
-        return {"text": (r.get("text") or "").strip(), "lang": lang if lang in ("de", "en") else "de"}
+            erkannt = r.get("language") or sprache or "de"
+            if not sprache and erkannt not in erlaubt:
+                # Kurze Sätze erkennt Whisper gern als falsche Sprache – und schreibt sie dann auch in dieser
+                # Sprache (oder übersetzt). Darauf antwortet das Modell dann in der fremden Sprache.
+                extra["language"] = "de"
+                r = mlx_whisper.transcribe(audio, path_or_hf_repo=settings()["whisper"],
+                                           condition_on_previous_text=False, **extra)
+        lang = r.get("language") or "de"
+        return {"text": (r.get("text") or "").strip(), "lang": lang if lang in erlaubt else "de",
+                "erkannt": erkannt}
 
 
 _STT_POOL = None
@@ -459,3 +503,19 @@ class VoiceSession:
 
     def close(self):
         self.oww = None
+
+
+def tools() -> list:
+    from atlas.tools import S, Tool, ToolError
+
+    def setzen(sprache: str = "", stunden: float = 4) -> dict:
+        try:
+            return zusatzsprache_setzen(sprache, stunden)
+        except ValueError as e:
+            raise ToolError(str(e))
+    return [Tool("gespraechssprache",
+                 "NUR auf ausdrückliche Anweisung von Richard: weitere Gesprächssprache neben Deutsch/Englisch "
+                 "einschalten (Spracherkennung und Stimme), z. B. „Lass uns Französisch sprechen“. Mit 'deutsch' "
+                 "zurück zum Standard. Für Englisch nicht nötig – das geht immer.",
+                 "anzeige", setzen, {"sprache": S("z. B. französisch, italienisch, arabisch – oder deutsch = zurück"),
+                                     "stunden": {"type": "number", "description": "Dauer, Standard 4"}}, ["sprache"])]

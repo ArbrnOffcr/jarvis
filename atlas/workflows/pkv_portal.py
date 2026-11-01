@@ -88,7 +88,8 @@ AUFZEICHNER_JS = r"""
     if (!(tag === 'input' || tag === 'textarea') || /^(file|checkbox|radio|submit|button|reset|image)$/.test(typ)) return;
     if (gemeldet.get(el) === el.value) return;
     gemeldet.set(el, el.value);
-    const wert = typ === 'password' ? '{{passwort}}' : el.value;       // Passwort verlässt den Browser nie
+    // Passwort verlässt den Browser nie. Verdeckte Felder mit 4–8 Ziffern sind meist der Code aus der Mail.
+    const wert = typ === 'password' ? (/^\d{4,8}$/.test(el.value) ? '{{ziffern}}' : '{{passwort}}') : el.value;
     melde({ art: 'fuellen', url: location.href, wert, ...beschreibe(el) });
   };
   let letzterKlick = 0;
@@ -120,9 +121,10 @@ AUFZEICHNER_JS = r"""
     if (document.getElementById('jv-leiste') || !document.body) return;
     const d = document.createElement('div'); d.id = 'jv-leiste';
     d.style.cssText = 'position:fixed;z-index:2147483647;right:14px;bottom:14px;background:#03111c;color:#cfefff;font:13px -apple-system,sans-serif;padding:10px 12px;border:1px solid #2fa8ff;box-shadow:0 4px 18px rgba(0,0,0,.4);max-width:330px';
-    d.innerHTML = '<b style="color:#2fa8ff;letter-spacing:.12em">JARVIS LERNT MIT</b><div id="jv-text" style="margin:6px 0 8px">Reiche den Antrag ganz normal ein. Passwörter zeichne ich nicht auf.</div>' +
-      '<button id="jv-absenden" style="margin-right:6px">Nächster Klick = Absenden</button><button id="jv-fertig">Fertig</button>';
+    d.innerHTML = '<b style="color:#2fa8ff;letter-spacing:.12em">JARVIS LERNT MIT</b><div id="jv-text" style="margin:6px 0 8px">Reiche den Antrag ganz normal ein. Bei „Durchsuchen“ lege ich die Belege selbst ein. Passwörter zeichne ich nicht auf.</div>' +
+      '<button id="jv-belege" style="margin:0 6px 6px 0">Belege einlegen</button><button id="jv-absenden" style="margin-right:6px">Nächster Klick = Absenden</button><button id="jv-fertig">Fertig</button>';
     document.body.appendChild(d);
+    d.querySelector('#jv-belege').onclick = (e) => { e.stopPropagation(); melde({ art: 'markierung', was: 'belege' }); };
     d.querySelector('#jv-absenden').onclick = (e) => { e.stopPropagation(); melde({ art: 'markierung', was: 'absenden' });
       d.querySelector('#jv-absenden').textContent = '✓ markiert'; };
     d.querySelector('#jv-fertig').onclick = (e) => { e.stopPropagation(); melde({ art: 'markierung', was: 'fertig' }); };
@@ -212,6 +214,10 @@ def code_aus_text(text: str, streng: bool = False) -> str | None:
     return m.group(1) if m else None
 
 
+CODE_FELD = re.compile(r"code|\btan\b|otp|one-time|bestätigung|bestaetigung|sicherheits|einmal|verif", re.I)
+SENDEN = re.compile(r"absenden|abschicken|einreichen|senden|übermitteln|uebermitteln|beantragen|bestätigen", re.I)
+
+
 def rezept_bauen(ereignisse: list[dict], kontext: dict, erfolg: dict | None = None) -> dict:
     """Aufgezeichnete Ereignisse → Rezept: Platzhalter, Anmeldeschritte optional, doppelte Eingaben zusammengefasst."""
     werte = platzhalter_werte(kontext)
@@ -226,7 +232,11 @@ def rezept_bauen(ereignisse: list[dict], kontext: dict, erfolg: dict | None = No
         if e.get("art") in ("fuellen", "waehlen"):
             s["wert"] = ersetzen(e.get("wert", ""), werte)
             if e.get("typ") == "password":
-                s["wert"] = "{{passwort}}"
+                # verdecktes Feld: Code aus der Mail (Beschriftung/Ziffern, nach dem Passwort) oder das Passwort
+                codeartig = bool(CODE_FELD.search(" ".join([e.get("label") or "", e.get("autocomplete") or "",
+                                                             *[str(k) for k in e.get("kandidaten") or []]])))
+                schon_pw = any(x.get("wert") == "{{passwort}}" for x in schritte)
+                s["wert"] = "{{mailcode}}" if (codeartig or (e.get("wert") == "{{ziffern}}" and schon_pw)) else "{{passwort}}"
             if e.get("art") == "waehlen":
                 s["wahltext"] = ersetzen(e.get("wahltext", ""), werte)
             # gleiche Feld zweimal hintereinander gefüllt → nur der letzte Wert zählt
@@ -251,6 +261,15 @@ def rezept_bauen(ereignisse: list[dict], kontext: dict, erfolg: dict | None = No
     for s in schritte:
         if s.get("wert") == "{{mailcode}}":
             s["art"] = "mailcode"
+    # Absende-Klick vergessen zu markieren? Dann gilt der letzte „Senden/Einreichen“-Klick nach dem Hochladen.
+    geraten = False
+    if not any(s.get("absenden") for s in schritte):
+        hoch = max((i for i, s in enumerate(schritte) if s["art"] == "hochladen"), default=None)
+        if hoch is not None:
+            k = next((i for i in range(len(schritte) - 1, hoch, -1) if schritte[i]["art"] == "klick"
+                      and SENDEN.search(f"{schritte[i].get('text', '')} {schritte[i].get('label', '')}")), None)
+            if k is not None:
+                schritte[k]["absenden"] = geraten = True
     # niemals ein Klartext-Passwort oder ein Code im Rezept (zweite Sicherung): betroffene Felder ersetzen
     mc = kontext.get("mailcode")
     mcs = list(mc) if isinstance(mc, (list, set, tuple)) else [mc]
@@ -265,7 +284,8 @@ def rezept_bauen(ereignisse: list[dict], kontext: dict, erfolg: dict | None = No
                 s[feld] = [k for k in v if not any(x in str(k) for x, _ in geheim)]
     return {"version": 1, "portal": "uniVersa", "eingelernt": datetime.now().isoformat(timespec="minutes"),
             "start_url": kontext.get("start_url") or START_URL, "mail_absender": kontext.get("mail_absender", ""),
-            "schritte": schritte, "erfolg": erfolg or {}, "hat_absenden": any(s.get("absenden") for s in schritte)}
+            "schritte": schritte, "erfolg": erfolg or {}, "hat_absenden": any(s.get("absenden") for s in schritte),
+            "absenden_geraten": geraten}
 
 
 def belege_zusammenfuegen(dateien: list[Path], ziel: Path) -> Path:
@@ -544,10 +564,19 @@ class PkvPortal:
                     if obj.get("art") == "markierung" and obj.get("was") == "fertig":
                         info["fertig"] = True
                         return
+                    if obj.get("art") == "markierung" and obj.get("was") == "belege":
+                        info["belege_einlegen"] = True
+                        return
                     ereignisse.append(obj)
 
                 ctx.expose_binding("jvMelde", melde)
                 ctx.add_init_script(AUFZEICHNER_JS)
+                # „Durchsuchen“: Der gesteuerte Browser zeigt keinen Mac-Dateidialog – JARVIS legt die vorbereiteten
+                # Belege selbst ein (mehrere erlaubt → einzeln, sonst als ein zusammengefügtes PDF).
+                waehler = self.dateiwahl(vor)
+                for pg in ctx.pages:
+                    pg.on("filechooser", waehler)
+                ctx.on("page", lambda pg: pg.on("filechooser", waehler))
                 page.goto(self.cfg.get("start_url") or START_URL, wait_until="domcontentloaded")
                 self.lernen_start["ereignis"].set()              # Fenster und Portal sind da
                 start_url = page.url
@@ -573,6 +602,11 @@ class PkvPortal:
                         if t != gezeigt or time.time() - letzter_hinweis > 3:   # nach jedem Seitenwechsel neu zeigen
                             page.evaluate("t => window.jvText && window.jvText(t)", t)
                             gezeigt, letzter_hinweis = t, time.time()
+                        if info.pop("belege_einlegen", False):          # Knopf in der Leiste (z. B. nur Drag & Drop)
+                            if not self.belege_einlegen(page, vor):
+                                page.evaluate("t => window.jvText && window.jvText(t)",
+                                              "Hier finde ich kein Upload-Feld – bitte erst die Seite mit dem Upload öffnen.")
+                                letzter_hinweis = time.time() + 4
                         # nach dem markierten Absende-Klick: Bestätigungsseite merken
                         if not info["abgesendet"] and any(e.get("art") == "klick" for e in self._nach_markierung(ereignisse)):
                             info["abgesendet"] = True
@@ -585,6 +619,11 @@ class PkvPortal:
                         page.wait_for_timeout(500)              # hält Playwright am Laufen (Meldungen kommen an)
                     except Exception:
                         time.sleep(0.5)
+                if not info["abgesendet"]:
+                    try:
+                        info["erfolg_spaet"] = self._seitenmerkmal(page)
+                    except Exception:
+                        pass
                 try:
                     ctx.close()
                 except Exception:
@@ -593,13 +632,20 @@ class PkvPortal:
                        "passwort": get_secret(SCHLUESSEL_PASSWORT), "mailcode": sorted(info["codes"]),
                        "mail_absender": info["von"], "start_url": start_url}
             r = rezept_bauen(ereignisse, kontext, info["erfolg"])
+            if r.get("absenden_geraten") and not r["erfolg"]:
+                r["erfolg"] = info.get("erfolg_spaet") or {}
             ORDNER.mkdir(parents=True, exist_ok=True)
             REZEPT.write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
             REZEPT.chmod(0o600)
             self.c.audit.log("pkv_portal", aktion="eingelernt", schritte=len(r["schritte"]), absenden=r["hat_absenden"])
             if info["abgesendet"]:
                 self._erledigt(belege, info["beweis"], "beim Einlernen von dir abgesendet")
-            if r["hat_absenden"]:
+            if r.get("absenden_geraten"):
+                self.melden(f"PKV-Einreichung eingelernt ({len(r['schritte'])} Schritte). Den Absende-Knopf hast du "
+                            f"nicht markiert – ich habe den letzten Klick „{next(s.get('text') for s in r['schritte'] if s.get('absenden'))}“ "
+                            f"dafür genommen. Falls du den Antrag wirklich abgeschickt hast, hake die PKV-Erinnerungen "
+                            f"ab, dann trage ich es in Excel ein.")
+            elif r["hat_absenden"]:
                 self.melden(f"PKV-Einreichung eingelernt ({len(r['schritte'])} Schritte). Ab jetzt kann ich "
                                f"PKV-Anträge selbst stellen – sag einfach „Reiche die PKV ein“.")
             else:
@@ -615,6 +661,26 @@ class PkvPortal:
                 shutil.rmtree(vor["ordner"], ignore_errors=True)
             self.lernen_start["ereignis"].set()
             self.laeuft = ""
+
+    @staticmethod
+    def dateiwahl(vor: dict):
+        def waehlen(fc):
+            fc.set_files([str(x) for x in (vor["einzeln"] if fc.is_multiple() else [vor["gesamt"]])])
+        return waehlen
+
+    @staticmethod
+    def belege_einlegen(page, vor: dict) -> bool:
+        for frame in page.frames:
+            loc = frame.locator("input[type=file]")
+            try:
+                if loc.count():
+                    el = loc.first
+                    mehrfach = bool(el.evaluate("e => e.multiple"))
+                    el.set_input_files([str(x) for x in (vor["einzeln"] if mehrfach else [vor["gesamt"]])])
+                    return True
+            except Exception:
+                continue
+        return False
 
     @staticmethod
     def _nach_markierung(ereignisse: list[dict]) -> list[dict]:
@@ -693,6 +759,7 @@ class PkvPortal:
                     fc.set_files([str(x) for x in (vor["einzeln"] if fc.is_multiple() else [vor["gesamt"]])])
                     dialog_dateien["gesetzt"] = True
                 page.on("filechooser", dateiwahl)
+                ctx.on("page", lambda pg: pg.on("filechooser", dateiwahl))
                 page.goto(r.get("start_url") or START_URL, wait_until="domcontentloaded")
                 schritte = r["schritte"]
                 i = 0

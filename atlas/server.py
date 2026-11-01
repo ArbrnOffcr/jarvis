@@ -84,6 +84,7 @@ class Core:
         if self.beihilfe.aktiv and self.archiv:
             self.tools.update({t.name: t for t in wf_beihilfe.tools(self)})
             self.tools.update({t.name: t for t in wf_pkv.tools(self)})
+        self.tools.update({t.name: t for t in voice.tools()})      # weitere Gesprächssprache auf Anweisung
         from atlas import nachrichten
         from atlas.workflows import werbung
         self.nachrichten = nachrichten.Nachrichten(self)
@@ -2110,7 +2111,8 @@ async def audio_ws(ws: WebSocket, token: str = "", wake: int = 0):
             r = await asyncio.to_thread(vs.abschliessen)
             s_stt = round(time.monotonic() - t0, 2)
             await ws.send_json({"type": "transcript", "text": r["text"], "lang": r["lang"], "s_stt": s_stt})
-            c.audit.log("sprache", s_audio=r["s_audio"], s_erkennung=s_stt, stuecke=r["stuecke"])
+            c.audit.log("sprache", s_audio=r["s_audio"], s_erkennung=s_stt, stuecke=r["stuecke"],
+                        lang=r.get("lang"), erkannt=r.get("erkannt"))       # erkannte Sprache – nie der Inhalt
         except Exception as e:
             vs.take()
             await ws.send_json({"type": "error", "text": f"Spracherkennung: {e}"[:200]})
