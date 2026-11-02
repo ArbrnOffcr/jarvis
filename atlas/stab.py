@@ -34,6 +34,10 @@ LAGE = re.compile(r"bereite\b.{0,30}\b(woche|tag|morgen|heute)|was steht (heute 
                   r"|demnächst )?an|was liegt (heute |morgen |diese woche )?an|lagevortrag|lagebild|^(wie ist die )?lage\b|"
                   r"tagesüberblick|wochenüberblick|überblick über (heute|morgen|die woche|meine woche|den tag)|"
                   r"briefing|tageslage", re.I)
+# Enthält die Anfrage einen Auftrag (merken, ändern, anlegen …), braucht JARVIS seine Werkzeuge – kein Schnellweg
+AUFTRAG = re.compile(r"\bmerk|\bvergiss|änder|aender|anpass|\bstell\b.{0,40}\b(ein|um)\b|\bfüg|ergänz|nimm .{0,40}\bauf\b|"
+                     r"\bleg\b.{0,40}\ban\b|trag .{0,40}\bein\b|erinner mich|\bschreib|\bschick|lösch|verschieb|"
+                     r"\bsag\b.{0,30}\bab\b|künftig|ab jetzt|in zukunft|ab morgen|immer wenn|füge?\b", re.I)
 FIN_SCHNELL = re.compile(r"frist|offen|überblick|woche|heute|morgen|lage|briefing|stand|zahlung|fällig", re.I)
 
 
@@ -774,7 +778,7 @@ class Stab:
         sofort los – ohne dass JARVIS erst überlegt, wen er beauftragt. JARVIS formuliert danach nur noch den
         Vortrag (ein einziger Modell-Durchlauf)."""
         t = (text or "").strip()
-        if not t or len(t) > 260 or not self.bereit() or not LAGE.search(t):
+        if not t or len(t) > 260 or not self.bereit() or not LAGE.search(t) or AUFTRAG.search(t):
             return None
         v, b = _zeitraum(t)
         zr = ("heute" if v == b == date.today() else f"{v:%d.%m.}" if v == b else f"{v:%d.%m.} bis {b:%d.%m.%Y}")

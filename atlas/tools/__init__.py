@@ -30,6 +30,17 @@ class Tool:
         return f"{self.name}({', '.join(f'{k}={v!r}' for k, v in args.items())})"
 
 
+def parameter_hilfe(tool: "Tool", fehler: Exception) -> str:
+    """Bei falschen Parameternamen: die richtige Form gleich mitliefern, damit das Modell es sofort korrekt
+    wiederholt (z. B. wenn es ein Werkzeug ohne Beschreibung aufgerufen hat)."""
+    teile = []
+    for name, p in (tool.params or {}).items():
+        art = "|".join(p["enum"]) if isinstance(p, dict) and p.get("enum") else (p.get("type", "string") if isinstance(p, dict) else "string")
+        teile.append(f"{name}{'' if name in (tool.required or []) else '?'}: {art}")
+    return (f"Fehler: falsche Parameter ({fehler}). Richtig ist {tool.name}({', '.join(teile)}) – "
+            f"genau diese Namen verwenden (? = optional) und sofort noch einmal aufrufen.")
+
+
 def S(desc: str, **extra) -> dict:          # Kurzform: Text-Parameter
     return {"type": "string", "description": desc, **extra}
 

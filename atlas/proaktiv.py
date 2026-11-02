@@ -25,6 +25,51 @@ def macos_notify(title: str, text: str) -> None:
         pass
 
 
+WUENSCHE = "briefing_wuensche.json"
+
+
+def briefing_wuensche() -> list[str]:
+    return [w for w in read_private_json(WUENSCHE, {"wuensche": []}).get("wuensche", []) if str(w).strip()]
+
+
+def briefing_prompt() -> str:
+    """Grundauftrag + Richards eigene Wünsche (z. B. Nachrichtenüberblick) – dauerhaft, bis er sie streicht."""
+    w = briefing_wuensche()
+    if not w:
+        return BRIEFING_PROMPT
+    return (BRIEFING_PROMPT.replace("höchstens 140 Wörter", "höchstens 220 Wörter")
+            + " Zusätzlich auf Richards Wunsch (in dieser Reihenfolge nach dem Pflichtteil; für Aktuelles 'web_search' "
+              "nutzen, nur seriöse Quellen, je Punkt ein bis zwei Sätze): " + " · ".join(w))
+
+
+def tools(core) -> list:
+    from atlas.tools import S, Tool, ToolError
+
+    def anpassen(aktion: str = "liste", wunsch: str = "") -> dict:
+        z = read_private_json(WUENSCHE, {"wuensche": []})
+        liste = [w for w in z.get("wuensche", []) if str(w).strip()]
+        if aktion == "hinzufuegen":
+            if not wunsch.strip():
+                raise ToolError("Wunsch fehlt")
+            liste.append(wunsch.strip()[:300])
+        elif aktion == "entfernen":
+            vorher = len(liste)
+            liste = [w for w in liste if wunsch.strip().lower() not in w.lower()] if wunsch.strip() else []
+            if len(liste) == vorher:
+                raise ToolError("Keinen passenden Wunsch gefunden. Aktuell: " + (" · ".join(liste) or "keine"))
+        if aktion in ("hinzufuegen", "entfernen"):
+            write_private_json(WUENSCHE, {"wuensche": liste, "stand": datetime.now().isoformat(timespec="minutes")})
+        return {"ok": True, "wuensche": liste, "hinweis": "Gilt ab dem nächsten Morgenbriefing."}
+    return [Tool("briefing_anpassen",
+                 "Morgenbriefing dauerhaft anpassen: zusätzliche Inhalte oder Vorgaben hinzufügen (z. B. „kurzer "
+                 "Nachrichtenüberblick, zuerst Inland, dann weltweit“), entfernen oder auflisten. Für Wünsche ans "
+                 "Briefing immer dieses Werkzeug – nicht das Gedächtnis.",
+                 "briefing.anpassen", anpassen,
+                 {"aktion": {"type": "string", "enum": ["hinzufuegen", "entfernen", "liste"]},
+                  "wunsch": S("Der Wunsch in einem Satz – bei 'entfernen' ein Stichwort daraus")},
+                 ["aktion"], label=lambda a: f"Morgenbriefing: {a.get('aktion')} – {a.get('wunsch', '')}"[:120])]
+
+
 class Proaktiv:
     def __init__(self, core):
         self.c = core
@@ -63,7 +108,7 @@ class Proaktiv:
         stab = getattr(self.c, "stab", None)
         if stab:
             stab.letzter_vortrag = None
-        text = agent.run(self.c, BRIEFING_PROMPT, nur_lesen=True, quelle="briefing", marken=True,
+        text = agent.run(self.c, briefing_prompt(), nur_lesen=True, quelle="briefing", marken=True,
                          hinweis="Dies ist das Morgenbriefing; es wird vorgelesen und per Telegram "
                                  "verschickt. Keine Rückfragen, keine Markdown-Formatierung. "
                                  + (self.c.stab.briefing_hinweis() if hasattr(self.c, "stab") else ""))

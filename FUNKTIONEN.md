@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 01.11.2026 · Version 0.24.7
+Stand: 01.11.2026 · Version 0.24.8
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -221,6 +221,7 @@ Bedeutung der Zeichen:
 | Fakten über dich, Familie, Haushalt merken und vergessen | ✅ | lesbare Dateien in iCloud |
 | Laufende Vorgänge mit Status, Frist und nächstem Schritt | ✅ | |
 | Morgenbriefing (Termine, Fälliges, Fristen, Zahlungen, Wetter) | ✅ | Uhrzeit einstellbar |
+| Morgenbriefing nach eigenen Wünschen erweitern, z. B. „kurzer Nachrichtenüberblick, zuerst Inland, dann weltweit“ (mit Websuche) – hinzufügen, streichen, auflisten | ✅ | einfach sagen: „Nimm ins Morgenbriefing … auf“; gespeichert in ATLAS-Privat/briefing_wuensche.json |
 | Hinweise im Tagesverlauf (bald fällig, wichtige Mails) | ✅ | |
 | Wochencheck „Was habe ich vergessen?“ | ✅ | Freitag 16 Uhr |
 | Gesprächsaufnahme mit Transkript, Zusammenfassung und Aufgaben | ✅ | lokal; Word-Datei im Archiv |

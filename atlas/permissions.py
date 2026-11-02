@@ -43,6 +43,7 @@ DEFAULT_POLICY = {
     "musik": Level.FREI,
     "karte": Level.FREI,
     "timer": Level.FREI,
+    "briefing.anpassen": Level.MELDEN,       # eigene Wünsche ans Morgenbriefing
     "nachrichten.lesen": Level.FREI,      # iMessage: nur Absender/Uhrzeit an die KI, Inhalt nur lokal         # Workflow Arztrechnungen (lokal)
     "beihilfe.verarbeiten": Level.FREI,   # vom Nutzer ausdrücklich so gewünscht: automatisch ablegen/eintragen
     "beihilfe.einreichen": Level.BESTAETIGEN,  # PKV im Portal absenden – mit Befugnis „pkv_einreichen“ selbstständig

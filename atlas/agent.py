@@ -138,6 +138,9 @@ def _tool(c, call, confirm, notify, nur_lesen, fremd: list | None = None, kanal:
         out, ok = json.dumps(result, ensure_ascii=False, default=str), True
     except ToolError as e:
         out, ok = f"Fehler: {e}", False
+    except TypeError as e:
+        from atlas.tools import parameter_hilfe
+        out, ok = parameter_hilfe(tool, e), False
     except Exception as e:
         out, ok = f"Fehler: {type(e).__name__}: {e}", False
     rk = c.rechenschaft.merken(call.name, call.args, result) if ok and hasattr(c, "rechenschaft") else ""

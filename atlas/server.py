@@ -85,6 +85,8 @@ class Core:
             self.tools.update({t.name: t for t in wf_beihilfe.tools(self)})
             self.tools.update({t.name: t for t in wf_pkv.tools(self)})
         self.tools.update({t.name: t for t in voice.tools()})      # weitere Gesprächssprache auf Anweisung
+        from atlas import proaktiv as _pro
+        self.tools.update({t.name: t for t in _pro.tools(self)})   # Wünsche ans Morgenbriefing
         from atlas import nachrichten
         from atlas.workflows import werbung
         self.nachrichten = nachrichten.Nachrichten(self)
@@ -375,7 +377,8 @@ async def _run_tool(ws: WebSocket, call) -> str:
     except ToolError as e:
         out, ok = f"Fehler: {e}", False
     except TypeError as e:
-        out, ok = f"Fehler: falsche Parameter ({e})", False
+        from atlas.tools import parameter_hilfe
+        out, ok = parameter_hilfe(tool, e), False
     except Exception as e:
         out, ok = f"Fehler: {type(e).__name__}: {e}", False
     rk = c.rechenschaft.merken(call.name, call.args, result) if ok and hasattr(c, "rechenschaft") else ""

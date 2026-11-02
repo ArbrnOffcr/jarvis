@@ -38,6 +38,7 @@ GRUPPEN = {
     "zuhause": ["zuhause_", "nuki_"],
     "projekte": ["projekt", "beobachtung_", "recherche_jetzt"],
     "sicherheit": ["sicherheitsaudit", "audit_bericht", "sicherheit_"],
+    "briefing": ["briefing_"],
 }
 
 # Wortanfänge → Gruppen
@@ -61,6 +62,7 @@ SIGNALE = [
     (r"termin|kalender|woche|übermorgen|morgen|heute|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|"
      r"wochenende|uhr\b|frei\b|zeit für|verschieb|absag", ["kalender", "erinnerungen"]),
     (r"tageslage|briefing|was steht an|was liegt an|überblick|was gibt.?s", ["kalender", "erinnerungen", "wetter", "fristen", "mail", "stab"]),
+    (r"briefing|morgenbriefing|nachrichtenüberblick|schlagzeilen", ["briefing", "gedaechtnis"]),
     (r"tesla|mein auto|das auto|akku|reichweite|lade|ladestand|ladezustand|ladeplan|wallbox|vorklimat|vorheiz|"
      r"klimaanlage|standheizung|enteis|wächter|waechter|sentry|kamera|wo (steht|parkt) (mein|das) auto", ["tesla"]),
     (r"ford|tourneo|\bbus\b|bulli|transporter|tank|diesel|reifendruck|ölwechsel|oelwechsel|adblue|kilometerstand|"
