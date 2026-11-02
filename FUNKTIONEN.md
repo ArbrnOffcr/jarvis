@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 01.11.2026 · Version 0.24.8
+Stand: 01.11.2026 · Version 0.24.9
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -16,7 +16,7 @@ Bedeutung der Zeichen:
 | Funktion | Stand | Hinweis |
 |---|---|---|
 | Text-Chat im Dashboard und im Terminal (`jarvis`) | ✅ | |
-| Start ohne Text: JARVIS begrüßt nur gesprochen („Guten Morgen/Tag/Abend, Sir“) und wartet; einmal am Tag kommt stattdessen das Tagesupdate mit Text | ✅ | Begrüßung entfällt, wenn die Stimme auf AUS steht |
+| Frischer Start: JARVIS begrüßt nach Tageszeit („Guten Morgen/Tag/Abend, Sir.“) – gesprochen und als einzige Zeile, nie alter Text der letzten Sitzung; einmal am Tag kommt stattdessen das Tagesupdate. War die App länger als 5 Minuten verborgen oder minimiert, beginnt beim Zurückkommen eine neue Sitzung mit neuer Begrüßung | ✅ | Stimme auf AUS: Begrüßung nur als Text |
 | Nahtloser Übergang: die Begrüßung wird während der Startsequenz vorgeladen und setzt ein, während das Zünden des Kerns ausklingt – keine Ruhepause mit anschließendem Sprung ins Sprechen | ✅ | |
 | Spracheingabe per Leertaste (gedrückt halten) | ✅ | Erkennung lokal mit Whisper, nichts geht ins Netz |
 | Weckwort „Hey Jarvis“ | ⚙️ | Knopf WECKWORT; lauscht lokal |

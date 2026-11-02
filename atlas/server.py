@@ -2211,25 +2211,30 @@ async def ws_endpoint(ws: WebSocket, token: str = ""):
     c.audit.log("sitzung_start")
     c.loop = asyncio.get_running_loop()
     c.ws_clients.add(ws)
-    h = datetime.now().hour
-    gruss = "Guten Morgen" if 4 <= h < 11 else "Guten Tag" if 11 <= h < 18 else "Guten Abend"
-    anrede = (c.cfg.get("anrede") or "").strip()
-    shown = LOCAL_DIR / "briefing_gezeigt"
-    b = await asyncio.to_thread(c.proaktiv.briefing_today)
-    try:
-        already = shown.read_text().strip() == date.today().isoformat()
-    except OSError:
-        already = False
-    # Begrüßung nur gesprochen (kein Text im Dashboard); gibt es heute erstmals das Tagesupdate, begrüßt dieses
-    await ws.send_json({"type": "gruss", "text": f"{gruss}, {anrede}." if anrede else f"{gruss}.",
-                        "briefing": bool(b.get("text")) and not already})
-    if b.get("text") and not already:
-        await ws.send_json({"type": "briefing", "text": b["text"], "text_marken": b.get("text_marken") or b["text"],
-                            "vortrag": b.get("vortrag")})
+
+    async def begruessen(neu: bool = False):
+        """Frische Begrüßung nach der Tageszeit („Guten Morgen, Sir.“) – gesprochen und als erste Zeile im Dashboard.
+        Gibt es heute erstmals das Tagesupdate, begrüßt dieses."""
+        h = datetime.now().hour
+        gruss = "Guten Morgen" if 4 <= h < 11 else "Guten Tag" if 11 <= h < 18 else "Guten Abend"
+        anrede = (c.cfg.get("anrede") or "").strip()
+        shown = LOCAL_DIR / "briefing_gezeigt"
+        b = await asyncio.to_thread(c.proaktiv.briefing_today)
         try:
-            shown.write_text(date.today().isoformat())
+            already = shown.read_text().strip() == date.today().isoformat()
         except OSError:
-            pass
+            already = False
+        await ws.send_json({"type": "gruss", "text": f"{gruss}, {anrede}." if anrede else f"{gruss}.",
+                            "briefing": bool(b.get("text")) and not already, "neu": neu})
+        if b.get("text") and not already:
+            await ws.send_json({"type": "briefing", "text": b["text"], "text_marken": b.get("text_marken") or b["text"],
+                                "vortrag": b.get("vortrag")})
+            try:
+                shown.write_text(date.today().isoformat())
+            except OSError:
+                pass
+
+    await begruessen()
     ws._atlas_session = s
 
     async def antworten(m: dict):
@@ -2255,6 +2260,13 @@ async def ws_endpoint(ws: WebSocket, token: str = ""):
                     f.set_result(bool(msg.get("answer")))
             elif kind == "player":                 # Zustand des Podcast-Players im Dashboard
                 c.musik.player_meldung(msg)
+            elif kind == "neue_sitzung":           # App nach einer Pause wieder geöffnet: frisch anfangen
+                if s.task and not s.task.done():
+                    s.task.cancel()
+                s.messages, s.fakten, s.freigaben, s.fremd = [], [], {}, []
+                s.last, s.sensitive, s.gruppen, s.mode = None, False, set(), "auto"
+                c.audit.log("sitzung_start", art="neu nach Pause")
+                await begruessen(neu=True)
             elif kind == "stop":                   # Antwort abbrechen (Nutzer spricht dazwischen)
                 if s.task and not s.task.done():
                     s.task.cancel()

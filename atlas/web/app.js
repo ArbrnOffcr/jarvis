@@ -3563,13 +3563,35 @@ function saEnde() {
 }
 addEventListener("resize", () => { if (SA.el) saWeg(true); });
 
-// ---------- Begrüßung beim Start: nur gesprochen, kein Text. Einmal am Tag übernimmt das Tagesupdate ----------
+// ---------- Begrüßung beim Start: „Guten Morgen/Tag/Abend, Sir.“ – gesprochen und als erste Zeile, nie alter Text.
+//            Einmal am Tag übernimmt das Tagesupdate. Nach einer Pause (App verborgen/minimiert) beginnt alles frisch.
 let GRUSS_FERTIG = false;
+const FRISCH_NACH_MIN = 5;                   // so lange verborgen → beim Wiederkommen neue Sitzung
+let verborgenSeit = 0;
+function frischStart() {
+  try { ttsStop?.(); } catch (e) {}
+  chat.textContent = ""; current = null;
+  try { busy(false); } catch (e) {}
+  const t = $("toast"); if (t) t.hidden = true;
+  GRUSS_FERTIG = false;
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "neue_sitzung" }));
+}
+window.jarvisFrischStart = frischStart;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { verborgenSeit = Date.now(); return; }
+  if (verborgenSeit && Date.now() - verborgenSeit > FRISCH_NACH_MIN * 60000 && !window.REC?.aktiv) frischStart();
+  verborgenSeit = 0;
+});
+addEventListener("pageshow", (e) => { if (e.persisted) frischStart(); });   // aus dem Seiten-Zwischenspeicher zurück
 const _handleGruss = handle;
 handle = function (ev) {
   if (ev.type !== "gruss") return _handleGruss(ev);
-  if (GRUSS_FERTIG || ev.briefing) { GRUSS_FERTIG = true; return; }     // nur einmal je Start, nicht bei Neuverbindung
+  if (GRUSS_FERTIG && !ev.neu) return;                                  // Neuverbindung mitten im Gespräch: nichts
   GRUSS_FERTIG = true;
+  if (ev.briefing) return;                                              // das Tagesupdate begrüßt selbst
+  if (!chat.querySelector(".msg")) {                                    // erste Zeile: die Begrüßung, nichts Altes
+    const el = addMsg("atlas", ev.text); el.classList.add("gruss");
+  }
   if (window.JARVIS_NACH_UPDATE || V.out === "aus") return;
   // Stimme sofort vorladen; sie setzt ein, wenn die Startsequenz übergibt (Ende des Zündens) – ohne Pause dazwischen
   const sagen = () => {
