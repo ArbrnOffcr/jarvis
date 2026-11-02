@@ -33,6 +33,7 @@ DEFAULTS: dict = {
         "max_mb": 100,
         "ocr": True,
         "intervall_min": 15,
+        "wiederholen_je_lauf": 400,  # nicht lesbare Dokumente (iCloud-Platzhalter …) je Lauf erneut versuchen
     },
     "briefing": {"aktiv": True, "zeit": "06:30"},     # frühestens ab dieser Uhrzeit
     "hinweise": {"aktiv": True, "fristen_tage": 3, "erinnerung_minuten": 60,

@@ -35,13 +35,31 @@ class ArchivTools:
         return str(p.relative_to(self.root.resolve()))
 
     # ---------- lesen ----------
-    def suchen(self, frage: str, ordner: str = "", anzahl: int = 8) -> dict:
-        res = self.a.search.search(frage, k=int(anzahl), ordner=ordner)
+    def _hinweis(self) -> str:
         st = self.a.shared_status()
-        hinweis = ""
+        h = []
         if st.get("offen"):
-            hinweis = f"Index noch im Aufbau ({st.get('offen')} Dateien offen) – Ergebnisse unvollständig."
-        return {"treffer": res, "hinweis": hinweis}
+            h.append(f"Index noch im Aufbau ({st.get('offen')} Dateien offen) – Ergebnisse evtl. unvollständig.")
+        return " ".join(h)
+
+    def suchen(self, frage: str, ordner: str = "", anzahl: int = 8, begriffe: list | None = None) -> dict:
+        res = self.a.search.search(frage, k=int(anzahl), ordner=ordner, begriffe=list(begriffe or []))
+        out = {"treffer": res, "hinweis": self._hinweis()}
+        if not res:
+            out["naechster_schritt"] = ("Nichts gefunden. Bevor du sagst, dass es das Dokument nicht gibt: mit anderen "
+                                        "Begriffen/Synonymen erneut suchen und den passenden Ordner mit archiv_ordner ansehen.")
+        return out
+
+    def thema(self, thema: str, begriffe: list | None = None, anzahl: int = 40, ordner: str = "") -> dict:
+        out = self.a.search.thema(thema, begriffe=list(begriffe or []), anzahl=min(int(anzahl), 80), ordner=ordner)
+        out["hinweis"] = self._hinweis()
+        return out
+
+    def verwandte(self, pfad: str, anzahl: int = 10) -> dict:
+        res = self.a.search.verwandte(pfad, anzahl=int(anzahl))
+        if not res:
+            raise ToolError("Zu diesem Pfad kenne ich keinen Inhalt im Index (Pfad genau wie im Suchergebnis angeben).")
+        return {"ausgang": pfad, "verwandt": res}
 
     def ordner(self, pfad: str = "") -> dict:
         p = self._path(pfad)
@@ -110,12 +128,34 @@ def tools(cfg, secrets, archiv, shared: Path) -> list[Tool]:
     t = ArchivTools(archiv, shared)
     return [
         Tool("archiv_suchen",
-             "DATENARCHIV inhaltlich durchsuchen (Bedeutung + Stichwörter). Liefert Dateipfade "
-             "mit Auszügen. Erste Wahl bei Fragen zu Dokumenten, Verträgen, Rechnungen, Bescheiden.",
+             "Ein bestimmtes Dokument im DATENARCHIV finden. Sucht in Dateiname und Ordnern (unscharf: Umlaute, "
+             "Wortstämme), im Text (Stichwörter) und nach Bedeutung. Gib in 'begriffe' immer Synonyme und "
+             "Fachbegriffe mit (z. B. Meldebestätigung → Meldebescheinigung, Anmeldung; Gehalt → Besoldung, "
+             "Bezügemitteilung) sowie Orte, Namen, Jahre. Findest du nichts, suche mit anderen Begriffen erneut "
+             "und sieh im naheliegenden Ordner nach (archiv_ordner), bevor du sagst, dass es etwas nicht gibt.",
              "datei.lesen", t.suchen,
-             {"frage": S("Wonach gesucht wird, in eigenen Worten"),
+             {"frage": S("Wonach gesucht wird, in Richards Worten"),
+              "begriffe": {"type": "array", "items": {"type": "string"},
+                           "description": "Synonyme, Fachbegriffe, Orte, Namen, Jahre"},
               "ordner": S("Nur in diesem Unterordner, optional"),
               "anzahl": {"type": "integer", "description": "Anzahl Treffer, Standard 8"}}, ["frage"]),
+        Tool("archiv_thema",
+             "ALLE Dokumente zu einem Thema finden und in Zusammenhang bringen („Such mir alles zum Thema X“, "
+             "„Was habe ich zu meinem Umzug nach Leipzig?“). Liefert viele Treffer inkl. inhaltlich verwandter "
+             "Dokumente, nach Ordnern gruppiert, mit Datum und Zeitraum. Stelle das Ergebnis danach geordnet vor: "
+             "Gruppen, zeitlicher Ablauf, wie die Dokumente zusammenhängen, was fehlen könnte.",
+             "datei.lesen", t.thema,
+             {"thema": S("Das Thema in Richards Worten"),
+              "begriffe": {"type": "array", "items": {"type": "string"},
+                           "description": "Synonyme, Teilaspekte, Orte, Namen, Jahre"},
+              "anzahl": {"type": "integer", "description": "Wie viele Dokumente höchstens, Standard 40"},
+              "ordner": S("Nur in diesem Unterordner, optional")}, ["thema"]),
+        Tool("archiv_verwandte",
+             "Inhaltlich verwandte Dokumente zu einem gefundenen Dokument (gleicher Vorgang, Folgeschreiben, "
+             "Anlagen, ähnliche Themen).",
+             "datei.lesen", t.verwandte,
+             {"pfad": S("Pfad genau wie im Suchergebnis"),
+              "anzahl": {"type": "integer", "description": "Standard 10"}}, ["pfad"]),
         Tool("archiv_ordner", "Inhalt eines Ordners im DATENARCHIV auflisten ('' = oberste Ebene).",
              "datei.lesen", t.ordner, {"pfad": S("Pfad relativ zum DATENARCHIV")}),
         Tool("datei_lesen", "Text einer Datei lesen (PDF, Office, Scan, Foto ...), optional Seitenbereich.",

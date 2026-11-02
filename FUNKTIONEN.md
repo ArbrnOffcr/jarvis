@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 01.11.2026 · Version 0.24.9
+Stand: 01.11.2026 · Version 0.25.0
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -99,6 +99,9 @@ Bedeutung der Zeichen:
 | Funktion | Stand | Hinweis |
 |---|---|---|
 | Archiv inhaltlich durchsuchen (PDF, Scans, Office, Fotos – mit Texterkennung) | ⚙️ | Archiv-Ordner nötig; Index lokal |
+| Archivsuche in drei Schichten: Dateiname & Ordner (unscharf – Umlaute/ß, Wortstämme, zusammengesetzte Wörter, Synonyme wie Meldebestätigung ↔ Meldebescheinigung), Stichwörter im Text und Bedeutung; je Dokument ein Treffer mit Datum, Ordner und Fundgrund | ✅ | findet Dokumente auch, wenn ihr Inhalt (noch) nicht lesbar ist; sagt nie vorschnell „gibt es nicht“ |
+| „Alles zum Thema X“: viele Dokumente inkl. inhaltlich verwandter, nach Ordnern gruppiert, mit Zeitraum – JARVIS stellt sie im Zusammenhang vor (Ablauf, Bezüge, mögliche Lücken); „verwandte Dokumente“ zu einem Fund | ✅ | z. B. „Such mir alle Dokumente zu meinem Umzug nach Leipzig“ |
+| Index heilt sich selbst: nicht lesbare Dokumente (iCloud-Platzhalter, gesperrte Dateien) werden aus iCloud geladen und erneut versucht; Name und Ablageort sind immer im Index | ✅ | bis 400 je Lauf, höchstens 6 Versuche; Stand unter `jarvis index` |
 | Ordner auflisten, Datei lesen | ✅ | |
 | Datei im JARVIS-Fenster zeigen (mit Lupe) | ✅ | Klick auf den Pfad öffnet den Finder |
 | Datei in ihrer App öffnen | ✅ | |

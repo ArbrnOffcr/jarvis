@@ -25,13 +25,13 @@ class SharedIndex:
         return self.root / did[:2] / f"{did}.json.gz"
 
     def write(self, rel: str, mtime: float, size: int, model: str,
-              chunks: list[dict], vecs: np.ndarray | None, fehler: str = "") -> None:
+              chunks: list[dict], vecs: np.ndarray | None, fehler: str = "", versuche: int = 0) -> None:
         did = doc_id(rel)
         f = self.file(did)
         f.parent.mkdir(parents=True, exist_ok=True)
         data = {"v": VERSION, "pfad": rel, "mtime": mtime, "size": size, "modell": model,
                 "dim": int(vecs.shape[1]) if vecs is not None and len(vecs) else 0,
-                "chunks": chunks, "fehler": fehler,
+                "chunks": chunks, "fehler": fehler, "versuche": versuche,
                 "vektoren": base64.b64encode(vecs.astype(np.float16).tobytes()).decode()
                 if vecs is not None and len(vecs) else ""}
         tmp = f.with_name(f.name + ".tmp")

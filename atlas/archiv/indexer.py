@@ -2,7 +2,10 @@
 Läuft nur auf dem Gerät mit der Wache – alle anderen übernehmen nur."""
 import json
 import os
+import re
+import subprocess
 import threading
+import unicodedata
 import time
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +16,45 @@ from atlas.archiv.search import LocalSearch
 from atlas.archiv.store import SharedIndex, doc_id
 from atlas.lease import ME, Lease
 from atlas.paths import LOCAL_DIR
+
+
+# Vorübergehende Lesefehler (iCloud-Platzhalter noch nicht geladen, Datei gerade gesperrt, Ollama kurz weg):
+# solche Dokumente versucht der Index später erneut – höchstens MAX_VERSUCHE Mal, im Abstand von Stunden.
+VORUEBERGEHEND = re.compile(r"Failed to open|Resource deadlock|Errno 11|Errno 35|No such file|not found at|"
+                            r"PackageNotFound|BadZipFile|not a zip|Timeout|timed out|Connect|embed|"
+                            r"Ollama|cannot identify image|truncated", re.I)
+MAX_VERSUCHE = 6
+SF_DATALESS = 0x40000000            # macOS: Datei liegt nur in iCloud (Platzhalter)
+
+
+def namensabschnitt(rel: str) -> str:
+    """Name und Ordner lesbar – damit jedes Dokument mindestens über Titel und Ablageort gefunden wird."""
+    rel = unicodedata.normalize("NFC", rel)
+    teile = rel.split("/")
+    titel = re.sub(r"[_]+", " ", teile[-1].rsplit(".", 1)[0]).strip()
+    ordner = " / ".join(re.sub(r"[_]+", " ", t).strip() for t in teile[:-1])
+    return f"Datei: {rel} · Titel: {titel} · Ablage: {ordner}"
+
+
+def aus_icloud_laden(pfad: Path, warten: float = 90) -> None:
+    """Ist die Datei nur ein iCloud-Platzhalter, erst herunterladen (brctl) und kurz warten."""
+    try:
+        if not (os.stat(pfad).st_flags & SF_DATALESS):
+            return
+    except (OSError, AttributeError):
+        return
+    try:
+        subprocess.run(["brctl", "download", str(pfad)], capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return
+    ende = time.time() + warten
+    while time.time() < ende:
+        try:
+            if not (os.stat(pfad).st_flags & SF_DATALESS):
+                return
+        except OSError:
+            return
+        time.sleep(2)
 
 
 class Archiv:
@@ -81,8 +123,13 @@ class Archiv:
         self.search.sync()
         files = self.files()
         known = self.search.known()            # {pfad: mtime} laut Index
-        todo = [(rel, mtime, size) for rel, mtime, size in files
-                if known.get(rel) != mtime]
+        fehlerhaft = self.search.fehlerhaft()  # {pfad: (fehler, versuche)} – Inhalt (noch) nicht gelesen
+        jetzt = time.time()
+        todo = [(rel, mtime, size) for rel, mtime, size in files if known.get(rel) != mtime]
+        neu_versuchen = [(rel, mtime, size) for rel, mtime, size in files
+                         if known.get(rel) == mtime and rel in fehlerhaft
+                         and self._nochmal(rel, *fehlerhaft[rel], jetzt)]
+        todo += neu_versuchen[:int(self.cfg.get("wiederholen_je_lauf", 400))]
         # gelöschte Dateien austragen
         present = {doc_id(r) for r, _, _ in files}
         for f in self.index.all_files():
@@ -104,19 +151,25 @@ class Archiv:
                 last_renew = time.time()
             fehler = ""
             chunks, vecs = [], None
+            name = {"seite": 0, "text": namensabschnitt(rel)}
+            versuche = (fehlerhaft.get(rel, ("", 0))[1] + 1) if rel in fehlerhaft and known.get(rel) == mtime else 0
             try:
                 if size > max_bytes:
                     raise ValueError("Datei zu groß")
+                aus_icloud_laden(self.archive / rel)
                 pages = extract(self.archive / rel, ocr=self.cfg["ocr"])
-                chunks = chunk(pages)[:2000]
-                # Dateiname mitindexieren (hilft bei Suchen nach Namen/Belegen)
-                chunks.insert(0, {"seite": 0, "text": f"Datei: {rel}"})
+                chunks = [name] + chunk(pages)[:2000]          # Name/Ordner immer mit im Index
                 vecs = self.embedder.embed([c["text"] for c in chunks])
             except Exception as e:
                 fehler = f"{type(e).__name__}: {e}"[:200]
-                chunks, vecs = [], None
                 self.state["fehler"] += 1
-            self.index.write(rel, mtime, size, self.model, chunks, vecs, fehler)
+                # Inhalt nicht lesbar – dann wenigstens Name und Ablageort, damit das Dokument auffindbar bleibt
+                try:
+                    chunks, vecs = [name], self.embedder.embed([name["text"]])
+                except Exception as e2:
+                    chunks, vecs = [], None
+                    fehler = f"{fehler} | embed: {type(e2).__name__}"[:200]
+            self.index.write(rel, mtime, size, self.model, chunks, vecs, fehler, versuche)
             self.state["erledigt"] = n
             self.state["offen"] = len(todo) - n
             if n % 10 == 0:
@@ -124,6 +177,14 @@ class Archiv:
                 self.search.sync()
         self.search.sync()
         self._write_status(phase="aktuell", offen=0, letzter_lauf=datetime.now().isoformat(timespec="seconds"))
+
+    @staticmethod
+    def _nochmal(rel: str, fehler: str, versuche: int, jetzt: float) -> bool:
+        """Erneut versuchen? Nur bei vorübergehenden Fehlern (oder leerem Eintrag aus alter Version),
+        höchstens MAX_VERSUCHE Mal."""
+        if versuche >= MAX_VERSUCHE:
+            return False
+        return not fehler or bool(VORUEBERGEHEND.search(fehler))
 
     # ---------- Hintergrundschleife ----------
     def loop(self):
