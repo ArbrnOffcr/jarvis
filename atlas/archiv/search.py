@@ -138,7 +138,16 @@ class LocalSearch:
             self.db.execute("ALTER TABLE docs ADD COLUMN fehler TEXT DEFAULT ''")
         if "versuche" not in spalten:
             self.db.execute("ALTER TABLE docs ADD COLUMN versuche INT DEFAULT 0")
+        if "quelle" not in spalten:                   # archiv | mail | termin | gedaechtnis | vorgang | gespraech
+            self.db.execute("ALTER TABLE docs ADD COLUMN quelle TEXT DEFAULT 'archiv'")
+        # Steckbriefe: Kurzfassung je Dokument (lokales Modell) + eigener Vektor → Suche nach Bedeutung
+        self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS steckbriefe(doc TEXT PRIMARY KEY, mtime REAL, daten TEXT, text TEXT,
+                                                   vec BLOB);
+            CREATE VIRTUAL TABLE IF NOT EXISTS fts_sb USING fts5(doc UNINDEXED, text);
+        """)
         self.db.commit()
+        self._sb_cache = None                         # (ids, Matrix) aller Steckbrief-Vektoren
         self.dim = int(self._info("dim") or 0)
         self._namen = None                            # Namensverzeichnis (wird bei Änderungen neu gebaut)
         self._wortschatz: set = set()
@@ -156,7 +165,8 @@ class LocalSearch:
 
     def reset(self):
         with self.lock:
-            self.db.executescript("DELETE FROM docs; DELETE FROM chunks; DELETE FROM info;"
+            self.db.executescript("DELETE FROM docs; DELETE FROM chunks; DELETE FROM info; DELETE FROM steckbriefe;"
+                                  "DELETE FROM fts_sb;"
                                   "INSERT INTO fts(fts) VALUES('delete-all');")
             self.vec_path.unlink(missing_ok=True)
             self.dim = 0
@@ -175,7 +185,7 @@ class LocalSearch:
     def sync(self) -> int:
         """Neue/geänderte Indexdateien übernehmen, entfernte austragen."""
         changed = 0
-        known = {r[0]: r[1] for r in self.db.execute("SELECT id, datei_mtime FROM docs")}
+        known = {r[0]: r[1] for r in self.db.execute("SELECT id, datei_mtime FROM docs WHERE quelle='archiv'")}
         seen = set()
         for f in self.shared.all_files():
             did = f.name.split(".")[0]
@@ -211,7 +221,7 @@ class LocalSearch:
             self.db.execute("UPDATE chunks SET lebt=0 WHERE doc=?", (did,))
             self.db.execute("DELETE FROM docs WHERE id=?", (did,))
 
-    def _replace(self, did, data, fm):
+    def _replace(self, did, data, fm, quelle: str = "archiv"):
         self._drop(did)
         vecs = data["vecs"]
         with self.lock:
@@ -227,16 +237,92 @@ class LocalSearch:
                     self.db.execute("INSERT INTO chunks(row, doc, seite, text) VALUES(?,?,?,?)",
                                     (row, did, ch["seite"], ch["text"]))
                     self.db.execute("INSERT INTO fts(rowid, text) VALUES(?,?)", (row, ch["text"]))
-            self.db.execute("INSERT OR REPLACE INTO docs(id, pfad, mtime, datei_mtime, fehler, versuche) "
-                            "VALUES(?,?,?,?,?,?)",
+            self.db.execute("INSERT OR REPLACE INTO docs(id, pfad, mtime, datei_mtime, fehler, versuche, quelle) "
+                            "VALUES(?,?,?,?,?,?,?)",
                             (did, data["pfad"], data["mtime"], fm, data.get("fehler") or "",
-                             int(data.get("versuche") or 0)))
+                             int(data.get("versuche") or 0), quelle))
+
+    # ---------- weitere Quellen (Mails, Termine, Gedächtnis …) – nur lokal, je Benutzer ----------
+    def quelle_setzen(self, quelle: str, eintraege: list[dict], vollstaendig: bool = False) -> int:
+        """eintraege: {id, pfad, mtime, texte[]} – neue/geänderte übernehmen; vollstaendig=True: Rest austragen."""
+        bekannt = {r[0]: r[1] for r in self.db.execute("SELECT id, mtime FROM docs WHERE quelle=?", (quelle,))}
+        neu = [e for e in eintraege if bekannt.get(e["id"]) != e["mtime"]]
+        geaendert = 0
+        for i in range(0, len(neu), 32):
+            teil = neu[i:i + 32]
+            alle = [(e, t) for e in teil for t in e["texte"] if t.strip()]
+            vecs = self.embedder.embed([t for _, t in alle]) if alle else np.zeros((0, self.dim or 1))
+            k = 0
+            for e in teil:
+                n = len([t for t in e["texte"] if t.strip()])
+                self._replace(e["id"], {"pfad": e["pfad"], "mtime": e["mtime"], "vecs": vecs[k:k + n],
+                                        "chunks": [{"seite": 0, "text": t} for t in e["texte"] if t.strip()]},
+                              e["mtime"], quelle)
+                k += n
+                geaendert += 1
+        if vollstaendig:
+            for did in set(bekannt) - {e["id"] for e in eintraege}:
+                self._drop(did)
+                geaendert += 1
+        with self.lock:
+            self.db.commit()
+        return geaendert
+
+    # ---------- Steckbriefe ----------
+    def steckbrief_offen(self, grenze: int = 20) -> list[tuple[str, str, float]]:
+        """Archiv-Dokumente mit lesbarem Inhalt, aber ohne (aktuellen) Steckbrief – neueste zuerst."""
+        return self.db.execute("""
+            SELECT d.id, d.pfad, d.mtime FROM docs d LEFT JOIN steckbriefe s ON s.doc=d.id
+            WHERE d.quelle='archiv' AND (s.doc IS NULL OR s.mtime != d.mtime)
+              AND (SELECT COALESCE(SUM(LENGTH(c.text)), 0) FROM chunks c
+                   WHERE c.doc=d.id AND c.lebt=1 AND c.text NOT LIKE 'Datei:%') >= 200
+            ORDER BY d.mtime DESC LIMIT ?""", (grenze,)).fetchall()
+
+    def inhalt(self, did: str, zeichen: int = 4000) -> str:
+        t, out = 0, []
+        for (text,) in self.db.execute("SELECT text FROM chunks WHERE doc=? AND lebt=1 AND text NOT LIKE 'Datei:%' "
+                                       "ORDER BY row", (did,)):
+            out.append(text)
+            t += len(text)
+            if t >= zeichen:
+                break
+        return " ".join(out)[:zeichen]
+
+    def steckbrief_speichern(self, did: str, mtime: float, daten: dict, text: str, vec: np.ndarray) -> None:
+        import json as _json
+        with self.lock:
+            self.db.execute("DELETE FROM fts_sb WHERE doc=?", (did,))
+            self.db.execute("INSERT OR REPLACE INTO steckbriefe VALUES(?,?,?,?,?)",
+                            (did, mtime, _json.dumps(daten, ensure_ascii=False), text,
+                             np.asarray(vec, dtype=np.float16).tobytes()))
+            self.db.execute("INSERT INTO fts_sb(doc, text) VALUES(?,?)", (did, text))
+            self.db.commit()
+            self._sb_cache = None
+
+    def steckbrief(self, did: str) -> dict | None:
+        import json as _json
+        r = self.db.execute("SELECT daten FROM steckbriefe WHERE doc=?", (did,)).fetchone()
+        try:
+            return _json.loads(r[0]) if r else None
+        except ValueError:
+            return None
+
+    def _steckbrief_matrix(self):
+        if self._sb_cache is None:
+            ids, vs = [], []
+            for did, vec in self.db.execute("SELECT doc, vec FROM steckbriefe"):
+                v = np.frombuffer(vec, dtype=np.float16)
+                if self.dim and len(v) == self.dim:
+                    ids.append(did)
+                    vs.append(v)
+            self._sb_cache = (ids, np.vstack(vs).astype(np.float32) if vs else None)
+        return self._sb_cache
 
     # ---------- Namensverzeichnis ----------
     def _namensliste(self):
         if self._namen is None:
             out = []
-            for did, pfad in self.db.execute("SELECT id, pfad FROM docs"):
+            for did, pfad in self.db.execute("SELECT id, pfad FROM docs WHERE quelle='archiv'"):
                 p = nfc(pfad)
                 teile = p.split("/")
                 name = teile[-1].rsplit(".", 1)[0]
@@ -307,6 +393,7 @@ class LocalSearch:
                 pass
         # 3) Bedeutung
         mm, n = self._matrix()
+        q = None
         if n:
             q = self.embedder.embed([" ".join([frage, *begriffe[:8]])])[0].astype(np.float32)
             best: list[tuple[float, int]] = []
@@ -326,21 +413,41 @@ class LocalSearch:
                     d.setdefault("row", row)
                 if rang >= tief:
                     break
+        # 4) Kern: Steckbriefe (Kurzfassung je Dokument) – nach Bedeutung und Stichwort
+        ids, mat = self._steckbrief_matrix()
+        if q is not None and mat is not None:
+            sc = mat @ q
+            for rang, i in enumerate(np.argsort(-sc)[:tief]):
+                docs.setdefault(ids[int(i)], {})["kern"] = rang
+        if teile:
+            try:
+                for rang, (did,) in enumerate(self.db.execute(
+                        "SELECT doc FROM fts_sb WHERE fts_sb MATCH ? ORDER BY bm25(fts_sb) LIMIT ?",
+                        (" OR ".join(teile), tief)).fetchall()):
+                    d = docs.setdefault(did, {})
+                    d["kern"] = min(d.get("kern", 10**6), rang)
+            except sqlite3.OperationalError:
+                pass
         return docs
 
     def search(self, frage: str, k: int = 8, ordner: str = "", begriffe: list[str] | None = None,
-               tief: int = 60) -> list[dict]:
+               tief: int = 60, quellen: list[str] | None = None) -> list[dict]:
         b = begriffe_aus(frage, begriffe)
         self._gewichte = begriffe_gewichtet(frage, begriffe)
         roh = self._treffer_roh(frage, b, max(tief, k * 3))
-        gewicht = {"name": 1.6, "wort": 1.0, "sinn": 1.0}
+        gewicht = {"name": 1.6, "wort": 1.0, "sinn": 1.0, "kern": 1.4}
         bewertet = sorted(((sum(gewicht[a] / (20 + d[a]) for a in gewicht if a in d), did, d)
                            for did, d in roh.items()), key=lambda x: -x[0])
         ordner_n = norm(ordner)
         out = []
         for sc, did, d in bewertet:
-            r = self.db.execute("SELECT pfad FROM docs WHERE id=?", (did,)).fetchone()
-            if not r:
+            r = self.db.execute("SELECT pfad, quelle FROM docs WHERE id=?", (did,)).fetchone()
+            if not r or (quellen and r[1] not in quellen):
+                continue
+            if r[1] != "archiv":
+                out.append(self._eintrag_quelle(did, nfc(r[0]), r[1], d, sc))
+                if len(out) >= k:
+                    break
                 continue
             pfad = nfc(r[0])
             if ordner_n and not norm(pfad).startswith(ordner_n):
@@ -362,18 +469,43 @@ class LocalSearch:
             if r:
                 seite, auszug = r
         teile = pfad.split("/")
-        grund = [n for a, n in (("name", "Name/Ordner"), ("wort", "Stichwort im Text"), ("sinn", "inhaltlich ähnlich"))
-                 if a in d]
+        grund = [n for a, n in (("name", "Name/Ordner"), ("wort", "Stichwort im Text"), ("sinn", "inhaltlich ähnlich"),
+                                ("kern", "Steckbrief passt")) if a in d]
         e = {"pfad": pfad, "name": teile[-1], "ordner": "/".join(teile[:-1]), "datum": datum_aus(teile[-1]),
              "seite": seite or None, "auszug": (auszug or "")[:400], "gefunden_ueber": grund,
              "relevanz": round(sc * 1000, 1)}
+        sb = self.steckbrief(did)
+        if sb:
+            e["quelle"] = "archiv"
+            e["art"] = sb.get("art", "")
+            if not sb.get("gesundheit"):                     # Gesundheitsinhalte: nur die Art, keine Kurzfassung
+                e["worum"] = sb.get("thema", "")
+                for f in ("absender", "aktenzeichen", "fristen", "betraege"):
+                    if sb.get(f):
+                        e[f] = sb[f]
         if not auszug or auszug.startswith("Datei:"):         # nur Name bekannt (Inhalt nicht lesbar / noch offen)
             e["hinweis"] = "Inhalt noch nicht gelesen (wird nachgeholt) – zum Lesen datei_lesen verwenden"
         return e
 
-    def thema(self, thema: str, begriffe: list[str] | None = None, anzahl: int = 40, ordner: str = "") -> dict:
-        """Alles zu einem Thema: viele Treffer + verwandte Dokumente, nach Ordnern gruppiert, mit Zeitachse."""
-        treffer = self.search(thema, k=anzahl, ordner=ordner, begriffe=begriffe, tief=max(80, anzahl * 2))
+    def _eintrag_quelle(self, did: str, pfad: str, quelle: str, d: dict, sc: float) -> dict:
+        """Treffer aus Mail, Termin, Gedächtnis … (pfad z. B. 'mail://2026-10-03 · Absender · Betreff')."""
+        r = self.db.execute("SELECT text FROM chunks WHERE doc=? AND lebt=1 ORDER BY row LIMIT 1", (did,)).fetchone()
+        titel = pfad.split("://", 1)[-1]
+        return {"quelle": quelle, "titel": titel, "datum": datum_aus(titel), "pfad": pfad,
+                "auszug": ((r[0] if r else "") or "")[:400], "relevanz": round(sc * 1000, 1),
+                "gefunden_ueber": [n for a, n in (("wort", "Stichwort"), ("sinn", "inhaltlich ähnlich")) if a in d]}
+
+    def thema(self, thema: str, begriffe: list[str] | None = None, anzahl: int = 40, ordner: str = "",
+              quellen: list[str] | None = None) -> dict:
+        """Alles zu einem Thema: viele Treffer + verwandte Dokumente, nach Ordnern gruppiert, mit Zeitachse.
+        Mails, Termine, Gedächtnis und Gespräche zum Thema kommen als eigene Gruppen dazu."""
+        weitere = []
+        if quellen is None or any(q != "archiv" for q in quellen):
+            weitere = self.search(thema, k=max(8, anzahl // 3), begriffe=begriffe,
+                                  quellen=[q for q in (quellen or ["mail", "termin", "gedaechtnis", "vorgang",
+                                                                    "gespraech"]) if q != "archiv"])
+        treffer = self.search(thema, k=anzahl, ordner=ordner, begriffe=begriffe, tief=max(80, anzahl * 2),
+                              quellen=["archiv"])
         pfade = {t["pfad"] for t in treffer}
         verwandt = []
         kern = [t["pfad"] for t in treffer[:6]]
@@ -401,8 +533,17 @@ class LocalSearch:
                 {k: v for k, v in x.items() if k in ("datum", "name", "pfad", "auszug", "verwandt", "hinweis")}
                 | {"auszug": (x.get("auszug") or "")[:200]} for x in ds]})
         liste.sort(key=lambda x: -x["anzahl"])
-        daten = sorted(t["datum"] for t in treffer + verwandt if t.get("datum"))
-        return {"thema": thema, "dokumente": len(treffer) + len(verwandt), "gruppen": liste,
+        namen = {"mail": "Mails", "termin": "Termine", "gedaechtnis": "Gedächtnis", "vorgang": "Vorgänge",
+                 "gespraech": "Gespräche mit JARVIS"}
+        for q in namen:
+            es = sorted([w for w in weitere if w["quelle"] == q], key=lambda x: x.get("datum") or "9999")
+            if es:
+                liste.append({"ordner": namen[q], "anzahl": len(es), "eintraege": [
+                    {k: v for k, v in x.items() if k in ("datum", "titel", "auszug")} | {"auszug": x["auszug"][:200]}
+                    for x in es]})
+        daten = sorted(t["datum"] for t in treffer + verwandt + weitere if t.get("datum"))
+        return {"thema": thema, "dokumente": len(treffer) + len(verwandt), "weitere_quellen": len(weitere),
+                "gruppen": liste,
                 "zeitraum": f"{daten[0]} bis {daten[-1]}" if daten else "",
                 "suchbegriffe": begriffe_aus(thema, begriffe)[:20]}
 
@@ -434,7 +575,7 @@ class LocalSearch:
         out, gesehen = [], set(ids)
         for sc, row in best:
             r = self.db.execute("SELECT c.doc, d.pfad, c.seite, c.text FROM chunks c JOIN docs d ON d.id=c.doc "
-                                "WHERE c.row=? AND c.lebt=1", (row,)).fetchone()
+                                "WHERE c.row=? AND c.lebt=1 AND d.quelle='archiv'", (row,)).fetchone()
             if not r or r[0] in gesehen:
                 continue
             gesehen.add(r[0])
@@ -455,20 +596,22 @@ class LocalSearch:
                                (did,)).fetchall()
 
     def known(self) -> dict[str, float]:
-        return {p: m for p, m in self.db.execute("SELECT pfad, mtime FROM docs")}
+        return {p: m for p, m in self.db.execute("SELECT pfad, mtime FROM docs WHERE quelle='archiv'")}
 
     def fehlerhaft(self) -> dict[str, tuple[str, int]]:
         """Dokumente, deren Inhalt nicht gelesen werden konnte: {pfad: (fehler, versuche)}."""
         return {p: (f or "", int(v or 0)) for p, f, v in self.db.execute(
-            "SELECT pfad, fehler, versuche FROM docs WHERE fehler != '' OR NOT EXISTS "
-            "(SELECT 1 FROM chunks c WHERE c.doc=docs.id AND c.lebt=1)")}
+            "SELECT pfad, fehler, versuche FROM docs WHERE quelle='archiv' AND (fehler != '' OR NOT EXISTS "
+            "(SELECT 1 FROM chunks c WHERE c.doc=docs.id AND c.lebt=1))")}
 
     def stats(self) -> dict:
         try:
-            d = self.db.execute("SELECT COUNT(*) FROM docs").fetchone()[0]
+            d = self.db.execute("SELECT COUNT(*) FROM docs WHERE quelle='archiv'").fetchone()[0]
             c = self.db.execute("SELECT COUNT(*) FROM chunks WHERE lebt=1").fetchone()[0]
-            f = self.db.execute("SELECT COUNT(*) FROM docs WHERE fehler != ''").fetchone()[0]
-            self._stats = {"dokumente": d, "abschnitte": c, "ohne_inhalt": f}
+            f = self.db.execute("SELECT COUNT(*) FROM docs WHERE quelle='archiv' AND fehler != ''").fetchone()[0]
+            sb = self.db.execute("SELECT COUNT(*) FROM steckbriefe").fetchone()[0]
+            q = dict(self.db.execute("SELECT quelle, COUNT(*) FROM docs WHERE quelle != 'archiv' GROUP BY quelle"))
+            self._stats = {"dokumente": d, "abschnitte": c, "ohne_inhalt": f, "steckbriefe": sb, "quellen": q}
         except Exception:                      # Index wird gerade geschrieben – letzten Stand zeigen
             pass
         return getattr(self, "_stats", {"dokumente": 0, "abschnitte": 0})

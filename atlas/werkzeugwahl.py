@@ -19,7 +19,7 @@ GRUPPEN = {
     "mail": ["mail_", "schreibstil", "kontakte_suchen"],
     "wetter": ["wetter"],
     "anzeige": ["anzeige_", "bild_", "video_", "youtube_", "skizze_"],
-    "archiv": ["archiv_", "datei_", "dokument_", "word_", "excel_", "pptx_", "post_", "steuer_"],
+    "archiv": ["archiv_", "datei_", "dokument_", "word_", "excel_", "pptx_", "post_", "steuer_", "wissen_"],
     "gedaechtnis": ["gedaechtnis_", "vorgang", "vorgaenge"],
     "fristen": ["frist", "vertra", "was_vergessen"],
     "beihilfe": ["beihilfe_", "pkv_"],
@@ -86,6 +86,8 @@ SIGNALE = [
     (r"zeig|öffne|archiv|dokument|datei|ordner|unterlagen|pdf|scan|word|excel|powerpoint|präsentation|"
      r"brief|post\b|ablag|ableg|beleg|sammelmappe|steuer|mietvertrag|vertrag|rechnung|bescheid|ausdruck", ["archiv"]),
     (r"merk|vorgang|vorgänge|vergiss|weißt du noch|erinnerst du|gedächtnis", ["gedaechtnis"]),
+    (r"was weiß|weißt du (was|etwas)|was war (da|damals)|zusammenhang|hängt .* zusammen|alles (zu|zum|über)|"
+     r"wann hatte ich|wann war|habe ich (je|schon mal|damals)|such|finde", ["archiv"]),
     (r"frist|ablauf|läuft ab|kündig|tüv|vertr|abo\b|abos\b|haushaltsbuch|vergessen|liegengeblieben|versicherung", ["fristen"]),
     (r"beihilfe|pkv|arztrechnung|universa|erstattung", ["beihilfe"]),
     (r"nachricht|imessage|sms|geschrieben", ["nachrichten"]),

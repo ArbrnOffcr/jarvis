@@ -43,12 +43,20 @@ class ArchivTools:
         return " ".join(h)
 
     def suchen(self, frage: str, ordner: str = "", anzahl: int = 8, begriffe: list | None = None) -> dict:
-        res = self.a.search.search(frage, k=int(anzahl), ordner=ordner, begriffe=list(begriffe or []))
+        res = self.a.search.search(frage, k=int(anzahl), ordner=ordner, begriffe=list(begriffe or []),
+                                   quellen=["archiv"])
         out = {"treffer": res, "hinweis": self._hinweis()}
         if not res:
             out["naechster_schritt"] = ("Nichts gefunden. Bevor du sagst, dass es das Dokument nicht gibt: mit anderen "
                                         "Begriffen/Synonymen erneut suchen und den passenden Ordner mit archiv_ordner ansehen.")
         return out
+
+    def wissen(self, frage: str, begriffe: list | None = None, quellen: list | None = None, anzahl: int = 12) -> dict:
+        res = self.a.search.search(frage, k=int(anzahl), begriffe=list(begriffe or []), quellen=quellen or None)
+        gruppen: dict[str, list] = {}
+        for r in res:
+            gruppen.setdefault(r.get("quelle", "archiv"), []).append(r)
+        return {"treffer": res, "nach_quelle": {k: len(v) for k, v in gruppen.items()}, "hinweis": self._hinweis()}
 
     def thema(self, thema: str, begriffe: list | None = None, anzahl: int = 40, ordner: str = "") -> dict:
         out = self.a.search.thema(thema, begriffe=list(begriffe or []), anzahl=min(int(anzahl), 80), ordner=ordner)
@@ -139,8 +147,21 @@ def tools(cfg, secrets, archiv, shared: Path) -> list[Tool]:
                            "description": "Synonyme, Fachbegriffe, Orte, Namen, Jahre"},
               "ordner": S("Nur in diesem Unterordner, optional"),
               "anzahl": {"type": "integer", "description": "Anzahl Treffer, Standard 8"}}, ["frage"]),
+        Tool("wissen_suchen",
+             "EINE Suche über alles, was JARVIS weiß: Dokumente im DATENARCHIV, Mails (Posteingang + Gesendet), "
+             "Termine, Gedächtnis, Vorgänge und frühere Gespräche – nach Bedeutung, nicht nur nach Wörtern. Erste "
+             "Wahl, wenn Richard nach etwas fragt, das irgendwo stehen könnte („Was war da mit …?“, „Wann hatte ich …?“, "
+             "„Was weiß ich über …?“) oder wenn Zusammenhänge zwischen Mails, Terminen und Dokumenten gefragt sind. "
+             "Gib in 'begriffe' Synonyme, Namen, Orte, Jahre mit.",
+             "datei.lesen", t.wissen,
+             {"frage": S("Wonach gesucht wird, in Richards Worten"),
+              "begriffe": {"type": "array", "items": {"type": "string"},
+                           "description": "Synonyme, Fachbegriffe, Namen, Orte, Jahre"},
+              "quellen": {"type": "array", "items": {"type": "string", "enum": ["archiv", "mail", "termin",
+                          "gedaechtnis", "vorgang", "gespraech"]}, "description": "Nur diese Quellen (optional)"},
+              "anzahl": {"type": "integer", "description": "Standard 12"}}, ["frage"]),
         Tool("archiv_thema",
-             "ALLE Dokumente zu einem Thema finden und in Zusammenhang bringen („Such mir alles zum Thema X“, "
+             "ALLES zu einem Thema finden und in Zusammenhang bringen – Dokumente plus passende Mails, Termine, Gedächtnis und Gespräche („Such mir alles zum Thema X“, "
              "„Was habe ich zu meinem Umzug nach Leipzig?“). Liefert viele Treffer inkl. inhaltlich verwandter "
              "Dokumente, nach Ordnern gruppiert, mit Datum und Zeitraum. Stelle das Ergebnis danach geordnet vor: "
              "Gruppen, zeitlicher Ablauf, wie die Dokumente zusammenhängen, was fehlen könnte.",

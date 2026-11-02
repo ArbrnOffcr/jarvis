@@ -31,7 +31,8 @@ from atlas import __version__
 from atlas.audit import Audit
 from atlas.config import load_config
 from atlas.keystore import core_token, get_secret
-from atlas.paths import HOST, LOCAL_DIR, PORT, USER, display_name, find_archive, shared_dir
+from atlas.paths import (HOST, LOCAL_DIR, PORT, USER, display_name, find_archive, read_private_json, shared_dir,
+                         write_private_json)
 from atlas.permissions import Gate, Level
 from atlas.persona import system_prompt
 from atlas.providers import ClaudeProvider, OllamaProvider, ProviderError
@@ -81,6 +82,8 @@ class Core:
         self.beihilfe = wf_beihilfe.Beihilfe(self)
         from atlas.workflows import pkv_portal as wf_pkv
         self.pkv = wf_pkv.PkvPortal(self)
+        from atlas.archiv.wissen import Wissen
+        self.wissen = Wissen(self)          # Steckbriefe + Mails/Termine/Gedächtnis in der Suche
         if self.beihilfe.aktiv and self.archiv:
             self.tools.update({t.name: t for t in wf_beihilfe.tools(self)})
             self.tools.update({t.name: t for t in wf_pkv.tools(self)})
@@ -281,7 +284,7 @@ class Core:
                 "offen": st.get("offen", 0), "fehler": st.get("fehler", 0),
                 "dateien": st.get("dateien_gesamt"), "wache": st.get("wache"),
                 "stand": st.get("letzter_lauf") or st.get("aktualisiert"),
-                "pausiert": self.archiv.pause.is_set()}
+                "pausiert": self.archiv.pause.is_set(), "wissen": self.wissen.status()}
 
 
 core: Core | None = None
@@ -677,6 +680,16 @@ async def _summarize(messages: list[dict]) -> None:
 @app.get("/index")
 def index_status(_: None = Depends(auth)):
     return get_core().index_status()
+
+
+@app.get("/index/suchtest")
+def index_suchtest(_: None = Depends(auth)):
+    """Goldfragen durchlaufen: findet die Suche die erwarteten Dokumente? (ATLAS-Privat/goldfragen.json)"""
+    from atlas.archiv.wissen import suchtest
+    c = get_core()
+    if not c.archiv:
+        raise HTTPException(404, "kein DATENARCHIV")
+    return suchtest(c.archiv.search, read_private_json, write_private_json)
 
 
 @app.post("/index/{aktion}")
@@ -2350,6 +2363,7 @@ def run():
         ("Musik", c.musik.start),
         ("Beihilfe-Workflow", lambda: c.archiv and c.beihilfe.start(c.proaktiv.stop)),
         ("PKV-Portal", lambda: c.archiv and c.pkv.start(c.proaktiv.stop)),
+        ("Wissen (Steckbriefe, Mails, Termine)", lambda: c.archiv and c.wissen.start(c.proaktiv.stop)),
         ("lokales Modell vorwärmen", lambda: c.cfg["router"].get("einfach") == "lokal" and
             threading.Thread(target=c.providers["lokal"].warmup, daemon=True).start()),
     ]

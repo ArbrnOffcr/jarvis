@@ -35,6 +35,9 @@ DEFAULTS: dict = {
         "intervall_min": 15,
         "wiederholen_je_lauf": 400,  # nicht lesbare Dokumente (iCloud-Platzhalter …) je Lauf erneut versuchen
     },
+    # Mitdenken Stufe 1: Steckbriefe je Dokument (lokales Modell) + Mails/Termine/Gedächtnis in derselben Suche
+    "wissen": {"aktiv": True, "steckbriefe": True, "steckbriefe_je_runde": 10, "quellen_min": 30,
+               "mail_monate": 12, "mails_je_lauf": 300},
     "briefing": {"aktiv": True, "zeit": "06:30"},     # frühestens ab dieser Uhrzeit
     "hinweise": {"aktiv": True, "fristen_tage": 3, "erinnerung_minuten": 60,
                  "mail": True, "intervall_min": 15},

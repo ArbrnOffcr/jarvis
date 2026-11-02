@@ -129,6 +129,9 @@ class Archiv:
         neu_versuchen = [(rel, mtime, size) for rel, mtime, size in files
                          if known.get(rel) == mtime and rel in fehlerhaft
                          and self._nochmal(rel, *fehlerhaft[rel], jetzt)]
+        # Schriftstücke vor Fotos: PDFs und Office-Dateien tragen den meisten Inhalt
+        rang = {".pdf": 0, ".docx": 1, ".doc": 1, ".xlsx": 2, ".pptx": 2, ".txt": 1, ".rtf": 1}
+        neu_versuchen.sort(key=lambda x: (rang.get(Path(x[0]).suffix.lower(), 5), -x[1]))
         todo += neu_versuchen[:int(self.cfg.get("wiederholen_je_lauf", 400))]
         # gelöschte Dateien austragen
         present = {doc_id(r) for r, _, _ in files}

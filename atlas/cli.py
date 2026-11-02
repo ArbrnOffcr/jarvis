@@ -5,7 +5,8 @@
   jarvis setup icloud nur den iCloud-Zugang (Kalender, Mail) neu einrichten
   jarvis status       Zustand anzeigen
   jarvis berechtigungen   Zugriff auf Kalender, Erinnerungen, Notizen, Kontakte, Mail prüfen
-  jarvis index [pause|weiter|neu]   Stand des Archiv-Index
+  jarvis index [pause|weiter|neu]   Stand des Archiv-Index (inkl. Steckbriefe und weiterer Quellen)
+  jarvis suchtest     Goldfragen: findet die Suche die erwarteten Dokumente?
   jarvis dashboard [fenster|autostart an|autostart aus]   HUD-Oberfläche öffnen (Safari)
   jarvis token        Zugangsschlüssel in die Zwischenablage (für die Safari-Web-App)
   jarvis stimme [de|en <Voice-ID> | test]   ElevenLabs-Stimmen festlegen / testen
@@ -374,7 +375,30 @@ def index(aktion: str = "") -> None:
     t.add_row("durchsuchbar", f"{lok.get('dokumente', 0)} Dokumente · {lok.get('abschnitte', 0)} Abschnitte")
     t.add_row("nicht lesbar", str(st.get("fehler", 0)))
     t.add_row("zuständiges Gerät", str(st.get("wache") or "–"))
+    w = st.get("wissen") or {}
+    if w:
+        t.add_row("Steckbriefe", f"{w.get('steckbriefe', 0)} fertig · {w.get('steckbriefe_offen', 0)} offen")
+        q = w.get("quellen_im_index") or {}
+        t.add_row("weitere Quellen", " · ".join(f"{k} {v}" for k, v in sorted(q.items())) or "–")
     console.print(t)
+
+
+def suchtest() -> None:
+    """Goldfragen: findet JARVIS die erwarteten Dokumente? Fragen in ATLAS-Privat/goldfragen.json ergänzen."""
+    try:
+        r = httpx.get(f"{BASE}/index/suchtest", headers={"x-atlas-token": core_token()}, timeout=600).json()
+    except httpx.HTTPError:
+        console.print("[red]JARVIS-Core läuft nicht.[/] → jarvis dienst start")
+        return
+    t = Table(title="◢ SUCHTEST ◣", border_style="cyan")
+    t.add_column("Frage"); t.add_column("Platz", justify="right"); t.add_column("ms", justify="right")
+    for z in r.get("fragen", []):
+        platz = z["rang"]
+        t.add_row(z["frage"][:60], f"[green]{platz}[/]" if platz == 1 else f"[yellow]{platz}[/]" if platz else "[red]–[/]",
+                  str(z["ms"]))
+    console.print(t)
+    console.print(f"Treffer auf Platz 1: {r.get('treffer_1')}/{r.get('anzahl')} · unter den ersten 5: "
+                  f"{r.get('treffer_5')}/{r.get('anzahl')} · MRR {r.get('mrr')}")
 
 
 def update() -> None:
@@ -829,6 +853,8 @@ def main() -> None:
         dashboard(args[1:])
     elif cmd == "dienst":
         dienst(args[1] if len(args) > 1 else "")
+    elif cmd == "suchtest":
+        suchtest()
     elif cmd == "neustart":                  # Kurzform von „jarvis dienst neustart“
         dienst("neustart")
     elif cmd == "update":

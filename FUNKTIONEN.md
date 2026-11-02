@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 01.11.2026 · Version 0.25.0
+Stand: 01.11.2026 · Version 0.26.1
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -102,6 +102,9 @@ Bedeutung der Zeichen:
 | Archivsuche in drei Schichten: Dateiname & Ordner (unscharf – Umlaute/ß, Wortstämme, zusammengesetzte Wörter, Synonyme wie Meldebestätigung ↔ Meldebescheinigung), Stichwörter im Text und Bedeutung; je Dokument ein Treffer mit Datum, Ordner und Fundgrund | ✅ | findet Dokumente auch, wenn ihr Inhalt (noch) nicht lesbar ist; sagt nie vorschnell „gibt es nicht“ |
 | „Alles zum Thema X“: viele Dokumente inkl. inhaltlich verwandter, nach Ordnern gruppiert, mit Zeitraum – JARVIS stellt sie im Zusammenhang vor (Ablauf, Bezüge, mögliche Lücken); „verwandte Dokumente“ zu einem Fund | ✅ | z. B. „Such mir alle Dokumente zu meinem Umzug nach Leipzig“ |
 | Index heilt sich selbst: nicht lesbare Dokumente (iCloud-Platzhalter, gesperrte Dateien) werden aus iCloud geladen und erneut versucht; Name und Ablageort sind immer im Index | ✅ | bis 400 je Lauf, höchstens 6 Versuche; Stand unter `jarvis index` |
+| Steckbrief je Dokument: das lokale Modell fasst jedes lesbare Dokument zusammen (Art, worum es geht, Absender, Beteiligte, Datum, Beträge, Fristen, Aktenzeichen, Orte, Schlagworte, Vorgang) – die Suche findet so nach Bedeutung, auch ohne gleiche Wörter | ✅ | entsteht im Hintergrund (Gespräche haben Vorrang), nur lokal; keine Steckbriefe für Verschlusssachen, bei Gesundheitsdokumenten nur die Art |
+| Eine Suche über alles: Dokumente, Mails (Posteingang + Gesendet, 12 Monate), Termine (1 Jahr zurück, ½ Jahr voraus), Gedächtnis, Vorgänge und frühere Gespräche – „Was war da mit …?“, „Wann hatte ich …?“; „Alles zum Thema X“ zeigt Mails, Termine und Gespräche als eigene Gruppen | ✅ | Index der Mails/Termine nur lokal je Benutzer; iMessage bleibt außen vor |
+| Suchtest mit Goldfragen: misst, ob JARVIS die erwarteten Dokumente findet (Platz 1, unter den ersten 5) | ✅ | `jarvis suchtest`; eigene Fragen in ATLAS-Privat/goldfragen.json ergänzen |
 | Ordner auflisten, Datei lesen | ✅ | |
 | Datei im JARVIS-Fenster zeigen (mit Lupe) | ✅ | Klick auf den Pfad öffnet den Finder |
 | Datei in ihrer App öffnen | ✅ | |
