@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 01.11.2026 · Version 0.26.1
+Stand: 01.11.2026 · Version 0.26.2
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -374,6 +374,7 @@ Bedeutung der Zeichen:
 | Schnelle Antworten | ✅ | Werkzeuge nach Bedarf, 1-h-Prompt-Cache, Vorwärmen |
 | Lokales Sprachmodell (Ollama) für Privates und offline | ⚙️ | ca. 7 GB |
 | Weitergabe: Installations-DMG mit grafischem Assistenten | ✅ | `jarvis paket` / `jarvis veroeffentlichen` |
+| Veröffentlichen übersteht GitHub-Aussetzer: prüft vorab die Verbindung, wiederholt Hochladen und Release bei Netzfehlern und holt einen früher fehlgeschlagenen Upload beim nächsten Aufruf nach | ✅ | einfach erneut `jarvis veroeffentlichen` |
 | Weitergegebene Installationen nutzen nur die eigenen Schlüssel des Empfängers | ✅ | Datenschutz-Scan blockiert jeden Schlüssel im Paket |
 | Weitergegebene Installation aus der Ferne deaktivieren (einzeln, alle, zu alte Versionen) | ✅ | `jarvis sperren <Kennung>`; Kennung steht beim Empfänger unter ⚙ Einstellungen |
 | Übersicht, wer JARVIS wo nutzt | ❌ | bewusst nicht – es werden keine Nutzungsdaten gesendet |

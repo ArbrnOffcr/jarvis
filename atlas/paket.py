@@ -104,6 +104,31 @@ def _run(cmd, **kw) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
 
+NETZFEHLER = re.compile(r"timed? ?out|i/o timeout|Failed to connect|Couldn't connect|Could not resolve|"
+                        r"connection (reset|refused)|unable to access|TLS|EOF|502|503|504", re.I)
+
+
+def _netz(cmd, versuche: int = 3, **kw) -> subprocess.CompletedProcess:
+    """Wie _run, aber bei Netzwerkfehlern (GitHub kurz nicht erreichbar) bis zu dreimal mit Pause."""
+    def einmal():
+        try:
+            return _run(cmd, **kw)
+        except subprocess.TimeoutExpired:
+            return subprocess.CompletedProcess(cmd, 1, "", "timed out")
+    r = einmal()
+    for warte in (10, 30)[:versuche - 1]:
+        if r.returncode == 0 or not NETZFEHLER.search(r.stderr or ""):
+            return r
+        console.print(f"[yellow]  GitHub antwortet nicht – neuer Versuch in {warte} s …[/]")
+        time.sleep(warte)
+        r = einmal()
+    return r
+
+
+def github_erreichbar() -> bool:
+    return _netz(["gh", "api", "rate_limit", "--jq", ".rate.remaining"], timeout=60).returncode == 0
+
+
 def _cfg() -> dict:
     from atlas.config import load_config
     return load_config()
@@ -255,6 +280,11 @@ def veroeffentlichen() -> None:
     if not shutil.which("gh"):
         console.print("[red]GitHub-CLI (gh) fehlt[/] – 'brew install gh' und 'gh auth login'.")
         return
+    if not github_erreichbar():
+        console.print("[red]GitHub ist von diesem Mac aus gerade nicht erreichbar[/] – nichts veröffentlicht.\n"
+                      "  Prüfen: Internetverbindung, VPN bzw. Tailscale-Exit-Node aus, dann erneut "
+                      "'jarvis veroeffentlichen'. Es geht nichts verloren; der Befehl setzt dort fort, wo er stand.")
+        return
     cfg = _cfg()
     repo = (cfg.get("veroeffentlichen") or {}).get("repo", "")
     if not repo:
@@ -294,24 +324,32 @@ def veroeffentlichen() -> None:
             console.print(f"[red]Repository anlegen fehlgeschlagen:[/] {r.stderr[-300:]}")
             return
         console.print(f"[green]✓ Öffentliches Repository angelegt:[/] https://github.com/{repo}")
-    elif neu:
-        r = _run([*g, "push", "-q", "-u", "origin", "main"])
+    else:
+        # immer hochladen: ein früher fehlgeschlagener Push (Commit lokal, aber nicht bei GitHub) wird nachgeholt
+        r = _netz([*g, "push", "-q", "-u", "origin", "main"], timeout=300)
         if r.returncode:
-            console.print(f"[red]Hochladen fehlgeschlagen:[/] {r.stderr[-300:]}")
+            console.print(f"[red]Hochladen fehlgeschlagen:[/] {r.stderr[-300:]}\n"
+                          "  Nichts verloren – später einfach erneut 'jarvis veroeffentlichen'.")
             return
     sha = _run([*g, "rev-parse", "HEAD"]).stdout.strip()
-    console.print(f"[green]✓ Code veröffentlicht[/] ({sha[:7]}{'' if neu else ', unverändert'})")
+    console.print(f"[green]✓ Code veröffentlicht[/] ({sha[:7]}{'' if neu else ', bereits aktuell'})")
     dmg = paket(sha, repo)
     if not dmg:
         return
     tag = f"v{__version__}-{sha[:7]}"
-    if _run(["gh", "release", "view", tag, "--repo", repo]).returncode == 0:
-        r = _run(["gh", "release", "upload", tag, str(dmg), "--clobber", "--repo", repo])
+    vorhanden = _netz(["gh", "release", "view", tag, "--repo", repo], timeout=120)
+    if vorhanden.returncode and NETZFEHLER.search(vorhanden.stderr or ""):
+        console.print(f"[red]Release fehlgeschlagen – GitHub nicht erreichbar:[/] {vorhanden.stderr[-200:]}\n"
+                      f"  Das DMG liegt bereit ({dmg.name}); später erneut 'jarvis veroeffentlichen'.")
+        return
+    if vorhanden.returncode == 0:
+        r = _netz(["gh", "release", "upload", tag, str(dmg), "--clobber", "--repo", repo], timeout=600)
     else:
-        r = _run(["gh", "release", "create", tag, str(dmg), "--repo", repo, "--title", f"JARVIS {__version__}",
-                  "--notes", "DMG laden, öffnen, „JARVIS installieren“ per Rechtsklick → Öffnen starten."])
+        r = _netz(["gh", "release", "create", tag, str(dmg), "--repo", repo, "--title", f"JARVIS {__version__}",
+                   "--notes", "DMG laden, öffnen, „JARVIS installieren“ per Rechtsklick → Öffnen starten."], timeout=600)
     if r.returncode:
-        console.print(f"[red]Release fehlgeschlagen:[/] {r.stderr[-300:]}")
+        console.print(f"[red]Release fehlgeschlagen:[/] {r.stderr[-300:]}\n"
+                      "  Nichts verloren – später einfach erneut 'jarvis veroeffentlichen'.")
         return
     console.print(f"[green]✓ Download für deine Freunde:[/] https://github.com/{repo}/releases/latest")
     console.print("  Bereits installierte Freundes-Macs übernehmen die neue Version innerhalb weniger Stunden.")
