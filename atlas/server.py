@@ -66,6 +66,11 @@ class Core:
             "claude": ClaudeProvider(get_secret("anthropic"), self.cfg["recherche"],
                                      (self.cfg.get("wetter") or {}).get("ort", "")),
         }
+        # Datenschutz-Schleier: JEDER Claude-Aufruf wird maskiert (Platzhalter) und sensible Werkzeugergebnisse
+        # vorher lokal zusammengefasst – siehe atlas/datenschutz.py
+        from atlas.datenschutz import GeschuetzterAnbieter
+        self.providers["claude"] = GeschuetzterAnbieter(self.providers["claude"], self)
+        voice.PROTOKOLL = self.audit.log             # ElevenLabs: Zeichen, Mac-Stimme, gelöschte Verlaufseinträge
         self.secrets = {k: get_secret(k) for k in ("icloud_email", "icloud_apple_id", "icloud_app_pw")}
         self.memory = Memory(self.cfg)
         self.shared = shared_dir(self.cfg)
@@ -88,6 +93,13 @@ class Core:
             self.tools.update({t.name: t for t in wf_beihilfe.tools(self)})
             self.tools.update({t.name: t for t in wf_pkv.tools(self)})
         self.tools.update({t.name: t for t in voice.tools()})      # weitere Gesprächssprache auf Anweisung
+        from atlas.tools import S as _S, Tool as _Tool
+        self.tools["datenschutz_bericht"] = _Tool(
+            "datenschutz_bericht",
+            "Was ging an einem Tag an Claude und ElevenLabs? Nur Zähler: Aufrufe, Zeichen, ersetzte Angaben je Art "
+            "(Namen, Anschriften, IBAN …), lokal zusammengefasste Inhalte, Ausgaben mit Mac-Stimme, gelöschte "
+            "ElevenLabs-Verlaufseinträge. Nie Inhalte.", "anzeige", self.datenschutz_bericht,
+            {"tag": _S("JJJJ-MM-TT, Standard heute")})
         from atlas import proaktiv as _pro
         self.tools.update({t.name: t for t in _pro.tools(self)})   # Wünsche ans Morgenbriefing
         from atlas import nachrichten
@@ -257,8 +269,11 @@ class Core:
         k = self.costs(); self._costs_cache = (time.monotonic(), k)
         return k
 
-    def digest_cached(self) -> str:
-        """Gedächtnis-Auszug für den Systemprompt, 30 s zwischengespeichert."""
+    def digest_cached(self, voll: bool = True) -> str:
+        """Gedächtnis-Auszug für den Systemprompt, 30 s zwischengespeichert.
+        voll=False (für Claude): nur die Themenliste – Inhalte holt das Modell bei Bedarf mit gedaechtnis_lesen."""
+        if not voll:
+            return self.memory.digest(voll=False)
         hit = getattr(self, "_digest_cache", None)
         if hit and time.monotonic() - hit[0] < 30:
             return hit[1]
@@ -275,6 +290,11 @@ class Core:
             total += kosten
             rows[key] = {**v, "kosten": round(kosten, 2)}
         return {"modelle": rows, "kosten": round(total, 2), "budget": self.cfg["budget_monat"]}
+
+    def datenschutz_bericht(self, tag: str = "") -> dict:
+        from atlas.datenschutz import bericht
+        tag = (tag or date.today().isoformat())[:10]
+        return bericht(sorted(self.audit.local_logs.glob(f"{tag}*.jsonl")), tag)
 
     def index_status(self) -> dict:
         if not self.archiv:
@@ -524,7 +544,7 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
             gruppen = None if s.gruppen is None else gruppen | s.gruppen
     tools = alle if gruppen is None else c.stab.filtern(werkzeugwahl.auswahl(c.tools, gruppen))
     system = system_prompt(c.cfg["assistant_name"], c.name, d.target, True,
-                           await asyncio.to_thread(c.digest_cached))
+                           await asyncio.to_thread(c.digest_cached, d.target == "lokal"))
     if gruppen is not None:
         system += werkzeugwahl.hinweis(gruppen)
     if quelle == "dashboard" and not stimme:
@@ -611,7 +631,9 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
                 if call.name == werkzeugwahl.LADEN:
                     continue
                 args = ", ".join(f"{k}={str(v)[:40]}" for k, v in call.args.items())
-                s.fakten.append(f"- {call.name}({args}) → {out[:600]}")
+                from atlas.datenschutz import sensibel_arten
+                s.fakten.append(f"- {call.name}({args}) → " + (f"(enthielt {', '.join(sensibel_arten(out))} – nur "
+                                f"lokal ausgewertet)" if sensibel_arten(out) else out[:600]))
             if result.text and reply.endswith(result.text):          # Vorrede vor Werkzeugaufruf nicht speichern
                 reply = reply[: -len(result.text)]
             if (d.target == "claude" and any(cl.name == "stab_einsatz" for cl in result.tool_calls)
@@ -680,6 +702,11 @@ async def _summarize(messages: list[dict]) -> None:
 @app.get("/index")
 def index_status(_: None = Depends(auth)):
     return get_core().index_status()
+
+
+@app.get("/datenschutz")
+def datenschutz(tag: str = "", _: None = Depends(auth)):
+    return get_core().datenschutz_bericht(tag)
 
 
 @app.get("/index/suchtest")

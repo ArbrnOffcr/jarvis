@@ -35,7 +35,7 @@ DEFAULTS = {"stimme_de": "", "stimme_en": "", "modell": "eleven_flash_v2_5",
             # fertiges Modell (z. B. "hey_jarvis") oder eigene .onnx-Datei in ATLAS-Privat
             "weckwort_modell": "hey_jarvis", "empfindlichkeit": 0.5,
             # False = immer ElevenLabs (auch bei sensiblen Themen); True = sensible Inhalte mit Mac-Stimme
-            "sensibel_lokal": False,
+            "sensibel_lokal": True,
             # Gespräch: nach jeder gesprochenen Antwort so viele Sekunden weiter zuhören (0 = aus)
             "gespraech_sek": 6,
             # Dazwischenreden stoppt JARVIS; Lautstärkeschwelle (höher = unempfindlicher gegen eigenes Echo)
@@ -48,7 +48,7 @@ EN_WORDS = set("the and is are not you we they a an with for on to of in it this
 
 
 def settings() -> dict:
-    return read_private_json(SETTINGS, DEFAULTS)
+    return {**DEFAULTS, **(read_private_json(SETTINGS, {}) or {})}     # neue Einstellungen gelten auch für alte Dateien
 
 
 def save_settings(**kw) -> dict:
@@ -85,6 +85,50 @@ def _antwortsprache(text: str, lang: str) -> str:
     lang = lang or detect_lang(text)
     z = zusatzsprache()
     return z if z and lang == "de" else lang
+
+
+# ---------------------------------------------------------------- Datenschutz bei ElevenLabs
+PROTOKOLL = None          # vom Kern gesetzt: audit.log
+_GESENDET: list = []      # (Zeit, Text) der letzten Ausgaben – zum Aufräumen des ElevenLabs-Verlaufs
+
+
+def _protokoll(**kw) -> None:
+    try:
+        PROTOKOLL and PROTOKOLL("datenschutz", ziel="elevenlabs", **kw)
+    except Exception:
+        pass
+
+
+def _schuetzen(text: str, privat: bool) -> tuple[str, bool]:
+    """Nummern, IBAN, Anschriften nie vorlesen; sensible Inhalte (Gesundheit, Konto …) gelten als privat."""
+    from atlas.datenschutz import sensibel_arten, sprechtext_schuetzen
+    return sprechtext_schuetzen(text), privat or bool(sensibel_arten(text))
+
+
+def verlauf_loeschen(key: str, history_id: str | None, text: str) -> None:
+    """ElevenLabs legt jede Ausgabe im Verlauf des Kontos ab – JARVIS löscht sie gleich wieder (im Hintergrund)."""
+    _GESENDET.append((time.time(), text))
+    del _GESENDET[:-200]
+
+    def los():
+        time.sleep(20)
+        geloescht = 0
+        try:
+            ids = [history_id] if history_id else []
+            if not ids:                                     # ohne Kennung: über den gesendeten Text finden
+                r = httpx.get("https://api.elevenlabs.io/v1/history", params={"page_size": 50},
+                              headers={"xi-api-key": key}, timeout=20)
+                kuerzlich = {t for z, t in _GESENDET if time.time() - z < 7200}
+                ids = [h["history_item_id"] for h in r.json().get("history", []) if h.get("text") in kuerzlich]
+            for i in ids:
+                if httpx.delete(f"https://api.elevenlabs.io/v1/history/{i}", headers={"xi-api-key": key},
+                                timeout=20).status_code < 300:
+                    geloescht += 1
+        except Exception:
+            pass
+        if geloescht:
+            _protokoll(art="geloescht", anzahl=geloescht)
+    threading.Thread(target=los, daemon=True).start()
 
 
 def detect_lang(text: str) -> str:
@@ -135,6 +179,7 @@ class Speaker:
         return normalisieren(text, lang)[:2500], lang
 
     def stream(self, text: str, lang: str = "", privat: bool = False):
+        text, privat = _schuetzen(text or "", privat)
         """Gestreamte Ausgabe: (Kopfdaten, Generator mit 16-bit-PCM, 24 kHz mono). Der erste Ton
         kommt so nach wenigen hundert Millisekunden, statt erst nach dem ganzen Satz."""
         text, lang = self._vorbereiten(text, lang)
@@ -144,6 +189,7 @@ class Speaker:
         key, voice = get_secret("elevenlabs"), s.get(f"stimme_{lang}") or s.get("stimme_de") or STANDARD_STIMME
         if privat and s.get("sensibel_lokal"):
             grund = "sensibler Inhalt – bleibt auf dem Mac"
+            _protokoll(art="mac_stimme")
         elif not key:
             grund = "kein ElevenLabs-Schlüssel ('jarvis setup sprache')"
         elif not voice:
@@ -171,6 +217,8 @@ class Speaker:
                     self._sem.release()
                 else:
                     self.last = {"engine": "ElevenLabs", "grund": f"Stimme {lang.upper()}", "lang": lang}
+                    _protokoll(zeichen=len(text))
+                    verlauf_loeschen(key, r.headers.get("history-item-id"), text)
                     sem = self._sem
 
                     def gen():
@@ -203,6 +251,7 @@ class Speaker:
 
     def tts(self, text: str, lang: str = "", privat: bool = False) -> tuple[bytes, str]:
         """Liefert (Audiodaten, MIME-Typ); self.last nennt Stimme und Grund."""
+        text, privat = _schuetzen(text or "", privat)
         text = clean_for_speech(text)[:2000]
         if not text:
             return b"", "audio/mpeg"
@@ -213,14 +262,17 @@ class Speaker:
         key, voice = get_secret("elevenlabs"), s.get(f"stimme_{lang}") or s.get("stimme_de") or STANDARD_STIMME
         if privat and s.get("sensibel_lokal"):
             grund = "sensibler Inhalt – bleibt auf dem Mac"
+            _protokoll(art="mac_stimme")
         elif not key:
             grund = "kein ElevenLabs-Schlüssel ('jarvis setup sprache')"
         elif not voice:
             grund = f"keine Voice-ID für {lang.upper()} ('jarvis stimme {lang} <ID>')"
         else:
             try:
-                audio = self._eleven(text, lang, key, voice, s["modell"])
+                audio, hid = self._eleven(text, lang, key, voice, s["modell"])
                 self.last = {"engine": "ElevenLabs", "grund": f"Stimme {lang.upper()}", "lang": lang}
+                _protokoll(zeichen=len(text))
+                verlauf_loeschen(key, hid, text)
                 return audio, "audio/mpeg"
             except httpx.HTTPStatusError as e:
                 grund = f"ElevenLabs {e.response.status_code}: {e.response.text[:160]}"
@@ -247,7 +299,7 @@ class Speaker:
                     time.sleep(0.35 * (versuch + 1))
                     continue
                 r.raise_for_status()
-                return r.content
+                return r.content, r.headers.get("history-item-id")
 
     @staticmethod
     def _macos(text, voice) -> bytes:

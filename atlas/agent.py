@@ -46,7 +46,8 @@ def run(core, text: str, history: list[dict] | None = None, *,
     tools = alle if gruppen is None else werkzeugwahl.auswahl(c.tools, gruppen)
     if hasattr(c, "stab") and gruppen is not None:
         tools = c.stab.filtern(tools)
-    system = system_prompt(c.cfg["assistant_name"], c.name, d.target, True, c.memory.digest())
+    system = system_prompt(c.cfg["assistant_name"], c.name, d.target, True,
+                           c.memory.digest(voll=d.target == "lokal"))   # Claude: nur Themenliste
     if gruppen is not None:
         system += werkzeugwahl.hinweis(gruppen)
     if hinweis:

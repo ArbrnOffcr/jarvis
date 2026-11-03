@@ -116,8 +116,14 @@ class Memory:
         return f.read_text(encoding="utf-8")[:8000]
 
     # ---------- für den Systemprompt ----------
-    def digest(self, limit: int = 3500) -> str:
+    def digest(self, limit: int = 3500, voll: bool = True) -> str:
         parts = []
+        if not voll:                       # für Claude: nur, WAS es gibt – Inhalte bei Bedarf über gedaechtnis_lesen
+            themen = sorted(f"{b}/{p.stem}" for b, d in self.dirs.items() for p in d.glob("*.md"))
+            offen = self.vorgaenge_liste()
+            return ((f"[Gedächtnis-Themen – Inhalt bei Bedarf mit 'gedaechtnis_lesen']\n{', '.join(themen)}" if themen else "")
+                    + (f"\n[offene Vorgänge – Einzelheiten mit 'vorgang_lesen']\n" + ", ".join(v["titel"] for v in offen[:20])
+                       if offen else ""))[:limit]
         for key in ("privat/ueber_mich", "privat/vorlieben", "gemeinsam/familie"):
             b, t = key.split("/")
             f = self.dirs[b] / f"{t}.md"

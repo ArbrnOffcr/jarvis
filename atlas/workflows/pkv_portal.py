@@ -770,6 +770,14 @@ class PkvPortal:
                         if abgesendet:
                             raise Abbruch("Ablauf wollte ein zweites Mal absenden – gestoppt")
                     el = self._finden(page, s, 10 if s.get("anmeldung") else 15)
+                    if el is None and s["art"] == "mailcode":
+                        # Code-Feld erscheint erst nach dem Anmelde-Klick – hat der nicht ausgelöst, einmal erneut drücken
+                        vorher = next((schritte[k] for k in range(i - 1, -1, -1) if schritte[k]["art"] == "klick"), None)
+                        knopf = self._finden(page, vorher, 3) if vorher else None
+                        if knopf is not None:
+                            letzter_klick = datetime.now()
+                            knopf.click()
+                            el = self._finden(page, s, 15)
                     if el is None:
                         if s.get("anmeldung"):          # Sitzung noch gültig → Anmeldung überspringen
                             j = next((k for k in range(i, len(schritte)) if not schritte[k].get("anmeldung")), len(schritte))
@@ -874,6 +882,8 @@ class PkvPortal:
             tag, typ = loc.evaluate("e => [e.tagName.toLowerCase(), (e.type || '').toLowerCase()]")
         except Exception:
             return False
+        if s.get("typ") in ("submit", "button") and tag in ("button", "input") and typ and typ != s["typ"]:
+            return False                      # Reiter „Anmelden“ (type=button) ist nicht der Absende-Knopf (submit)
         if tag == s["tag"]:
             return loc.is_enabled() if tag in ("button", "input") else True
         knopf = s.get("typ") in ("submit", "button") or s["tag"] == "button"
@@ -886,9 +896,13 @@ class PkvPortal:
                 # Knöpfe zuerst über ihre Rolle suchen (eindeutiger als ein Text, der auch als Überschrift vorkommt)
                 if s["art"] == "klick" and s.get("text") and (s.get("tag") == "button" or s.get("typ") in ("submit", "button")):
                     try:
-                        alle = frame.get_by_role("button", name=s["text"], exact=True)
+                        if s.get("typ") == "submit":      # Absende-Knopf eines Formulars (z. B. gelbes „Anmelden“)
+                            alle = frame.locator('button[type="submit"], input[type="submit"], form button:not([type])')
+                            alle = alle.filter(has_text=re.compile(rf"^\s*{re.escape(s['text'])}\s*$"))
+                        else:
+                            alle = frame.get_by_role("button", name=s["text"], exact=True)
                         for k in range(min(alle.count(), 6)):
-                            if alle.nth(k).is_visible() and alle.nth(k).is_enabled():
+                            if self._passt(alle.nth(k), s):
                                 return alle.nth(k)
                     except Exception:
                         pass

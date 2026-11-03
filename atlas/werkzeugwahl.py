@@ -37,7 +37,7 @@ GRUPPEN = {
     "notfall": ["notfall_"],
     "zuhause": ["zuhause_", "nuki_"],
     "projekte": ["projekt", "beobachtung_", "recherche_jetzt"],
-    "sicherheit": ["sicherheitsaudit", "audit_bericht", "sicherheit_"],
+    "sicherheit": ["sicherheitsaudit", "audit_bericht", "sicherheit_", "datenschutz_"],
     "briefing": ["briefing_"],
 }
 
@@ -48,6 +48,8 @@ SIGNALE = [
      r"was liegt an|stapel|entscheidungen", ["autopilot"]),
     (r"notfall|verstorben|gestorben|\btod\b|todesfall|beerdigung|bestattung|trauer|erbe\b|erbschaft|witwe|leitfaden",
      ["notfall", "fristen", "kontakte", "mail"]),
+    (r"datenschutz|was ging .{0,30}(an|zu) (claude|der cloud|elevenlabs)|abgeflossen|an claude|an elevenlabs|"
+     r"privatsphäre", ["sicherheit"]),
     (r"sicherheitsaudit|sicherheitsbericht|schwachstelle|sicherheitslücke|audit\b|aegis|wie sicher|abgesichert|"
      r"filevault|firewall|offene ports|angriff", ["sicherheit", "autopilot"]),
     (r"projekt|beobacht|recherchier|nachrichtenlage|news|meldungen zu|halte mich .*auf dem laufenden|informier mich|"

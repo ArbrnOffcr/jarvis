@@ -108,6 +108,21 @@ def wort_treffer(begriff: str, wort: str) -> float:
     return 0.0
 
 
+GESUNDHEIT_PFAD = re.compile(r"beihilfe|pkv|universa|arzt|ärzt|medizin|gesundheit|krank|klinik|befund|rezept|"
+                             r"therapie|zahn|labor|röntgen|roentgen|impf|kranken|pflege|ivf|icsi|patient|diagnose",
+                             re.I)
+
+
+def gesundheitsdokument(pfad: str, sb: dict | None = None, text: str = "") -> bool:
+    """Gesundheitsbezug am Ablageort, Steckbrief oder Inhalt erkannt? Dann geht nie Wortlaut an die Cloud."""
+    if sb and sb.get("gesundheit"):
+        return True
+    if GESUNDHEIT_PFAD.search(nfc(pfad or "")):
+        return True
+    from atlas.hilfen import sensibel_gruende
+    return "Gesundheitsdaten" in sensibel_gruende(text or "")
+
+
 def datum_aus(name: str) -> str:
     m = DATUM.search(name or "")
     if not m:
@@ -483,6 +498,12 @@ class LocalSearch:
                 for f in ("absender", "aktenzeichen", "fristen", "betraege"):
                     if sb.get(f):
                         e[f] = sb[f]
+        if gesundheitsdokument(pfad, sb, auszug or ""):         # Gesundheit: kein Wortlaut, nur die Art
+            e["auszug"] = ""
+            e.pop("worum", None)
+            e["art"] = "Gesundheitsdokument"
+            e["hinweis"] = "Inhalt nur lokal – Einzelheiten mit datei_lesen (wird lokal zusammengefasst)"
+            return e
         if not auszug or auszug.startswith("Datei:"):         # nur Name bekannt (Inhalt nicht lesbar / noch offen)
             e["hinweis"] = "Inhalt noch nicht gelesen (wird nachgeholt) – zum Lesen datei_lesen verwenden"
         return e
@@ -581,8 +602,10 @@ class LocalSearch:
             gesehen.add(r[0])
             pfad = nfc(r[1])
             teile = pfad.split("/")
+            gs = gesundheitsdokument(pfad, self.steckbrief(r[0]), r[3] or "")
             out.append({"pfad": pfad, "name": teile[-1], "ordner": "/".join(teile[:-1]), "datum": datum_aus(teile[-1]),
-                        "seite": r[2] or None, "auszug": (r[3] or "")[:300], "aehnlichkeit": round(sc, 3)})
+                        "seite": r[2] or None, "auszug": "" if gs else (r[3] or "")[:300], "aehnlichkeit": round(sc, 3),
+                        **({"art": "Gesundheitsdokument"} if gs else {})})
             if len(out) >= anzahl:
                 break
         return out

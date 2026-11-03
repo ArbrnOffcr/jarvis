@@ -7,6 +7,7 @@
   jarvis berechtigungen   Zugriff auf Kalender, Erinnerungen, Notizen, Kontakte, Mail prüfen
   jarvis index [pause|weiter|neu]   Stand des Archiv-Index (inkl. Steckbriefe und weiterer Quellen)
   jarvis suchtest     Goldfragen: findet die Suche die erwarteten Dokumente?
+  jarvis datenschutz [JJJJ-MM-TT]   Was ging an Claude und ElevenLabs? (nur Zähler)
   jarvis dashboard [fenster|autostart an|autostart aus]   HUD-Oberfläche öffnen (Safari)
   jarvis token        Zugangsschlüssel in die Zwischenablage (für die Safari-Web-App)
   jarvis stimme [de|en <Voice-ID> | test]   ElevenLabs-Stimmen festlegen / testen
@@ -380,6 +381,24 @@ def index(aktion: str = "") -> None:
         t.add_row("Steckbriefe", f"{w.get('steckbriefe', 0)} fertig · {w.get('steckbriefe_offen', 0)} offen")
         q = w.get("quellen_im_index") or {}
         t.add_row("weitere Quellen", " · ".join(f"{k} {v}" for k, v in sorted(q.items())) or "–")
+    console.print(t)
+
+
+def datenschutz(tag: str = "") -> None:
+    """Was ging heute an Claude und ElevenLabs? (nur Zähler, nie Inhalte)"""
+    try:
+        r = httpx.get(f"{BASE}/datenschutz", params={"tag": tag}, headers={"x-atlas-token": core_token()}, timeout=30).json()
+    except httpx.HTTPError:
+        console.print("[red]JARVIS-Core läuft nicht.[/] → jarvis dienst start")
+        return
+    c, e = r["claude"], r["elevenlabs"]
+    t = Table(title=f"◢ DATENSCHUTZ {r['tag']} ◣", border_style="cyan", show_header=False)
+    t.add_row("Claude: Aufrufe", f"{c['aufrufe']} · {c['zeichen']:,} Zeichen".replace(",", "."))
+    t.add_row("  ersetzt (Platzhalter)", " · ".join(f"{k} {v}" for k, v in sorted(c["ersetzt"].items())) or "–")
+    t.add_row("  lokal zusammengefasst", f"{c['lokal_zusammengefasst']} (zurückgehalten: {c['zurueckgehalten']})")
+    t.add_row("ElevenLabs: Ausgaben", f"{e['ausgaben']} · {e['zeichen']:,} Zeichen".replace(",", "."))
+    t.add_row("  stattdessen Mac-Stimme", str(e["mac_stimme_sensibel"]))
+    t.add_row("  Verlauf gelöscht", str(e["geloescht"]))
     console.print(t)
 
 
@@ -855,6 +874,8 @@ def main() -> None:
         dienst(args[1] if len(args) > 1 else "")
     elif cmd == "suchtest":
         suchtest()
+    elif cmd == "datenschutz":
+        datenschutz(args[1] if len(args) > 1 else "")
     elif cmd == "neustart":                  # Kurzform von „jarvis dienst neustart“
         dienst("neustart")
     elif cmd == "update":

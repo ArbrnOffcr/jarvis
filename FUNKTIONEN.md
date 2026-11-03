@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 01.11.2026 · Version 0.26.3
+Stand: 03.11.2026 · Version 0.27.0
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -237,6 +237,12 @@ Bedeutung der Zeichen:
 | Funktion | Stand | Hinweis |
 |---|---|---|
 | Sensible Themen (Gesundheit, Finanzen, Steuer …) bleiben lokal | ✅ | sonst Rückfrage vor der Cloud |
+| Datenschutz-Schleier vor JEDEM Claude-Aufruf: Namen (Familie, Kinder, Nachname), Anschriften, IBAN, Steuer-ID/-nummer, Versicherungs-, Renten-, Kunden-, Vertrags-, Personalnummern, Aktenzeichen, Geburtsdaten, Telefonnummern und E-Mail-Adressen sieht Claude nur als Platzhalter ([NAME_1] …); Antworten und Werkzeugaufrufe setzt JARVIS lokal wieder zusammen | ✅ | weitere Namen in config.yaml unter datenschutz → namen; Zuordnung nur im Arbeitsspeicher |
+| Sensibles nach Inhalt: Werkzeugergebnisse mit Gesundheits-, Konto-, Ausweis-, Steuer-ID- oder Bezügedaten fasst das lokale Modell zuerst zusammen – Claude bekommt nur die Kurzfassung (ohne Diagnosen, Nummern, Einzelposten); ist das lokale Modell weg, bleibt der Inhalt zurück | ✅ | gilt auch für Morgenbriefing, Telegram, Stab und Projektbeobachtung |
+| Gesundheitsdokumente nie im Wortlaut: Suchtreffer aus Arzt-, Beihilfe- und PKV-Unterlagen zeigen Claude nur die Art; Lesen wird lokal zusammengefasst | ✅ | |
+| Gedächtnis für Claude nur als Themenliste – Inhalte holt er bei Bedarf gezielt | ✅ | das lokale Modell sieht weiter alles |
+| ElevenLabs: sensible Antworten mit der Mac-Stimme; IBAN, Nummern und Anschriften werden nie vorgelesen („siehe Bildschirm“); jede Ausgabe wird sofort aus dem ElevenLabs-Verlauf gelöscht | ✅ | API-Schlüssel braucht Schreibrecht für den Verlauf |
+| Datenschutz-Bericht: was ging heute an Claude und ElevenLabs (Aufrufe, Zeichen, ersetzte Angaben je Art, lokale Zusammenfassungen, Mac-Stimme, gelöschte Einträge) – nur Zähler, nie Inhalte | ✅ | `jarvis datenschutz [JJJJ-MM-TT]` oder „Was ging heute an Claude?“ |
 | Zugangsdaten verlassen den Mac nie | ✅ | |
 | Schlüssel nur im Schlüsselbund | ✅ | |
 | Rechteprüfung: Löschen, Senden, Ändern nur mit Bestätigung | ✅ | |
