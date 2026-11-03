@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 01.11.2026 · Version 0.26.2
+Stand: 01.11.2026 · Version 0.26.3
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:

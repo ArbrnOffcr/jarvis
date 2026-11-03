@@ -806,10 +806,21 @@ class PkvPortal:
                         dialog_dateien["gesetzt"] = False
                         page.wait_for_timeout(1500)
                     elif art == "mailcode":
-                        c = MailCode(self.c).warten(letzter_klick, r.get("mail_absender", ""),
-                                                    int(self.cfg.get("code_warten_s", 180)))
+                        gesamt = int(self.cfg.get("code_warten_s", 180))
+                        c = MailCode(self.c).warten(letzter_klick, r.get("mail_absender", ""), min(60, gesamt))
                         if not c:
-                            raise Abbruch("Der Anmeldecode kam nicht per Mail an (3 Minuten gewartet)")
+                            # Kein Code nach einer Minute: Anmelde-Knopf hat evtl. nicht ausgelöst – einmal erneut drücken
+                            vorher = next((schritte[k] for k in range(i - 1, -1, -1) if schritte[k]["art"] == "klick"), None)
+                            knopf = self._finden(page, vorher, 5) if vorher else None
+                            if knopf is not None:
+                                letzter_klick = datetime.now()
+                                knopf.click()
+                                page.wait_for_timeout(1500)
+                            c = MailCode(self.c).warten(letzter_klick, r.get("mail_absender", ""), max(60, gesamt - 60))
+                        if not c:
+                            self._fehlerbild(page)
+                            raise Abbruch("Der Anmeldecode kam nicht per Mail an – das Portal hat vermutlich keinen Code "
+                                          "verschickt. Bitte kurz im JARVIS-Fenster prüfen, ob die Anmeldung hängt.")
                         self._tippen(el, c["code"], 60, 120)
                         c = None
                     i += 1
@@ -849,15 +860,44 @@ class PkvPortal:
                           f"nicht eindeutig – ich wähle lieber nichts Falsches aus.")
         el.select_option(label=treffer[0])
 
+    @staticmethod
+    def _passt(loc, s: dict) -> bool:
+        """Passt das gefundene Element zum aufgezeichneten? Bei Klicks muss die Elementart stimmen –
+        sonst trifft „Anmelden“ die Überschrift statt des Knopfs."""
+        if s["art"] == "hochladen":
+            return True
+        if not loc.is_visible():
+            return False
+        if s["art"] != "klick" or not s.get("tag"):
+            return True
+        try:
+            tag, typ = loc.evaluate("e => [e.tagName.toLowerCase(), (e.type || '').toLowerCase()]")
+        except Exception:
+            return False
+        if tag == s["tag"]:
+            return loc.is_enabled() if tag in ("button", "input") else True
+        knopf = s.get("typ") in ("submit", "button") or s["tag"] == "button"
+        return knopf and (tag == "button" or (tag == "input" and typ in ("submit", "button")))
+
     def _finden(self, page, s: dict, sekunden: int):
         ende = time.time() + sekunden
         while time.time() < ende:
             for frame in [page.main_frame, *[f for f in page.frames if f is not page.main_frame]]:
+                # Knöpfe zuerst über ihre Rolle suchen (eindeutiger als ein Text, der auch als Überschrift vorkommt)
+                if s["art"] == "klick" and s.get("text") and (s.get("tag") == "button" or s.get("typ") in ("submit", "button")):
+                    try:
+                        alle = frame.get_by_role("button", name=s["text"], exact=True)
+                        for k in range(min(alle.count(), 6)):
+                            if alle.nth(k).is_visible() and alle.nth(k).is_enabled():
+                                return alle.nth(k)
+                    except Exception:
+                        pass
                 for sel in s.get("kandidaten") or []:
                     try:
-                        loc = frame.locator(sel).first
-                        if loc.count() and (s["art"] == "hochladen" or loc.is_visible()):
-                            return loc
+                        alle = frame.locator(sel)
+                        for k in range(min(alle.count(), 6)):
+                            if self._passt(alle.nth(k), s):
+                                return alle.nth(k)
                     except Exception:
                         continue
             page.wait_for_timeout(400)
