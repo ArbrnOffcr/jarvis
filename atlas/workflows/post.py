@@ -8,14 +8,17 @@ denselben Ordner, legt JARVIS ihn nach einem Monat selbst ab und meldet es. Wäh
 ausdrücklich mit „künftig immer hier“ (Ordner-Browser auf der Briefkarte), gilt die Regel sofort: Briefe dieses
 Absenders legt JARVIS ab dann selbst ab und meldet es."""
 import hashlib
+import os
 import re
 import shutil
+import subprocess
 import threading
+import time
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from atlas import hilfen
+from atlas import hilfen, plattform
 from atlas.paths import read_private_json, write_private_json
 from atlas.tools import S, Tool, ToolError
 from atlas.workflows import steuer as steuer_mod
@@ -95,6 +98,8 @@ class Post:
         self.lock = threading.Lock()
         self._cache: dict[str, dict] = {}
         self._ordner: tuple[float, list] = (0.0, [])
+        self._abgleich_laeuft = False
+        self._aufr = {"laeuft": False, "gesamt": 0, "fertig": 0, "datei": ""}
 
     # ------------------------------------------------------------ Zustand
     def zustand(self) -> dict:
@@ -339,11 +344,7 @@ class Post:
         if not text.strip():
             a["betreff"] = a["betreff"] or "Scan ohne erkennbaren Text"
         pid = uuid.uuid4().hex[:8]
-        eintrag = {"id": pid, "datei": str(f), "original": f.name, "absender": a["absender"],
-                   "betreff": a["betreff"], "datum": str(a["datum"] or ""), "fristen": a["fristen"],
-                   "steuer": a["steuer"], "betrag": a["betrag"], "ordner": a["ordner"],
-                   "ordner_grund": a["ordner_grund"], "name": a["name"], "art": a["art"],
-                   "erkannt": datetime.now().isoformat(timespec="minutes")}
+        eintrag = self._eintrag(f, a, pid)
         # Fristen sofort ins Radar (mit Erinnerung) – unabhängig von der Ablage
         fr_texte = []
         for fr in a["fristen"]:
@@ -390,6 +391,20 @@ class Post:
         except Exception:
             pass
         return bericht
+
+    @staticmethod
+    def _eintrag(f: Path, a: dict, pid: str) -> dict:
+        e = {"id": pid, "datei": str(f), "original": f.name, "absender": a["absender"],
+             "betreff": a["betreff"], "datum": str(a["datum"] or ""), "fristen": a["fristen"],
+             "steuer": a["steuer"], "betrag": a["betrag"], "ordner": a["ordner"],
+             "ordner_grund": a["ordner_grund"], "name": a["name"], "art": a["art"],
+             "erkannt": datetime.now().isoformat(timespec="minutes")}
+        try:                                           # zum Wiederfinden, falls du die Datei im Finder verschiebst
+            e["groesse"] = f.stat().st_size
+            e["sha1"] = hashlib.sha1(f.read_bytes()).hexdigest()
+        except OSError:
+            pass
+        return e
 
     @staticmethod
     def _karte(e: dict) -> dict:
@@ -464,6 +479,8 @@ class Post:
         with self.lock:
             z = self.zustand()
             e = z["offen"].pop(brief_id, None)
+            if e:
+                z.setdefault("beiseite", {})[brief_id] = e
             self.speichern(z)
         if not e:
             raise ToolError("Brief nicht gefunden")
@@ -473,15 +490,200 @@ class Post:
     def offen(self) -> dict:
         z = self.zustand()
         # Briefe, deren Datei inzwischen weg ist, still entfernen
-        weg = [k for k, e in z["offen"].items() if not Path(e["datei"]).exists()]
-        if weg:
-            with self.lock:
-                z = self.zustand()
-                for k in weg:
-                    z["offen"].pop(k, None)
-                self.speichern(z)
+        if any(not Path(e["datei"]).exists() for e in z["offen"].values()):
+            self.finder_abgleich()
+            z = self.zustand()
         return {"offen": [self._karte(e) for e in z["offen"].values()],
                 "hinweis": "Ablegen mit 'post_ablegen' (id, optional anderer Ordner/Dateiname)."}
+
+    # ------------------------------------------------------------ Im Finder verschoben → lernen
+    def finder_abgleich(self) -> None:
+        """Briefe, deren Scan nicht mehr im Scan-Ordner liegt: im DATENARCHIV suchen. Liegt er dort, war das
+        deine Ablage – JARVIS merkt sich den Ordner für den Absender wie bei einem Klick auf „Ablegen“."""
+        if self._abgleich_laeuft:
+            return
+        z = self.zustand()
+        weg = {k: e for teil in ("offen", "beiseite") for k, e in (z.get(teil) or {}).items()
+               if not Path(e["datei"]).exists()}
+        if not weg:
+            return
+        self._abgleich_laeuft = True
+        threading.Thread(target=self._abgleich_job, args=(weg,), daemon=True, name="post-finder").start()
+
+    def _abgleich_job(self, weg: dict) -> None:
+        gelernt, nicht = [], 0
+        try:
+            for k, e in weg.items():
+                try:
+                    p = self.wiederfinden(e)
+                except Exception as ex:
+                    self.c.audit.log("fehler", bereich="post_finder", text=str(ex)[:200])
+                    p = None
+                rel = ""
+                if p and self.archiv:
+                    rel = str(p.parent.relative_to(self.archiv))
+                    if e.get("absender"):
+                        self.lernen(e["absender"], rel)
+                    gelernt.append((e, rel, p.name))
+                else:
+                    nicht += 1
+                with self.lock:
+                    z = self.zustand()
+                    z["offen"].pop(k, None)
+                    (z.get("beiseite") or {}).pop(k, None)
+                    if rel:
+                        z["verlauf"].append({"zeit": datetime.now().isoformat(timespec="minutes"),
+                                             "absender": e.get("absender"), "ziel": f"{rel}/{p.name}", "finder": True})
+                    self.speichern(z)
+                self.c.broadcast({"type": "post_erledigt", "id": k})
+            if gelernt:
+                self.c.audit.log("post", aktion="finder_gelernt", anzahl=len(gelernt))
+                zeilen = "; ".join(f"{e.get('absender') or e['original']} → {rel}" for e, rel, _ in gelernt[:6])
+                mehr = f" und {len(gelernt) - 6} weitere" if len(gelernt) > 6 else ""
+                text = (f"Gesehen: Du hast {len(gelernt)} Scan{'s' if len(gelernt) != 1 else ''} im Finder abgelegt "
+                        f"({zeilen}{mehr}). Gemerkt – so schlage ich es künftig vor.")
+                try:
+                    self.c.proaktiv.hint(text)
+                except Exception:
+                    self.c.broadcast({"type": "hinweis", "text": text})
+        finally:
+            self._abgleich_laeuft = False
+
+    def wiederfinden(self, e: dict) -> Path | None:
+        """Datei im DATENARCHIV suchen: gleicher Name oder gleiche Größe, bei bekannter Prüfsumme auch gleicher Inhalt.
+        Mac: Spotlight (schnell, auch iCloud), sonst Ordner durchgehen."""
+        a = self.archiv
+        if not a or not a.exists():
+            return None
+        name, groesse, sha = e.get("original", ""), e.get("groesse"), e.get("sha1")
+
+        def passt(p: Path) -> bool:
+            try:
+                if not p.is_file() or hilfen.ausgeschlossen(str(p.relative_to(a))):
+                    return False
+                if groesse and p.stat().st_size != groesse:
+                    return False
+                return not sha or hashlib.sha1(p.read_bytes()).hexdigest() == sha
+            except (OSError, ValueError):
+                return False
+        kand: list[Path] = []
+        if plattform.MAC:
+            for frage in ([f"kMDItemFSName == '{name.replace(chr(39), chr(92) + chr(39))}'"] +
+                          ([f"kMDItemFSSize == {groesse}"] if groesse else [])):
+                try:
+                    out = subprocess.run(["mdfind", "-onlyin", str(a), frage], capture_output=True, text=True,
+                                         timeout=30).stdout
+                except (OSError, subprocess.SubprocessError):
+                    out = ""
+                kand = [Path(x) for x in out.splitlines() if x.strip()]
+                treffer = next((p for p in kand if passt(p)), None)
+                if treffer:
+                    return treffer
+        ende = time.time() + 90                         # ohne Spotlight: Ordner durchgehen (max. 90 s)
+        for wurzel, ordner, dateien in os.walk(a):
+            ordner[:] = [o for o in ordner if not o.startswith(".")]
+            for d in dateien:
+                if d == name or (groesse and Path(d).suffix.lower() == Path(name).suffix.lower()):
+                    p = Path(wurzel) / d
+                    if (d == name or (groesse and p.stat().st_size == groesse)) and passt(p):
+                        return p
+            if time.time() > ende:
+                break
+        return None
+
+    # ------------------------------------------------------------ Scan-Ordner aufräumen („Ablage lernen“)
+    def scan_ordner(self) -> Path | None:
+        b = getattr(self.c, "beihilfe", None)
+        return b.eingang() if b else None
+
+    def aufraeumen(self) -> dict:
+        """Alle Scans im Scan-Ordner in die Ablage-Warteschlange holen (auch früher „nicht abgelegte“),
+        damit du sie der Reihe nach zuordnen kannst. Läuft im Hintergrund, Fortschritt per Ereignis."""
+        if not self.aktiv:
+            raise ToolError("Der Posteingang ist ausgeschaltet (post.aktiv).")
+        ein = self.scan_ordner()
+        if not ein:
+            raise ToolError("Den Genius-Scan-Ordner finde ich nicht.")
+        if not self._aufr["laeuft"]:
+            self.finder_abgleich()
+            z = self.zustand()
+            schon = {e["datei"] for e in z["offen"].values()}
+            beiseite = {e["datei"]: k for k, e in (z.get("beiseite") or {}).items()}
+            from atlas.workflows.beihilfe import DATEITYPEN, RE_RECHNUNG
+            neu = [f for f in sorted(ein.rglob("*"), key=lambda p: p.name)
+                   if f.is_file() and f.suffix.lower() in DATEITYPEN and not f.name.startswith(".")
+                   and not RE_RECHNUNG.match(f.name) and str(f) not in schon]
+            with self.lock:                              # „nicht abgelegte“ wieder vorlegen (ohne neu zu lesen)
+                z = self.zustand()
+                for f in list(neu):
+                    k = beiseite.get(str(f))
+                    if k and k in z.get("beiseite", {}):
+                        z["offen"][k] = z["beiseite"].pop(k)
+                        neu.remove(f)
+                self.speichern(z)
+            self._aufr.update(laeuft=bool(neu), gesamt=len(neu), fertig=0, datei="")
+            if neu:
+                threading.Thread(target=self._aufraeumen_job, args=(neu,), daemon=True, name="post-aufraeumen").start()
+        return self.aufraeumen_stand()
+
+    def aufraeumen_stand(self) -> dict:
+        return {**self._aufr, "offen": len(self.zustand()["offen"])}
+
+    def _aufraeumen_job(self, dateien: list[Path]) -> None:
+        from atlas.archiv.extract import extract
+        from atlas.archiv.indexer import aus_icloud_laden
+        try:
+            for f in dateien:
+                self._aufr["datei"] = f.name
+                self.c.broadcast({"type": "post_aufraeumen", **self.aufraeumen_stand()})
+                try:
+                    aus_icloud_laden(f, 60)
+                    try:
+                        text = "\n".join(t for _, t in extract(f, ocr=True))
+                    except Exception:
+                        text = ""
+                    a = self.analysieren(text, f.name)
+                    if not text.strip():
+                        a["betreff"] = a["betreff"] or "Scan ohne erkennbaren Text"
+                    a["fristen"] = []                    # Fristen standen beim ersten Erkennen schon im Radar
+                    pid = uuid.uuid4().hex[:8]
+                    e = self._eintrag(f, a, pid)
+                    e["nachgeholt"] = True
+                    with self.lock:
+                        z = self.zustand()
+                        z["offen"][pid] = e
+                        self.speichern(z)
+                except Exception as ex:
+                    self.c.audit.log("fehler", bereich="post_aufraeumen", datei=f.name, text=str(ex)[:200])
+                self._aufr["fertig"] += 1
+        finally:
+            self._aufr.update(laeuft=False, datei="")
+            self.c.broadcast({"type": "post_aufraeumen", **self.aufraeumen_stand()})
+
+    def papierkorb(self, brief_id: str) -> dict:
+        """Klick „Papierkorb“ = Bestätigung: Scan aus dem Scan-Ordner in den Papierkorb (wiederherstellbar)."""
+        with self.lock:
+            z = self.zustand()
+            e = z["offen"].get(brief_id)
+        if not e:
+            raise ToolError("Brief nicht (mehr) in der Ablage-Warteschlange")
+        f = Path(e["datei"])
+        if f.exists():
+            plattform.papierkorb(f)
+        with self.lock:
+            z = self.zustand()
+            z["offen"].pop(brief_id, None)
+            self.speichern(z)
+        self.c.audit.log("post", aktion="papierkorb", datei=e["original"])
+        self.c.broadcast({"type": "post_erledigt", "id": brief_id})
+        return {"papierkorb": e["original"]}
+
+    def datei(self, brief_id: str) -> Path:
+        z = self.zustand()
+        e = z["offen"].get(brief_id) or (z.get("beiseite") or {}).get(brief_id)
+        if not e or not Path(e["datei"]).exists():
+            raise ToolError("Scan nicht gefunden")
+        return Path(e["datei"])
 
     def briefing_zeile(self) -> str:
         o = self.offen()["offen"]
@@ -505,4 +707,8 @@ def tools(core) -> list[Tool]:
         Tool("post_verwerfen", "Ablagevorschlag eines Briefs verwerfen (Datei bleibt im Scan-Ordner).",
              "post.ablegen", p.verwerfen, {"brief_id": S("id aus post_offen")}, ["brief_id"],
              label=lambda a: "Ablagevorschlag verwerfen"),
+        Tool("post_aufraeumen",
+             "Scan-Ordner aufräumen: alle noch darin liegenden Scans (auch früher nicht abgelegte) in die "
+             "Ablage-Warteschlange holen. Danach im Dashboard über „Ablage lernen“ der Reihe nach zuordnen.",
+             "post.lesen", lambda: p.aufraeumen(), label=lambda a: "Scan-Ordner aufräumen"),
     ]

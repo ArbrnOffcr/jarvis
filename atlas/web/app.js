@@ -1847,7 +1847,8 @@ function postKarte(ev) {
     <label class="k-feld">NAME<input class="k-name" value="${esc(ev.name || "")}"></label>
     <div class="k-klein">${esc(ev.ordner_grund || "")}</div>
     <div class="nk-knoepfe"><button type="button" data-a="ablegen" class="primaer">ABLEGEN</button>
-      <button type="button" data-a="spaeter">SPÄTER</button><button type="button" data-a="verwerfen">NICHT ABLEGEN</button></div>`;
+      <button type="button" data-a="spaeter">SPÄTER</button><button type="button" data-a="verwerfen">NICHT ABLEGEN</button></div>
+    <button type="button" class="k-alle" data-ablage-lernen>ALLE SCANS DER REIHE NACH ›</button>`;
   k.addEventListener("click", async (e) => {
     const a = e.target.dataset.a; if (!a) return;
     e.stopPropagation();
@@ -7124,7 +7125,10 @@ async function postRegelnAufbauen(box) {
   const fest = r.filter((x) => x.fest).length;
   em.textContent = r.length ? `${r.length} Absender${fest ? ` · ${fest} fest` : ""}` : "– noch keine"; em.className = r.length ? "ok" : "";
   ziel.className = "";
-  ziel.innerHTML = `<p class="vb-hilfe">Gelernt aus deinen Ablagen. <b>Fest</b> (über „Durchsuchen“ → „künftig immer hier“): JARVIS legt Briefe dieses Absenders sofort selbst ab und meldet es.
+  ziel.innerHTML = `<div class="al-start"><button type="button" class="primary" data-ablage-lernen>▤ ABLAGE LERNEN – SCAN-ORDNER AUFRÄUMEN</button>
+      <span>Holt alle Scans aus dem Scan-Ordner, auch früher nicht abgelegte, und geht sie mit dir der Reihe nach durch. Jede Ablage merkt sich JARVIS.
+      Ziehst du Scans stattdessen im Finder in einen Ordner, erkennt er das ebenfalls.</span></div>
+    <p class="vb-hilfe">Gelernt aus deinen Ablagen. <b>Fest</b> (über „Durchsuchen“ → „künftig immer hier“): JARVIS legt Briefe dieses Absenders sofort selbst ab und meldet es.
       Sonst ab der 3. gleichen Bestätigung und frühestens nach 30 Tagen.</p>
     ${r.length ? `<ul class="pr-liste">${r.map((x) => `<li><span><b>${esc(x.absender || "?")}</b> → ${esc(x.ordner)}<small>${x.fest ? "fest · legt selbst ab" : `${x.n || 1}× bestätigt`}</small></span>
       <button type="button" data-pr-weg="${esc(x.schluessel)}" title="Regel entfernen">✕</button></li>`).join("")}</ul>` : ""}
@@ -7372,3 +7376,107 @@ document.addEventListener("click", async (e) => {
     if (typeof PJ !== "undefined" && PJ.el && document.body.contains(PJ.el)) projekteOeffnen();
   } catch (err) { toast("Vorgang: " + err.message); }
 }, true);
+
+// =====================================================================
+//  ABLAGE LERNEN: Scan-Ordner leer machen – alle Scans der Reihe nach zuordnen. Jede Ablage lehrt JARVIS den
+//  Ordner für den Absender. Im Finder verschobene Scans erkennt JARVIS ebenfalls und lernt daraus.
+// =====================================================================
+async function ablageLernen() {
+  document.querySelector(".al")?.remove();
+  const el = document.createElement("div"); el.className = "ow al";
+  el.innerHTML = `<div class="ow-rahmen al-rahmen" role="dialog" aria-label="Ablage lernen">
+    <header><b>ABLAGE LERNEN</b><span class="al-zahl"></span><button type="button" data-al="zu" title="Schließen (Esc)">✕</button></header>
+    <div class="al-stand vb-hilfe"></div>
+    <div class="al-karte"></div>
+    <p class="al-tipp">Du kannst Scans auch im Finder in den richtigen Ordner ziehen – JARVIS findet sie im DATENARCHIV wieder und lernt genauso mit.</p></div>`;
+  document.body.appendChild(el); requestAnimationFrame(() => el.classList.add("an"));
+  ordnerLaden();
+  const z = { abgelegt: 0, korb: 0, gelernt: new Set() }, weiter = new Set();
+  let stand = { laeuft: false, gesamt: 0, fertig: 0 }, aktuell = null, offen = true, korbScharf = 0;
+  const $k = el.querySelector(".al-karte");
+  const zu = () => { offen = false; el.remove(); document.removeEventListener("keydown", taste, true); };
+  const taste = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); zu(); } };
+  document.addEventListener("keydown", taste, true);
+  const zahl = () => {
+    el.querySelector(".al-zahl").textContent = [z.abgelegt && `${z.abgelegt} abgelegt`, z.korb && `${z.korb} im Papierkorb`,
+      z.gelernt.size && `${z.gelernt.size} Absender gelernt`].filter(Boolean).join(" · ");
+    el.querySelector(".al-stand").textContent = stand.laeuft
+      ? `Lese den Scan-Ordner … ${stand.fertig} von ${stand.gesamt}${stand.datei ? " · " + stand.datei : ""} (lokal, nichts geht an ein Modell)` : "";
+  };
+  async function naechste() {
+    if (!offen) return;
+    let liste = [];
+    try { liste = ((await api("/post")).offen || []).filter((x) => !weiter.has(x.id)); } catch (e) { $k.innerHTML = `<p class="vb-hilfe">${esc(e.message)}</p>`; return; }
+    zahl();
+    if (aktuell && liste.some((x) => x.id === aktuell.id)) return;      // gerade in Bearbeitung
+    aktuell = liste[0] || null;
+    if (!aktuell) {
+      $k.innerHTML = stand.laeuft ? `<p class="vb-hilfe">Einen Moment – ich lese die nächsten Scans …</p>`
+        : `<div class="al-fertig">✓ ${weiter.size ? `Fertig. ${weiter.size} Scan${weiter.size !== 1 ? "s" : ""} übersprungen – sie bleiben im Scan-Ordner.` : "Der Scan-Ordner ist aufgeräumt."}</div>
+           <div class="nk-knoepfe"><button type="button" class="primary" data-al="zu">SCHLIESSEN</button></div>`;
+      return;
+    }
+    const e = aktuell, tok = TOKEN ? `?token=${encodeURIComponent(TOKEN)}` : "";
+    korbScharf = 0;
+    $k.innerHTML = `<div class="al-rest">Noch ${liste.length}${stand.laeuft ? "+" : ""} im Scan-Ordner</div>
+      <div class="al-datei"><span>▤ ${esc(e.original)}</span><a href="/post-datei/${encodeURIComponent(e.id)}${tok}" target="_blank" rel="noopener">ANSEHEN ↗</a></div>
+      <div class="nk-von">${esc(e.absender || "Absender unklar")}${e.datum ? ` <small>· ${fdat(e.datum)}</small>` : ""}</div>
+      <div class="k-betreff">${esc(e.betreff || "")}</div>
+      <label class="k-feld">ORDNER<span class="k-ordner-zeile"><input class="k-ordner" list="ordnerliste" value="${esc(e.ordner || "")}"><button type="button" data-al="durch" class="k-durch">▤ DURCHSUCHEN</button></span></label>
+      <label class="k-feld">NAME<input class="k-name" value="${esc(e.name || "")}"></label>
+      <div class="k-klein">${esc(e.ordner_grund || "")}</div>
+      <label class="ow-merken"><input type="checkbox" data-al-merken ${e.absender ? "" : "disabled"}>
+        <span>${e.absender ? `Briefe von <b>${esc(e.absender)}</b> künftig immer hier ablegen – ohne Rückfrage` : "Absender nicht erkannt – keine feste Regel möglich"}</span></label>
+      <footer class="al-knoepfe"><button type="button" data-al="korb">PAPIERKORB</button><button type="button" data-al="weiter">ÜBERSPRINGEN</button>
+        <button type="button" class="primary" data-al="ablegen">ABLEGEN</button></footer>
+      <div class="ow-status" data-al-st></div>`;
+  }
+  async function ablegen(ordner, merken) {
+    const st = $k.querySelector("[data-al-st]");
+    try {
+      const r = await api(`/post/${aktuell.id}/ablegen`, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ordner, dateiname: $k.querySelector(".k-name").value.trim(), merken }) });
+      z.abgelegt++; if (aktuell.absender) z.gelernt.add(aktuell.absender);
+      toast(`Abgelegt: ${r.abgelegt}${r.regel ? " · " + r.regel : ""}`); sfx("ok");
+      document.querySelector(`.post-karte[data-id="${aktuell.id}"]`)?.remove();
+      aktuell = null; naechste();
+    } catch (err) { st.textContent = err.message || "Ablage nicht möglich – Ordner prüfen"; st.className = "ow-status fehler"; sfx("warn"); }
+  }
+  el.addEventListener("click", async (ev) => {
+    const b = ev.target.closest("[data-al]"); if (!b) return;
+    const a = b.dataset.al;
+    if (a === "zu") return zu();
+    if (!aktuell) return;
+    if (a === "weiter") { weiter.add(aktuell.id); aktuell = null; return naechste(); }
+    if (a === "durch") {
+      const w = await ordnerWahl({ start: $k.querySelector(".k-ordner").value.trim(), absender: aktuell.absender, titel: aktuell.betreff || aktuell.original });
+      if (!w) return;
+      $k.querySelector(".k-ordner").value = w.pfad;
+      if (w.ablegen) ablegen(w.pfad, w.merken);
+      return;
+    }
+    if (a === "ablegen") return ablegen($k.querySelector(".k-ordner").value.trim(), !!$k.querySelector("[data-al-merken]")?.checked);
+    if (a === "korb") {
+      if (Date.now() - korbScharf > 4000) { korbScharf = Date.now(); b.textContent = "WIRKLICH LÖSCHEN?"; b.classList.add("warn");
+        setTimeout(() => { if (b.isConnected) { b.textContent = "PAPIERKORB"; b.classList.remove("warn"); } }, 4000); return; }
+      try { await api(`/post/${aktuell.id}/papierkorb`, { method: "POST" }); z.korb++; sfx("ok"); aktuell = null; naechste(); }
+      catch (err) { toast(err.message || "Papierkorb nicht möglich"); }
+    }
+  });
+  try { stand = await api("/post-aufraeumen", { method: "POST" }); } catch (e) { el.querySelector(".al-stand").textContent = e.message; }
+  zahl(); naechste();
+  (async function beobachten() {
+    while (offen && stand.laeuft) {
+      await new Promise((r) => setTimeout(r, 1500));
+      try { stand = await api("/post-aufraeumen"); } catch (e) { break; }
+      zahl(); if (!aktuell) naechste();
+    }
+    if (offen) { zahl(); if (!aktuell) naechste(); }
+  })();
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-ablage-lernen]"); if (!b) return;
+  e.preventDefault(); e.stopPropagation(); ablageLernen();
+}, true);
+const _handleAl = handle;
+handle = function (ev) { if (ev.type === "post_aufraeumen") return; _handleAl(ev); };

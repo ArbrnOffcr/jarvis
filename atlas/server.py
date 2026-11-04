@@ -1763,6 +1763,8 @@ async def post_aktion(bid: str, aktion: str, data: dict | None = None, _: None =
                                         bool(d.get("merken")))
         elif aktion == "verwerfen":
             r = await asyncio.to_thread(p.verwerfen, bid)
+        elif aktion == "papierkorb":
+            r = await asyncio.to_thread(p.papierkorb, bid)
         else:
             raise HTTPException(404, "unbekannte Aktion")
     except ToolError as e:
@@ -1810,6 +1812,33 @@ async def archiv_baum_neu(data: dict, _: None = Depends(auth)):
     """Klick „＋ Ordner“ im Ordner-Browser = Bestätigung."""
     return await asyncio.to_thread(_ford_fehler, get_core().post.ordner_anlegen, str(data.get("pfad", "")),
                                    str(data.get("name", "")))
+
+
+@app.get("/post-datei/{bid}")
+def post_datei(bid: str, token: str = "", x_atlas_token: str | None = Header(default=None),
+               atlas_token: str | None = Cookie(default=None)):
+    """Scan ansehen (Ablage lernen) – bleibt lokal, geht nicht an ein Modell."""
+    if get_core().token not in (token, x_atlas_token, atlas_token):
+        raise HTTPException(status_code=401, detail="Zugang verweigert")
+    from fastapi.responses import FileResponse
+    try:
+        f = get_core().post.datei(bid)
+    except ToolError as e:
+        raise HTTPException(404, str(e))
+    art = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+           ".heic": "image/heic"}.get(f.suffix.lower(), "application/octet-stream")
+    return FileResponse(f, media_type=art, headers={"Content-Disposition": "inline", "Cache-Control": "no-store"})
+
+
+@app.post("/post-aufraeumen")
+async def post_aufraeumen(_: None = Depends(auth)):
+    """Knopf „Ablage lernen“: Scan-Ordner einlesen, alles in die Warteschlange."""
+    return await asyncio.to_thread(_ford_fehler, get_core().post.aufraeumen)
+
+
+@app.get("/post-aufraeumen")
+def post_aufraeumen_stand(_: None = Depends(auth)):
+    return get_core().post.aufraeumen_stand()
 
 
 @app.get("/post-regeln")

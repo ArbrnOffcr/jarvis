@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 04.11.2026 · Version 0.33.0
+Stand: 04.11.2026 · Version 0.34.0
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -125,6 +125,9 @@ Bedeutung der Zeichen:
 | Funktion | Stand | Hinweis |
 |---|---|---|
 | Posteingang: gescannte Briefe erkennen (Absender, Betreff, Fristen) | ⚙️ | Genius-Scan-Ordner in iCloud; Auswertung lokal |
+| „Ablage lernen“: Scan-Ordner aufräumen – holt alle Scans (auch früher nicht abgelegte) und geht sie der Reihe nach mit dir durch: ansehen, Ordner vorschlagen/durchsuchen, Namen anpassen, ablegen, überspringen oder in den Papierkorb; jede Ablage merkt sich JARVIS für den Absender, auf Wunsch als feste Regel | ✅🔒 | Einstellungen → Daten & Postfächer → Ablageregeln → „Ablage lernen“, auf jeder Briefkarte „Alle Scans der Reihe nach“ oder per Sprache „Räum den Scan-Ordner auf“; Lesen lokal, Papierkorb mit zweitem Klick |
+| Im Finder abgelegt = gelernt: verschiebst du einen Scan selbst (auch umbenannt) aus dem Scan-Ordner ins DATENARCHIV, findet JARVIS ihn dort wieder (Spotlight, Größe und Inhalt) und merkt sich den Ordner für den Absender | ✅ | Sammelmeldung „Gesehen: Du hast … im Finder abgelegt – gemerkt“; gilt für Scans, die JARVIS schon kennt (einmal „Ablage lernen“ öffnen holt alle alten dazu) |
+| Scan-Ordner ohne Fehlerflut: schon verarbeitete Scans werden nicht erneut gelesen (kein iCloud-Download bei jedem Durchgang); lässt sich etwas nicht lesen, kommt eine einzige Sammelmeldung statt einer Nachricht pro Datei | ✅ | behebt die Telegram-Meldungen „[Errno 60] Operation timed out“ |
 | Scan-Ordner robust: Dateien, die noch nur in iCloud liegen, lädt JARVIS erst herunter; leere/halbfertige Exporte wartet er ab; ein echter Lesefehler wird je Datei nur einmal gemeldet (auch nach Neustarts), bis sich die Datei ändert | ✅ | |
 | Briefkarte „▤ Durchsuchen“: durch das DATENARCHIV klicken (Pfadleiste, Suche, neuen Unterordner anlegen) und direkt ablegen; Haken „Briefe von … künftig immer hier ablegen“ macht daraus eine feste Regel – ab dem nächsten Brief legt JARVIS selbst ab und meldet es | ✅ | Regeln ansehen/entfernen: ⚙ Einstellungen → Daten → „Ablageregeln“; das ganze DATENARCHIV ist sichtbar – ausgenommen nur JARVIS' eigener Datenordner (Suchindex, Systemdateien); ohne festen Haken weiter: selbst ab der 3. Bestätigung nach 30 Tagen |
 | Ablage vorschlagen | 🔒 | Ablegen nach Bestätigung |

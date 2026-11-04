@@ -139,3 +139,21 @@ def ersatzstimme_wav(text: str, rate: int = 22050) -> bytes:
               f"$s.Speak([IO.File]::ReadAllText('{txt}', [Text.Encoding]::UTF8)); $s.Dispose()")
         subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=120, check=True)
         return ziel.read_bytes()
+
+
+def papierkorb(pfad: str | Path) -> Path | None:
+    """Datei in den Papierkorb legen (wiederherstellbar). Mac: ~/.Trash, Windows: Papierkorb über die Shell."""
+    import shutil
+    p = Path(pfad)
+    if WINDOWS:
+        befehl = ("Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile("
+                  f"'{str(p).replace(chr(39), chr(39) * 2)}', 'OnlyErrorDialogs', 'SendToRecycleBin')")
+        subprocess.run(["powershell", "-NoProfile", "-Command", befehl], capture_output=True, timeout=60, check=True)
+        return None
+    korb = Path.home() / ".Trash"
+    korb.mkdir(exist_ok=True)
+    ziel, i = korb / p.name, 1
+    while ziel.exists():
+        ziel, i = korb / f"{p.stem} ({i}){p.suffix}", i + 1
+    shutil.move(str(p), str(ziel))
+    return ziel

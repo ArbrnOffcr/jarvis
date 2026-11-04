@@ -371,6 +371,12 @@ class Beihilfe:
                             "beihilfe → eingang den Pfad eintragen.", "kein_eingang")
             else:
                 dateien = sorted(ein.rglob("*"), key=lambda p: (0 if RE_RECHNUNG.match(p.name) else 1, p.name))
+                # Schon erledigte Dateien (Name, Größe, Änderungszeit) nicht jedes Mal neu lesen: Liegen sie nur noch
+                # als iCloud-Platzhalter vor, löste das Lesen sonst bei jedem Durchgang einen Download aus – und
+                # bei langsamem iCloud „[Errno 60] Operation timed out“ für Dateien, die längst verarbeitet sind.
+                bekannt = z.setdefault("bekannt", {})
+                erledigt = {k.split(":", 1)[1] for k in z["dateien"]}
+                gesehen, fehlschlaege = set(), []
                 for f in dateien:                     # Rechnungen zuerst, dann Bescheide
                     if f.suffix.lower() not in DATEITYPEN or f.name.startswith("."):
                         continue
@@ -381,6 +387,13 @@ class Beihilfe:
                     if not sofort and time.time() - st.st_mtime < 45:   # Upload noch nicht fertig
                         continue
                     if st.st_size == 0:                 # Genius Scan schreibt noch
+                        continue
+                    sig = f"{f.relative_to(ein)}:{st.st_size}:{int(st.st_mtime)}"
+                    gesehen.add(sig)
+                    if sig in bekannt:
+                        continue
+                    if not bekannt.get("_uebernommen") and f.name in erledigt:
+                        bekannt[sig] = "übernommen"     # einmalig: vor 0.33.1 verarbeitete Dateien ohne Lesen merken
                         continue
                     # Datei liegt nur in iCloud (Platzhalter)? Erst herunterladen – sonst scheitert das Lesen
                     # („Resource deadlock avoided“). Klappt es nicht, im nächsten Durchgang still erneut versuchen.
@@ -406,14 +419,28 @@ class Beihilfe:
                         voruebergehend = isinstance(e, OSError) and getattr(e, "errno", None) in (11, 16, 35, 60, 89)
                         if fz[k] >= (3 if voruebergehend else 1) and not z.setdefault("fehler_gemeldet", {}).get(k):
                             z["fehler_gemeldet"][k] = datetime.now().isoformat(timespec="seconds")
-                            grund = ("Die Datei ließ sich aus iCloud nicht laden" if voruebergehend else
-                                     f"{type(e).__name__}: {str(e)[:160]}")
-                            self.melden(f"Konnte den Scan „{f.name}“ nicht verarbeiten ({grund}). Die Datei bleibt im "
-                                        f"Scan-Ordner – ich versuche es nicht weiter, bis sie sich ändert.", f"fehler:{k}")
+                            fehlschlaege.append(f.name)
                         self.speichern(z)
                     if b:
                         berichte.append(b)
                         self.speichern(z)
+                    if f.name in {k.split(":", 1)[1] for k in z["dateien"]}:
+                        bekannt[sig] = datetime.now().isoformat(timespec="seconds")
+                bekannt["_uebernommen"] = True
+                for k in [k for k in bekannt if k != "_uebernommen" and k not in gesehen]:
+                    del bekannt[k]                      # Datei abgelegt oder gelöscht
+                if fehlschlaege:                        # EINE Sammelmeldung statt einer Nachricht pro Datei
+                    namen = ", ".join(f"„{n}“" for n in fehlschlaege[:5]) + (f" und {len(fehlschlaege) - 5} weitere"
+                                                                                if len(fehlschlaege) > 5 else "")
+                    self.melden(f"{len(fehlschlaege)} Scan(s) ließen sich nicht verarbeiten: {namen}. Sie bleiben im "
+                                f"Scan-Ordner – ich versuche es nicht weiter, bis sie sich ändern. Häufigste Ursache: "
+                                f"iCloud hat die Datei nicht rechtzeitig geladen.", "fehler_sammel:" + "|".join(fehlschlaege))
+            try:                                         # im Finder abgelegte Scans erkennen und daraus lernen
+                post = getattr(self.c, "post", None)
+                if post is not None and post.aktiv is True:
+                    post.finder_abgleich()
+            except Exception as e:
+                self.c.audit.log("fehler", bereich="post_finder", text=str(e)[:200])
             berichte += self.erinnerungen_abgleichen(z)
             self.speichern(z)
             return berichte
