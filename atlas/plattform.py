@@ -198,3 +198,25 @@ def papierkorb(pfad: str | Path) -> Path | None:
         ziel, i = korb / f"{p.stem} ({i}){p.suffix}", i + 1
     shutil.move(str(p), str(ziel))
     return ziel
+
+
+def leerlauf_sekunden() -> float | None:
+    """Seit wann niemand Maus oder Tastatur benutzt hat (Sekunden); None, wenn unbekannt."""
+    try:
+        if WINDOWS:
+            import ctypes
+
+            class _LII(ctypes.Structure):
+                _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+            lii = _LII(); lii.cbSize = ctypes.sizeof(_LII)
+            if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+                return None
+            return (ctypes.windll.kernel32.GetTickCount() - lii.dwTime) / 1000
+        if MAC:
+            out = subprocess.run(["ioreg", "-c", "IOHIDSystem", "-d", "4"], capture_output=True, text=True,
+                                 timeout=5).stdout
+            m = re.search(r'"HIDIdleTime" = (\d+)', out)
+            return int(m.group(1)) / 1e9 if m else None
+    except Exception:
+        return None
+    return None

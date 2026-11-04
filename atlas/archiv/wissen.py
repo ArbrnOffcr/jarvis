@@ -118,6 +118,22 @@ class Wissen:
                 return True
         return bool(self.c.archiv and self.c.archiv.pause.is_set())
 
+    def steckbriefe_erlaubt(self) -> tuple[bool, str]:
+        """Steckbriefe brauchen das große lokale Modell. Standard: nur nachts (22–7 Uhr) oder wenn der Rechner
+        mindestens 10 Minuten unbenutzt ist – tagsüber bleibt der Arbeitsspeicher frei.
+        config.yaml: wissen → steckbriefe_zeit: nachts_oder_leerlauf | immer, nacht_von, nacht_bis, leerlauf_min."""
+        if str(self.cfg.get("steckbriefe_zeit", "nachts_oder_leerlauf")) == "immer":
+            return True, "immer"
+        von, bis = int(self.cfg.get("nacht_von", 22)), int(self.cfg.get("nacht_bis", 7))
+        h = datetime.now().hour
+        if (von <= h or h < bis) if von > bis else (von <= h < bis):
+            return True, "nachts"
+        from atlas import plattform
+        ruhe = plattform.leerlauf_sekunden()
+        if ruhe is not None and ruhe >= float(self.cfg.get("leerlauf_min", 10)) * 60:
+            return True, "Leerlauf"
+        return False, "tagsüber in Benutzung"
+
     def _bin_wache(self) -> bool:
         from atlas.lease import ME
         try:
@@ -160,8 +176,8 @@ class Wissen:
             return 0
         n = 0
         for did, pfad, mtime in s.steckbrief_offen(grenze):
-            if (stop and stop.is_set()) or self._beschaeftigt():
-                break
+            if (stop and stop.is_set()) or self._beschaeftigt() or not self.steckbriefe_erlaubt()[0]:
+                break                                     # z. B. du sitzt wieder am Mac → sofort aufhören
             text = s.inhalt(did)
             if vs_kennzeichnung(text):                    # Verschlusssache: kein Steckbrief, nie auswerten
                 daten, st = {"vs": True}, ""
@@ -333,7 +349,7 @@ class Wissen:
         while not stop.wait(15):
             try:
                 if (self.search and self.cfg.get("aktiv", True) and self.cfg.get("steckbriefe", True)
-                        and self._bin_wache() and not self._beschaeftigt()):
+                        and self._bin_wache() and not self._beschaeftigt() and self.steckbriefe_erlaubt()[0]):
                     self.steckbriefe_erstellen(int(self.cfg.get("steckbriefe_je_runde", 10)), stop)
                     n = self.stand["steckbriefe_neu"]
                     if n // 100 > letzte_meldung:                  # alle 100 Steckbriefe ein Protokolleintrag
@@ -349,7 +365,9 @@ class Wissen:
     def status(self) -> dict:
         st = self.search.stats() if self.search else {}
         offen = len(self.search.steckbrief_offen(100000)) if self.search else 0
+        erlaubt, grund = self.steckbriefe_erlaubt()
         return {**self.stand, "steckbriefe": st.get("steckbriefe", 0), "steckbriefe_offen": offen,
+                "steckbriefe_jetzt": erlaubt, "steckbriefe_grund": grund,
                 "quellen_im_index": st.get("quellen", {})}
 
 

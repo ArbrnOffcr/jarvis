@@ -7499,6 +7499,10 @@ async function speicherAufbauen(box) {
       Bei offenem Fenster bleibt alles 30 Minuten geladen – für schnelle Antworten.</p>
     <ul class="pr-liste">${(d.modelle || []).map((m) => `<li><span><b>${esc(m.name)}</b><small>${m.gb} GB</small></span></li>`).join("")}
       <li><span><b>Spracherkennung</b><small>${d.spracherkennung ? "geladen (ca. 1,5–2 GB)" : "nicht geladen"}</small></span></li></ul>
+    ${d.steckbriefe?.offen != null ? `<p class="vb-hilfe"><b>Steckbriefe fürs Archiv:</b> ${d.steckbriefe.fertig} fertig, ${d.steckbriefe.offen} offen.
+      Sie brauchen das große Modell und entstehen nur nachts (22–7 Uhr) oder wenn der Mac 10 Minuten unbenutzt ist – gerade:
+      <b>${d.steckbriefe.jetzt ? "läuft (" + esc(d.steckbriefe.grund) + ")" : "pausiert (" + esc(d.steckbriefe.grund) + ")"}</b>.
+      Neue Scans und Briefe wertet JARVIS weiterhin sofort aus.</p>` : ""}
     <div class="vb-reihe"><button type="button" data-a="speicher-frei">SPEICHER JETZT FREIGEBEN</button></div>
     <p class="vb-hilfe">Abschalten: in config.yaml <code>sparmodus: {aktiv: false}</code>.</p>`;
 }

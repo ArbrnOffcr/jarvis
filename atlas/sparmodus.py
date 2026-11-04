@@ -124,8 +124,17 @@ class Sparmodus:
                        for m in httpx.get(f"{self.url}/api/ps", timeout=3).json().get("models", [])]
         except (httpx.HTTPError, ValueError):
             pass
+        steck = {}
+        try:
+            w = getattr(self.c, "wissen", None)
+            if w is not None and w.search:
+                ws = w.status()
+                steck = {"offen": ws.get("steckbriefe_offen", 0), "fertig": ws.get("steckbriefe", 0),
+                         "jetzt": ws.get("steckbriefe_jetzt"), "grund": ws.get("steckbriefe_grund")}
+        except Exception:
+            pass
         return {"aktiv": self.aktiv, "fenster_offen": self.fenster_offen(), "modelle": geladen,
-                "spracherkennung": plattform.whisper_geladen()}
+                "spracherkennung": plattform.whisper_geladen(), "steckbriefe": steck}
 
     # ------------------------------------------------------------ 4-Bit-Modell
     def modell_sicherstellen(self) -> None:
