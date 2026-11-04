@@ -851,7 +851,7 @@ class Core3D {
   }
   resize() {
     const r = this.canvas.getBoundingClientRect(), w = Math.max(1, r.width), h = Math.max(1, r.height);
-    const pr = { hoch: Math.min(devicePixelRatio, 2), mittel: 1.25, niedrig: 1 }[this.quality];
+    const pr = Math.min(devicePixelRatio, { hoch: this.stufe === "sparsam" ? 1.25 : 2, mittel: 1.25, niedrig: 1 }[this.quality]);
     this.renderer.setPixelRatio(pr); this.renderer.setSize(w, h, false); PR.value = pr;
     this.composer.setPixelRatio(pr); this.composer.setSize(w, h);
     this.camera.aspect = w / h;
@@ -891,7 +891,21 @@ class Core3D {
     void r;
   }
   frame() {
-    const now = performance.now(), dt = Math.min(.05, (now - this.last) / 1000) * (this.reduce ? .25 : 1); this.last = now; this.elapsed += dt; const t = this.elapsed;
+    const jetzt = performance.now();
+    if (document.hidden) { this.last = jetzt; return; }
+    // Gesicht (MOSAIK) aktiv und keine Bilder: der Kern zeichnet gar nicht – einmal leeren, dann ruhen
+    if (this.kernAus && !this.gallery.aktiv && !this.gallery.overlay.children.length && this.fokus < .01) {
+      if (!this.geleert) { this.renderer.setClearColor(0x000000, 0); this.renderer.clear(); this.geleert = true; }
+      this.last = jetzt; this.fpsN = 0; this.fpsT = 0; return;
+    }
+    this.geleert = false;
+    // Bildrate je Lage: Ruhe 30 (gedrosselt 20), Arbeit 60; ein anderes 3D-Fenster vorn → 24; „sparsam“ → höchstens 30
+    const still = (this.state === "idle" || this.state === "off") && this.toolT <= 0 && !this.gallery.aktiv && this.ignT <= 0;
+    let kappe = this.drossel >= 2 ? 24 : still ? (this.drossel >= 1 ? 20 : 30) : 60;
+    if (this.stufe === "sparsam") kappe = Math.min(kappe, 30);
+    this.kappe = kappe;
+    if (jetzt - this.last < 1000 / kappe - 1) return;
+    const now = jetzt, dt = Math.min(.05, (now - this.last) / 1000) * (this.reduce ? .25 : 1); this.last = now; this.elapsed += dt; const t = this.elapsed;
     const target = STATES[this.state];
     // Plexus bleibt wie er ist; alle anderen Stilwelten reagieren ruhiger (weniger Ausschlag, weicher)
     const ruhig = this.themeName !== "plexus", kE = ruhig ? .7 : 1, kS = ruhig ? .75 : 1, kL = ruhig ? .4 : 1;
@@ -952,7 +966,7 @@ class Core3D {
     this.fpsN++; this.fpsT += dt;
     if (this.fpsT > 3) {
       const fps = this.fpsN / this.fpsT; this.fps = Math.round(fps); this.fpsN = 0; this.fpsT = 0;
-      if (this.auto !== false && fps < 42 && !this.reduce) {
+      if (this.auto !== false && this.stufe !== "hoch" && fps < Math.min(42, this.kappe * .7) && !this.reduce) {
         if (++this.lowCount >= 2) { this.setQuality(this.quality === "hoch" ? "mittel" : "niedrig"); this.lowCount = 0; }
       } else this.lowCount = 0;
     }
@@ -971,7 +985,9 @@ function start() {
       tool: (n) => c.tool(n), showImages: (d) => c.gallery.show(d), hideImages: () => c.gallery.hide(),
       hasImages: () => c.gallery.aktiv,
       setOrbit: (items) => c.orbit.set(items), orbitAus: (b) => { c.orbitAus = !!b; }, kernAus: (b) => { c.kernAus = !!b; },
-      setMood: (m) => { Object.assign(c.mood, m || {}); }, ignite: () => { c.ignT = 1.4; c.setState("idle"); }, swapImage: (i, m) => c.gallery.swap(i, m), setFocus: (b) => { c.extFokus = !!b; }, setQuality: (q) => { c.auto = false; c.setQuality(q); }, info: () => ({ fps: c.fps, quality: c.quality, theme: c.themeName }),
+      stufe: (st) => { if (!["auto", "hoch", "sparsam"].includes(st)) return; c.stufe = st; if (st === "hoch") { c.auto = true; c.setQuality("hoch"); } else c.resize(); },
+      drossel: (n) => { c.drossel = Math.max(0, Math.min(2, n | 0)); },
+      setMood: (m) => { Object.assign(c.mood, m || {}); }, ignite: () => { c.ignT = 1.4; c.setState("idle"); }, swapImage: (i, m) => c.gallery.swap(i, m), setFocus: (b) => { c.extFokus = !!b; }, setQuality: (q) => { c.auto = false; c.setQuality(q); }, info: () => ({ fps: c.fps, quality: c.quality, theme: c.themeName, kappe: c.kappe, stufe: c.stufe || "auto", drossel: c.drossel || 0, ruht: !!c.geleert }),
     };
     document.body.classList.add("gl");
     window.dispatchEvent(new Event("jarvis3d-ready"));

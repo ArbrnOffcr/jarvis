@@ -27,6 +27,11 @@ SCHLOSS = {0: "nicht kalibriert", 1: "abgeschlossen", 2: "wird aufgeschlossen", 
            255: "unbekannt"}
 TUER = {0: "kein Türsensor", 1: "Sensor aus", 2: "geschlossen", 3: "offen", 4: "unbekannt", 5: "kalibriert"}
 ABSCHLIESSEN = 2          # einzige Aktion, die JARVIS an das Schloss sendet
+# Gerätetypen der NUKI-Web-API: 0 Smart Lock 1/2, 1 Box, 2 Opener, 3 Smart Door, 4 Smart Lock 3.0/4.0 (Pro), 5 Smart Lock Ultra.
+# Box und Opener sind keine Schlösser – der Opener meldet z. B. state 1 = „online“, was sonst „abgeschlossen“ hieße.
+SCHLOSS_TYPEN = {0, 3, 4, 5}
+VERBINDUNG = {0: "verbunden", 1: "nicht registriert", 2: "Konfiguration wird übertragen", 3: "Konfigurationsfehler",
+              4: "offline – keine Verbindung zum NUKI-Server"}
 
 
 class Zuhause:
@@ -80,32 +85,84 @@ class Zuhause:
         except httpx.HTTPError:
             raise ToolError("NUKI-Server nicht erreichbar.")
         if r.status_code in (401, 403):
+            if methode == "POST":
+                raise ToolError("NUKI lehnt den Befehl ab: Das API-Token darf nur lesen. In web.nuki.io → API ein neues "
+                                "Token mit der Berechtigung „Smart Locks bedienen“ (Aktionen) erstellen und unter "
+                                "Einstellungen → Konten → NUKI eintragen.")
             raise ToolError("NUKI-Token wird nicht angenommen.")
         if r.status_code >= 400:
-            raise ToolError(f"NUKI antwortet {r.status_code}.")
+            try:
+                grund = (r.json() or {}).get("detailMessage") or (r.json() or {}).get("message") or ""
+            except ValueError:
+                grund = r.text[:160]
+            raise ToolError(f"NUKI antwortet {r.status_code}{': ' + str(grund)[:160] if grund else ''}.")
         return r.json() if r.content else {}
 
-    def schloesser(self) -> list[dict]:
-        out = []
-        for s in self._nuki("GET", "/smartlock") or []:
-            st = s.get("state") or {}
-            out.append({"id": s.get("smartlockId"), "name": s.get("name") or "Haustür",
-                        "schloss": SCHLOSS.get(st.get("state"), "unbekannt"), "abgeschlossen": st.get("state") == 1,
-                        "tuer": TUER.get(st.get("doorState"), "unbekannt"),
-                        "batterie": st.get("batteryCharge"), "batterie_kritisch": bool(st.get("batteryCritical"))})
-        return out
+    @staticmethod
+    def _eintrag(s: dict) -> dict:
+        st = s.get("state") or {}
+        ladung = st.get("batteryCharge")
+        aktual = s.get("updateDate") or ""
+        alter_min = None
+        if aktual:
+            try:
+                alter_min = int((datetime.now().astimezone() - datetime.fromisoformat(aktual.replace("Z", "+00:00"))).total_seconds() // 60)
+            except ValueError:
+                pass
+        return {"id": s.get("smartlockId"), "name": s.get("name") or "Haustür", "typ": s.get("type"),
+                "schloss": SCHLOSS.get(st.get("state"), "unbekannt"), "abgeschlossen": st.get("state") == 1,
+                "tuer": TUER.get(st.get("doorState"), "unbekannt"),
+                # Ladestand gibt es nur bei Smart Lock 3.0/4.0/Ultra; ältere melden nur „kritisch ja/nein“ – dann keine Prozentzahl
+                "batterie": ladung if isinstance(ladung, (int, float)) and 0 <= ladung <= 100 and s.get("type") in (4, 5) else None,
+                "batterie_kritisch": bool(st.get("batteryCritical")), "laedt": bool(st.get("batteryCharging")),
+                "keypad_batterie_kritisch": bool(st.get("keypadBatteryCritical")),
+                "tuersensor_batterie_kritisch": bool(st.get("doorsensorBatteryCritical")),
+                "verbindung": VERBINDUNG.get(s.get("serverState"), "unbekannt"), "offline": s.get("serverState") == 4,
+                "stand": aktual, "stand_alter_min": alter_min}
+
+    def schloesser(self, frisch: bool = False) -> list[dict]:
+        """Nur echte Schlösser (kein Opener, keine Box). Die Web-API liefert den zuletzt vom Schloss gemeldeten
+        Stand – darum steht das Alter des Stands mit dabei (frisch: ungenutzt, bleibt für Aufrufer kompatibel)."""
+        roh = [s for s in (self._nuki("GET", "/smartlock") or []) if s.get("type", 0) in SCHLOSS_TYPEN]
+        return [self._eintrag(s) for s in roh]
+
+    def _eines(self, sid) -> dict | None:
+        s = self._nuki("GET", f"/smartlock/{int(sid)}")
+        return self._eintrag(s) if s else None
 
     def abschliessen(self, name: str = "") -> dict:
         locks = self.schloesser()
         if not locks:
-            raise ToolError("Kein NUKI-Schloss im Konto gefunden.")
+            raise ToolError("Kein NUKI-Schloss im Konto gefunden (Opener und Box zählen nicht).")
         ziel = next((l for l in locks if name and name.lower() in l["name"].lower()), locks[0])
-        if ziel["abgeschlossen"]:
-            return {"schloss": ziel["name"], "status": "war schon abgeschlossen"}
         if ziel["tuer"] == "offen":
             raise ToolError(f"{ziel['name']}: Die Tür steht offen – erst schließen, dann schließe ich ab.")
-        self._nuki("POST", f"/smartlock/{int(ziel['id'])}/action", json={"action": ABSCHLIESSEN})
-        return {"schloss": ziel["name"], "status": "wird abgeschlossen"}
+        if ziel["offline"]:
+            raise ToolError(f"{ziel['name']} ist offline (keine Verbindung zum NUKI-Server – Bridge bzw. WLAN prüfen). "
+                            f"Der Befehl käme nicht an.")
+        # Gemeldeter Zustand kann veraltet sein – „schon abgeschlossen“ wird darum nicht geglaubt, sondern trotzdem gesendet
+        try:
+            self._nuki("POST", f"/smartlock/{int(ziel['id'])}/action/lock")
+        except ToolError as e:
+            if "Berechtigung" in str(e):
+                raise
+            self._nuki("POST", f"/smartlock/{int(ziel['id'])}/action", json={"action": ABSCHLIESSEN, "option": 0})
+        self.c.audit.log("zuhause", nuki="abschliessen", schloss=ziel["name"])
+        # Nachsehen, ob es wirklich passiert ist (bis 30 s)
+        ende = time.time() + 30
+        while time.time() < ende:
+            time.sleep(4)
+            try:
+                jetzt = self._eines(ziel["id"])
+            except ToolError:
+                continue
+            if jetzt and jetzt["abgeschlossen"]:
+                return {"schloss": ziel["name"], "status": "abgeschlossen ✓ (bestätigt)"}
+            if jetzt and jetzt["schloss"] == "Motor blockiert":
+                raise ToolError(f"{ziel['name']}: Motor blockiert – Riegel klemmt oder Tür nicht ganz zu.")
+        return {"schloss": ziel["name"], "status": "Befehl gesendet, aber noch nicht bestätigt – das Schloss hat sich "
+                                                  "binnen 30 s nicht als abgeschlossen gemeldet. Bitte kurz in der NUKI-App "
+                                                  "nachsehen (Bridge/WLAN-Verbindung des Schlosses).", "bestaetigt": False}
 
     # ------------------------------------------------------------ Abendkontrolle
     def schleife(self, stop: threading.Event) -> None:
@@ -136,7 +193,7 @@ class Zuhause:
              "gesperrte_kurzbefehle": [k["aktion"] for k in kb if k["gesperrt"]], "nuki": bool(get_secret("nuki"))}
         if r["nuki"]:
             try:
-                r["schloesser"] = self.schloesser()
+                r["schloesser"] = self.schloesser(frisch=True)
             except ToolError as e:
                 r["nuki_fehler"] = str(e)
         return r

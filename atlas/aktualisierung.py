@@ -157,13 +157,23 @@ class Aktualisierung:
             if not (quelle / "atlas" / "server.py").exists():
                 return self._melden(neu, "Update unvollständig – übersprungen.")
             pakete = (quelle / "pyproject.toml").read_bytes() != (REPO_DIR / "pyproject.toml").read_bytes()
-            sicher = REPO_DIR.with_name(REPO_DIR.name + ".vorher")
-            shutil.rmtree(sicher, ignore_errors=True)
-            REPO_DIR.rename(sicher)
-            shutil.move(str(quelle), str(REPO_DIR))
+            from atlas import plattform
+            if plattform.WINDOWS:
+                # Windows sperrt Ordner laufender Programme: neue Fassung bereitlegen – start.ps1 tauscht sie
+                # beim Neustart aus (und installiert bei Bedarf neue Pakete), bevor der Kern wieder startet
+                neu_ordner = REPO_DIR.with_name(REPO_DIR.name + ".neu")
+                shutil.rmtree(neu_ordner, ignore_errors=True)
+                shutil.move(str(quelle), str(neu_ordner))
+                if pakete:
+                    (neu_ordner / ".pakete").write_text("1")
+                pakete = False
+            else:
+                sicher = REPO_DIR.with_name(REPO_DIR.name + ".vorher")
+                shutil.rmtree(sicher, ignore_errors=True)
+                REPO_DIR.rename(sicher)
+                shutil.move(str(quelle), str(REPO_DIR))
         if pakete:
-            uv = shutil.which("uv") or str(Path.home() / ".local/bin/uv")
-            subprocess.run([uv, "pip", "install", "-q", "--python", str(LOCAL_DIR / "venv/bin/python"),
+            subprocess.run([plattform.uv(), "pip", "install", "-q", "--python", str(plattform.venv_python(LOCAL_DIR / "venv")),
                             "-e", str(REPO_DIR)], capture_output=True, timeout=900)
         VERSION.write_text(json.dumps({"sha": neu, "repo": self.repo, "stand": time.strftime("%Y-%m-%d %H:%M")}))
         self.c.audit.log("aktualisierung", von=alt[:7], nach=neu[:7], art="release")

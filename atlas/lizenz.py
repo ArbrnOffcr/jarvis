@@ -9,7 +9,10 @@ eine Freigabe wieder wirkt. Gesendet wird dabei nichts; es ist ein reiner Abruf.
 Eigene Installationen (mit git) sind davon nie betroffen.
 
     jarvis sperren <Kennung|alle> [Grund]     jarvis entsperren <Kennung|alle>     jarvis sperrliste
-"""
+    jarvis version-sperren <x.y.z | x.y.*> [Grund] [--mac|--windows]   eine (anderweitig genutzte) Version abschalten
+    jarvis version-entsperren <x.y.z | x.y.*>
+    jarvis mindestversion <x.y.z|aus>        alles darunter dauerhaft abschalten (Mac und Windows)
+Gilt für Mac- und Windows-Installationen gleichermaßen (dieselbe Sperrliste)."""
 import json
 import secrets
 import time
@@ -51,6 +54,17 @@ def _version(v: str) -> tuple:
     return tuple(int(x) for x in str(v).split("-")[0].split(".") if x.isdigit())
 
 
+def version_passt(muster: str, version: str) -> bool:
+    """„0.30.1“ trifft genau diese Version (auch mit Build-Anhang), „0.30.*“ bzw. „0.30“ alle 0.30.x."""
+    m = str(muster).strip().lower().rstrip("*").rstrip(".")
+    v = str(version).split("-")[0]
+    if not m:
+        return False
+    if str(muster).strip().endswith("*") or m.count(".") < 2:
+        return v == m or v.startswith(m + ".")
+    return v == m
+
+
 def pruefen(cfg: dict) -> str | None:
     """Sperrliste abrufen. Rückgabe: Grund (gesperrt), "" (frei) oder None (nicht erreichbar)."""
     if not betroffen(cfg):
@@ -78,6 +92,13 @@ def pruefen(cfg: dict) -> str | None:
         grund = eintraege[k.upper()] or liste.get("nachricht") or "Diese Installation wurde vom Herausgeber deaktiviert."
     elif liste.get("mindestversion") and _version(__version__) < _version(liste["mindestversion"]):
         grund = f"Diese JARVIS-Version ist zu alt (mindestens {liste['mindestversion']}). Bitte neu installieren."
+    else:
+        from atlas.plattform import MAC, WINDOWS
+        eigene = "windows" if WINDOWS else "mac" if MAC else ""
+        for e in liste.get("versionen", []):
+            if version_passt(e.get("version", ""), __version__) and (not e.get("plattform") or e["plattform"] == eigene):
+                grund = e.get("grund") or f"JARVIS {__version__} wurde vom Herausgeber deaktiviert. Bitte neu installieren."
+                break
     try:
         if grund:
             SPERRE.write_text(json.dumps({"grund": grund, "seit": time.strftime("%Y-%m-%d %H:%M")}))
@@ -122,7 +143,7 @@ def _liste_laden() -> dict:
         return json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"hinweis": "Von 'jarvis sperren' gepflegt. Installationen prüfen diese Datei alle paar Stunden.",
-                "alle": False, "mindestversion": "", "nachricht": "", "gesperrt": []}
+                "alle": False, "mindestversion": "", "nachricht": "", "gesperrt": [], "versionen": []}
 
 
 def verwalten(args: list[str]) -> None:
@@ -138,17 +159,22 @@ def verwalten(args: list[str]) -> None:
     liste = _liste_laden()
     befehl = args[0] if args else "sperrliste"
     if befehl == "sperrliste":
-        c.print(f"Alle gesperrt: {'JA' if liste.get('alle') else 'nein'} · Mindestversion: {liste.get('mindestversion') or '–'}")
+        c.print(f"Alle gesperrt: {'JA' if liste.get('alle') else 'nein'} · Mindestversion: {liste.get('mindestversion') or '–'} "
+                f"(darunter dauerhaft aus, Mac und Windows)")
+        for e in liste.get("versionen", []):
+            c.print(f"  ✕ Version {e.get('version')}{' (' + e['plattform'] + ')' if e.get('plattform') else ''}  {e.get('grund', '')}  (seit {e.get('seit', '?')})")
         for e in liste.get("gesperrt", []):
             c.print(f"  ✕ {e.get('kennung')}  {e.get('grund', '')}  (seit {e.get('seit', '?')})")
         if not liste.get("gesperrt"):
             c.print("  Keine einzelnen Installationen gesperrt.")
         return
     ziel = (args[1] if len(args) > 1 else "").strip().upper()
-    grund = " ".join(args[2:]).strip()
+    plattform = "windows" if "--windows" in args else "mac" if "--mac" in args else ""
+    grund = " ".join(a for a in args[2:] if a not in ("--windows", "--mac")).strip()
     if not ziel:
         c.print("Aufruf: jarvis sperren <Kennung|alle> [Grund]  ·  jarvis entsperren <Kennung|alle>  ·  "
-                "jarvis mindestversion <x.y.z|aus>")
+                "jarvis mindestversion <x.y.z|aus>  ·  jarvis version-sperren <x.y.z|x.y.*> [Grund] [--mac|--windows]  ·  "
+                "jarvis version-entsperren <x.y.z>")
         return
     if befehl == "sperren":
         if ziel == "ALLE":
@@ -163,6 +189,13 @@ def verwalten(args: list[str]) -> None:
             liste["gesperrt"] = [e for e in liste.get("gesperrt", []) if e.get("kennung") != ziel]
     elif befehl == "mindestversion":
         liste["mindestversion"] = "" if ziel == "AUS" else ziel.lower()
+    elif befehl == "version-sperren":
+        v = ziel.lower()
+        liste["versionen"] = [e for e in liste.get("versionen", []) if not (e.get("version") == v and e.get("plattform", "") == plattform)]
+        liste["versionen"].append({"version": v, "plattform": plattform, "grund": grund, "seit": time.strftime("%Y-%m-%d")})
+    elif befehl == "version-entsperren":
+        v = ziel.lower()
+        liste["versionen"] = [e for e in liste.get("versionen", []) if e.get("version") != v]
     (klon / "sperrliste.json").write_text(json.dumps(liste, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     subprocess.run([*g, "add", "sperrliste.json"], capture_output=True)
     subprocess.run([*g, "commit", "-q", "-m", f"Sperrliste: {befehl} {ziel}"], capture_output=True)

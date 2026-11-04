@@ -1,0 +1,141 @@
+"""Plattform-Schicht: macOS und Windows an einer Stelle.
+
+Alles, was sich zwischen Mac und Windows unterscheidet (Pfade der Python-Umgebung, Dateien öffnen, Ordner
+wählen, Dienst neu starten, welche Funktionen es überhaupt gibt), steht hier. Der übrige Code fragt nur
+`plattform.MAC` / `plattform.WINDOWS` oder ruft die Helfer auf.
+
+Windows-Stand (Vorbereitung der Portierung): Kern, Dashboard (Edge-App-Fenster), Claude & andere KI-Anbieter,
+lokales Modell (Ollama für Windows), Archiv (OneDrive, iCloud für Windows, lokal), Mail (IMAP), Kalender
+(iCloud über CalDAV), Immobilien, Projekte, Telegram, Fahrzeuge, NUKI, Updates und Sperrliste.
+Nur auf dem Mac: Apple-Erinnerungen/Notizen/Kontakte (JXA), iMessage, HomeKit-Kurzbefehle, Apple Music,
+Texterkennung mit Apple Vision, Excel-Steuerung per AppleScript."""
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+MAC = sys.platform == "darwin"
+WINDOWS = sys.platform == "win32"
+NAME = "macOS" if MAC else "Windows" if WINDOWS else sys.platform
+
+# Werkzeuge, die es nur auf dem Mac gibt (AppleScript/JXA, iMessage, HomeKit, Apple Music)
+NUR_MAC_WERKZEUGE = re.compile(r"^(erinnerung|notiz|einkauf|kontakt|imessage|nachricht|musik|podcast|zuhause_steuern|"
+                               r"kurzbefehl|timer|wecker)")
+# Hintergrunddienste, die es nur auf dem Mac gibt (Namen wie in server.run)
+NUR_MAC_DIENSTE = {"iMessage", "Timer", "Musik"}
+
+
+def venv_python(venv: Path) -> Path:
+    return venv / ("Scripts/python.exe" if WINDOWS else "bin/python")
+
+
+def venv_programm(venv: Path, name: str) -> Path:
+    return venv / ("Scripts" if WINDOWS else "bin") / (name + (".exe" if WINDOWS else ""))
+
+
+def uv() -> str:
+    import shutil
+    if shutil.which("uv"):
+        return shutil.which("uv")
+    kandidaten = ([Path.home() / ".local/bin/uv.exe", Path.home() / ".cargo/bin/uv.exe"] if WINDOWS
+                  else [Path.home() / ".local/bin/uv", Path("/opt/homebrew/bin/uv")])
+    return str(next((k for k in kandidaten if k.exists()), kandidaten[0]))
+
+
+def oeffnen(pfad: str | Path) -> None:
+    """Datei oder Ordner mit dem Standardprogramm öffnen."""
+    if WINDOWS:
+        os.startfile(str(pfad))  # type: ignore[attr-defined]
+    else:
+        subprocess.run(["open", str(pfad)], timeout=15)
+
+
+def im_ordner_zeigen(pfad: str | Path) -> None:
+    """Explorer/Finder öffnen und die Datei markieren."""
+    if WINDOWS:
+        subprocess.run(["explorer", "/select,", str(pfad)], timeout=15)
+    else:
+        subprocess.run(["open", "-R", str(pfad)], timeout=15)
+
+
+def ordner_waehlen(titel: str, start: str = "") -> str:
+    """Systemdialog „Ordner wählen“. Rückgabe: Pfad oder "" bei Abbruch."""
+    if WINDOWS:
+        ps = ("Add-Type -AssemblyName System.Windows.Forms;"
+              "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
+              f"$d.Description = '{titel.replace(chr(39), '')}';"
+              + (f"$d.SelectedPath = '{start.replace(chr(39), '')}';" if start else "")
+              + "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }")
+        r = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", ps], capture_output=True, text=True, timeout=600)
+        return r.stdout.strip()
+    ort = f' default location (POSIX file "{start}")' if start else ""
+    r = subprocess.run(["osascript", "-e", 'tell application "System Events" to activate',
+                        "-e", f'set f to choose folder with prompt "{titel}"{ort}', "-e", "return POSIX path of f"],
+                       capture_output=True, text=True, timeout=600)
+    return r.stdout.strip().rstrip("/") if r.returncode == 0 else ""
+
+
+def dienst_neustarten() -> bool:
+    """JARVIS-Kern neu starten. Windows: der Startskript-Kreislauf (start.ps1) startet ihn sofort wieder."""
+    if WINDOWS:
+        r = subprocess.run(["schtasks", "/Run", "/TN", "JARVIS Kern"], capture_output=True)
+        pid = (Path.home() / ".atlas" / "core.pid")
+        try:
+            subprocess.run(["taskkill", "/PID", pid.read_text().strip(), "/F"], capture_output=True)
+        except OSError:
+            pass
+        return r.returncode == 0
+    return False
+
+
+def benutzer_nummer() -> int:
+    """Kleine Zahl je Benutzerkonto (für den Port, damit zwei Konten parallel laufen)."""
+    if hasattr(os, "getuid"):
+        return os.getuid()
+    import getpass
+    import zlib
+    return zlib.crc32(getpass.getuser().encode("utf-8"))
+
+
+# ------------------------------------------------------------------ Sprache (Erkennung und Ersatzstimme)
+_WHISPER = {}
+
+
+def whisper(audio, modell: str, **optionen) -> dict:
+    """Spracherkennung. Mac: mlx-whisper (Apple-Chip). Windows: faster-whisper (CPU, int8).
+    Rückgabe wie mlx_whisper: {"text", "language", "segments": [{"start", "end", "text"}]}."""
+    if not WINDOWS:
+        import mlx_whisper
+        return mlx_whisper.transcribe(audio, path_or_hf_repo=modell, **optionen)
+    from faster_whisper import WhisperModel
+    name = str(modell).rsplit("/", 1)[-1].replace("whisper-", "") or "large-v3-turbo"
+    if name not in _WHISPER:
+        _WHISPER.clear()
+        _WHISPER[name] = WhisperModel(name, device="cpu", compute_type="int8")
+    segs, info = _WHISPER[name].transcribe(audio, language=optionen.get("language"),
+                                           initial_prompt=optionen.get("initial_prompt"),
+                                           condition_on_previous_text=bool(optionen.get("condition_on_previous_text", False)),
+                                           vad_filter=True)
+    liste = [{"start": s.start, "end": s.end, "text": s.text} for s in segs]
+    return {"text": "".join(s["text"] for s in liste), "language": info.language, "segments": liste}
+
+
+def ersatzstimme_wav(text: str, rate: int = 22050) -> bytes:
+    """Ersatzstimme ohne ElevenLabs unter Windows: Sprachausgabe von Windows (SAPI) als WAV."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        ziel = Path(d) / "a.wav"
+        txt = Path(d) / "t.txt"
+        txt.write_text(text, encoding="utf-8")
+        ps = ("Add-Type -AssemblyName System.Speech;"
+              "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;"
+              "$v = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'de-*' } | Select-Object -First 1;"
+              "if ($v) { $s.SelectVoice($v.VoiceInfo.Name) };"
+              f"$f = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo({rate}, 'Sixteen', 'Mono');"
+              f"$s.SetOutputToWaveFile('{ziel}', $f);"
+              f"$s.Speak([IO.File]::ReadAllText('{txt}', [Text.Encoding]::UTF8)); $s.Dispose()")
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=120, check=True)
+        return ziel.read_bytes()

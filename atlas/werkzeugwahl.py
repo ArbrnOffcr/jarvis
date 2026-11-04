@@ -54,7 +54,8 @@ SIGNALE = [
      r"filevault|firewall|offene ports|angriff", ["sicherheit", "autopilot"]),
     (r"projekt|beobacht|recherchier|nachrichtenlage|news|meldungen zu|halte mich .*auf dem laufenden|informier mich|"
      r"alarmier|funde", ["projekte", "gedaechtnis", "fristen"]),
-    (r"licht|lampe|beleuchtung|lautsprecher|homepod|szene|zuhause|haustür|tür\b|abgeschlossen|abschließ|schloss|nuki|"
+    (r"licht|lampe|beleuchtung|lautsprecher|homepod|szene|zuhause|haustür|tür\b|abgeschlossen|abschließ|abschliess|"
+     r"verriegel|zusperr|absperr|schloss|nuki|"
      r"smart ?home|homekit", ["zuhause"]),
     (r"französisch|franzoesisch|italienisch|spanisch|arabisch|niederländisch|portugiesisch|türkisch|polnisch|"
      r"russisch|sprache\b|sprich (mit mir )?(auf|in)|zurück (auf|zu) deutsch|wieder deutsch", ["faehigkeiten"]),
@@ -70,7 +71,7 @@ SIGNALE = [
     (r"ford|tourneo|\bbus\b|bulli|transporter|tank|diesel|reifendruck|ölwechsel|oelwechsel|adblue|kilometerstand|"
      r"fahrzeug|autos\b|tüv|hauptuntersuchung|kfz-versicherung|wo (steht|parkt) (der|mein) (bus|ford)", ["ford"]),
     (r"autos?\b|fahrzeug|tüv|kfz", ["tesla"]),
-    (r"immobilie|vermiet|mieter\b|mieterin|mietvertrag|kaltmiete|warmmiete|mieterhöhung|miete\b|rendite|nebenkosten|"
+    (r"immobilie|portfolio|leerstand|vakan|wohneinheit|cashflow|vermiet|mieter\b|mieterin|mietvertrag|kaltmiete|warmmiete|mieterhöhung|miete\b|rendite|nebenkosten|"
      r"betriebskosten|abrechnung|beleg|versorger|grundsteuer|darlehen|zinsbindung|restschuld|anschlussfinanzierung|hestia|seedammweg|mein haus|das haus", ["immo", "fristen"]),
     (r"woche|bereite|vorbereit|kümmer|lage\b|lagevortrag|stab\b|agent|chronos|hermes|adjutant|quaestor|archivar|scout|"
      r"quartiermeister|kostengrenze|persönlichkeit|persona|humor|tonfall|sprich (förmlicher|lockerer)|sei (lustiger|ernster)",
@@ -101,7 +102,7 @@ SIGNALE = [
      r"leiser|was läuft|interpret|künstler|band\b|hören|abspielen|mach (die )?musik", ["musik"]),
     (r"schreib|schick|sag \w+,? dass|imessage", ["nachrichten"]),
     (r"was kannst du|kannst du|funktion|fähigkeit|features?\b|unterstützt du|geht das|einführung|tutorial|"
-     r"anleitung|zeig mir wie|wie benutze|wie bediene", ["faehigkeiten"]),
+     r"anleitung|zeig mir wie|wie benutze|wie bediene|setup|einrichten|einrichtung|schlüssel eingeben", ["faehigkeiten"]),
 ]
 
 

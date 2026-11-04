@@ -37,11 +37,19 @@ def namensabschnitt(rel: str) -> str:
 
 
 def aus_icloud_laden(pfad: Path, warten: float = 90) -> None:
-    """Ist die Datei nur ein iCloud-Platzhalter, erst herunterladen (brctl) und kurz warten."""
+    """Ist die Datei nur ein Platzhalter in der Cloud, erst herunterladen und kurz warten.
+    iCloud: brctl download. OneDrive, Google Drive, Dropbox (Dateianbieter von macOS): das erste Lesen lädt die Datei."""
     try:
         if not (os.stat(pfad).st_flags & SF_DATALESS):
             return
     except (OSError, AttributeError):
+        return
+    if "/Library/Mobile Documents/" not in str(pfad):
+        try:
+            with open(pfad, "rb") as f:          # löst das Herunterladen aus und wartet darauf
+                f.read(1)
+        except OSError:
+            pass
         return
     try:
         subprocess.run(["brctl", "download", str(pfad)], capture_output=True, timeout=30)
@@ -79,7 +87,10 @@ class Archiv:
         from atlas.notfall import ist_notfallordner      # Notfallordner nie in den Suchindex
         if ist_notfallordner(parts[-1]):
             return True
-        return any(rel.startswith(x.strip("/")) for x in self.cfg["ausschluss"])
+        from atlas import hilfen as _h                   # JARVIS' eigener Datenordner (Index, Systemdateien)
+        if any(rel == x or rel.startswith(x + "/") for x in _h.INTERN):
+            return True
+        return any(rel == x.strip("/") or rel.startswith(x.strip("/") + "/") for x in self.cfg["ausschluss"] if x.strip("/"))
 
     def files(self):
         """Alle passenden Dateien, neueste zuerst."""

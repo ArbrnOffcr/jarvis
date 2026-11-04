@@ -13,6 +13,7 @@ Kern -> Oberfläche:
 """
 import asyncio
 import json
+import os
 import subprocess
 import threading
 import re
@@ -63,17 +64,28 @@ class Core:
                                                         *(_ar.get("ablage_ausschluss") or [])])
         self.providers = {
             "lokal": OllamaProvider(self.cfg["local"]),
-            "claude": ClaudeProvider(get_secret("anthropic"), self.cfg["recherche"],
-                                     (self.cfg.get("wetter") or {}).get("ort", "")),
         }
+        # Cloud-Platz "claude": Haupt- und Ausweichmodell nach Wahl (Claude, OpenAI, Gemini, Mistral, eigener Dienst)
+        from atlas.providers.fremd import CloudWeiche
+        self.providers["claude"] = CloudWeiche(self)
         # Datenschutz-Schleier: JEDER Claude-Aufruf wird maskiert (Platzhalter) und sensible Werkzeugergebnisse
         # vorher lokal zusammengefasst – siehe atlas/datenschutz.py
         from atlas.datenschutz import GeschuetzterAnbieter
         self.providers["claude"] = GeschuetzterAnbieter(self.providers["claude"], self)
         voice.PROTOKOLL = self.audit.log             # ElevenLabs: Zeichen, Mac-Stimme, gelöschte Verlaufseinträge
         self.secrets = {k: get_secret(k) for k in ("icloud_email", "icloud_apple_id", "icloud_app_pw")}
+        from atlas import mailkonto
+        mailkonto.in_secrets(self.secrets)          # anderer Maildienst (Gmail, Outlook, GMX …) statt iCloud-Mail
         self.memory = Memory(self.cfg)
         self.shared = shared_dir(self.cfg)
+        # JARVIS' eigener Arbeitsordner im Archiv (Suchindex, Systemdateien) – nie Ablageziel, nie im Index.
+        # Sonst ist das gesamte DATENARCHIV les- und durchsuchbar (Ausnahmen nur, was in config.yaml steht).
+        try:
+            _arch = find_archive(self.cfg)
+            if _arch and self.shared.resolve().is_relative_to(_arch.resolve()):
+                _hilfen.INTERN = (str(self.shared.resolve().relative_to(_arch.resolve())),)
+        except (OSError, ValueError):
+            pass
         archive = find_archive(self.cfg)
         self.archiv = Archiv(self.cfg, archive, self.shared, self.audit) if archive else None
         self.tools = build_tools(self.cfg, self.secrets, self.memory, self.archiv, self.shared)
@@ -107,7 +119,7 @@ class Core:
         self.nachrichten = nachrichten.Nachrichten(self)
         self.werbung = werbung.Werbung(self)
         self.tools.update({t.name: t for t in nachrichten.tools(self)})
-        if self.secrets.get("icloud_app_pw"):
+        if self.secrets.get("mail_bereit"):
             self.tools.update({t.name: t for t in werbung.tools(self)})
         # Dokumente im Chat, Posteingang, Fristen, Steuer-Sammelmappe, Wochenplan
         from atlas import dokumente, wochenplan
@@ -124,7 +136,7 @@ class Core:
         self.vergessen = vergessen.Vergessen(self)
         self.tools.update({t.name: t for t in fristen.tools(self) + wochenplan.tools(self)
                            + vertraege.tools(self) + vergessen.tools(self)})
-        if self.secrets.get("icloud_app_pw"):
+        if self.secrets.get("mail_bereit"):
             self.tools.update({t.name: t for t in schreibstil.tools(self)})
         if self.archiv:
             self.tools.update({t.name: t for t in dokumente.tools(self) + post.tools(self) + steuer.tools(self)})
@@ -153,7 +165,7 @@ class Core:
         self.tools.update({t.name: t for t in _immo.tools(self)})
         from atlas import mailwache as _mw
         self.mailwache = _mw.MailWache(self)
-        if self.secrets.get("icloud_app_pw"):
+        if self.secrets.get("mail_bereit"):
             self.tools.update({t.name: t for t in _mw.tools(self)})
         from atlas.grundriss import Grundriss
         self.grundriss = Grundriss(self)
@@ -213,6 +225,14 @@ class Core:
             "einfuehrung_starten",
             "Die geführte Einführung (Tutorial) im Dashboard starten – wenn der Nutzer sie sehen oder wiederholen will.",
             "kalender.lesen", lambda: (self.broadcast({"type": "einfuehrung"}), {"gestartet": True})[1])
+        self.tools["einfuehrung_setup"] = _Tool(
+            "einfuehrung_setup",
+            "Den Setup-Guide öffnen: Schritt für Schritt Schlüssel und Zugänge einrichten (KI-Modell, lokales Modell, "
+            "Dokumenten-Archiv in iCloud/OneDrive/lokal, Kalender & Mail, Stimme, Telegram, Extras).",
+            "kalender.lesen", lambda: (self.broadcast({"type": "setup_guide"}), {"geoeffnet": True})[1])
+        from atlas import plattform as _pl
+        if _pl.WINDOWS:                  # Werkzeuge, die es nur auf dem Mac gibt, gar nicht erst anbieten
+            self.tools = {k: v for k, v in self.tools.items() if not _pl.NUR_MAC_WERKZEUGE.match(k)}
         from atlas.aktualisierung import Aktualisierung
         self.update = Aktualisierung(self)
         self.chats_aktiv = 0
@@ -238,6 +258,8 @@ class Core:
                 "archiv": str(find_archive(self.cfg) or "nicht gefunden"),
                 "gemeinsam": str(shared_dir(self.cfg)),
                 "icloud": self.secrets.get("icloud_email") or "nicht eingerichtet",
+                "mail": (self.secrets.get("mail_konto") or {}).get("adresse") or self.secrets.get("icloud_email") or "nicht eingerichtet",
+                "cloud_anbieter": getattr(getattr(claude, "inner", claude), "haupt_art", "claude"),
                 "werkzeuge": len(self.tools),
                 "icloud_nachladen": macos.ICLOUD_OK,
                 "config_fehler": self.cfg.get("_config_fehler", ""),
@@ -707,6 +729,22 @@ def index_status(_: None = Depends(auth)):
 @app.get("/datenschutz")
 def datenschutz(tag: str = "", _: None = Depends(auth)):
     return get_core().datenschutz_bericht(tag)
+
+
+@app.get("/ablauf")
+def ablauf_liste(_: None = Depends(auth)):
+    """Laufende/letzte sichtbare Abläufe (z. B. PKV-Einreichung) – für ein neu geöffnetes Fenster."""
+    from atlas import ablauf
+    return ablauf.aktuell()
+
+
+@app.get("/ablauf/bild/{art}/{name}")
+def ablauf_bild(art: str, name: str, _: None = Depends(auth)):
+    from atlas import ablauf
+    p = ablauf.bild_pfad(art, name)
+    if not p:
+        raise HTTPException(status_code=404, detail="Kein Bild")
+    return FileResponse(p, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/index/suchtest")
@@ -1330,6 +1368,22 @@ async def immobilien_grenzen(data: dict, _: None = Depends(auth)):
     return await asyncio.to_thread(_ford_fehler, get_core().immobilien.grenzen_setzen, data)
 
 
+@app.get("/immobilien/portfolio")
+async def immobilien_portfolio(_: None = Depends(auth)):
+    """Profi-Dashboard: alle Objekte mit Wohneinheiten, Investoren-Kennzahlen, Mieterhöhungs-Terminen, Hochrechnung."""
+    return await asyncio.to_thread(_ford_fehler, get_core().immobilien.portfolio)
+
+
+@app.post("/immobilien/profi")
+async def immobilien_profi(data: dict, _: None = Depends(auth)):
+    return await asyncio.to_thread(_ford_fehler, get_core().immobilien.profi_setzen, data)
+
+
+@app.post("/immobilien/{oid}/einheiten")
+async def immobilien_einheiten(oid: str, data: dict, _: None = Depends(auth)):
+    return await asyncio.to_thread(_ford_fehler, get_core().immobilien.einheiten_speichern, oid, data)
+
+
 @app.post("/immobilien/mietvertrag")
 async def immobilien_mietvertrag(request: Request, x_dateiname: str = Header(default="Mietvertrag.pdf"),
                                  _: None = Depends(auth)):
@@ -1705,7 +1759,8 @@ async def post_aktion(bid: str, aktion: str, data: dict | None = None, _: None =
     try:
         if aktion == "ablegen":
             d = data or {}
-            r = await asyncio.to_thread(p.ablegen, bid, d.get("ordner", ""), d.get("dateiname", ""))
+            r = await asyncio.to_thread(p.ablegen, bid, d.get("ordner", ""), d.get("dateiname", ""), False,
+                                        bool(d.get("merken")))
         elif aktion == "verwerfen":
             r = await asyncio.to_thread(p.verwerfen, bid)
         else:
@@ -1719,6 +1774,52 @@ async def post_aktion(bid: str, aktion: str, data: dict | None = None, _: None =
 @app.get("/ordner")
 def ordner_liste(_: None = Depends(auth)):
     return {"ordner": get_core().post.ordner()}
+
+
+@app.post("/vorgang/{aktion}")
+async def vorgang_aktion(aktion: str, data: dict, _: None = Depends(auth)):
+    """Klick im Dashboard (Vorgänge): erledigen oder löschen (Papierkorb) – der Klick ist die Bestätigung."""
+    c, titel = get_core(), str(data.get("titel", "")).strip()
+    if not titel:
+        raise HTTPException(400, "Titel fehlt")
+    try:
+        if aktion == "erledigt":
+            r = await asyncio.to_thread(c.memory.vorgang, titel, "", "", "", "im Dashboard als erledigt markiert", True)
+        elif aktion == "loeschen":
+            r = await asyncio.to_thread(c.memory.vorgang_loeschen, titel)
+        else:
+            raise HTTPException(404, "unbekannte Aktion")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    c.audit.log("werkzeug", werkzeug=f"vorgang_{aktion}", quelle="klick", titel=titel[:80])
+    try:
+        c.lage.invalidate() if hasattr(c.lage, "invalidate") else None
+    except Exception:
+        pass
+    return r
+
+
+@app.get("/archiv/baum")
+async def archiv_baum(pfad: str = "", _: None = Depends(auth)):
+    """Ordner-Browser: Unterordner eines Ordners im DATENARCHIV (für die Ablage gescannter Briefe)."""
+    return await asyncio.to_thread(_ford_fehler, get_core().post.baum, pfad)
+
+
+@app.post("/archiv/baum/neu")
+async def archiv_baum_neu(data: dict, _: None = Depends(auth)):
+    """Klick „＋ Ordner“ im Ordner-Browser = Bestätigung."""
+    return await asyncio.to_thread(_ford_fehler, get_core().post.ordner_anlegen, str(data.get("pfad", "")),
+                                   str(data.get("name", "")))
+
+
+@app.get("/post-regeln")
+def post_regeln(_: None = Depends(auth)):
+    return {"regeln": get_core().post.regeln()}
+
+
+@app.post("/post-regeln/loeschen")
+async def post_regel_loeschen(data: dict, _: None = Depends(auth)):
+    return await asyncio.to_thread(_ford_fehler, get_core().post.regel_loeschen, str(data.get("schluessel", "")))
 
 
 @app.post("/aufgaben")
@@ -1979,6 +2080,55 @@ async def verbindungen_schluessel(art: str, data: dict, _: None = Depends(auth))
     return await asyncio.to_thread(_vb, vb.schluessel_setzen, get_core(), art, str(data.get("wert", "")))
 
 
+@app.get("/verbindungen/ki")
+async def verbindungen_ki(_: None = Depends(auth)):
+    from atlas import ki_anbieter
+    return await asyncio.to_thread(ki_anbieter.status, get_core())
+
+
+@app.get("/verbindungen/ki/modelle/{art}")
+async def verbindungen_ki_modelle(art: str, _: None = Depends(auth)):
+    from atlas import ki_anbieter
+    return await asyncio.to_thread(ki_anbieter.modelle, get_core(), art)
+
+
+@app.post("/verbindungen/ki/schluessel/{art}")
+async def verbindungen_ki_schluessel(art: str, data: dict, _: None = Depends(auth)):
+    from atlas import ki_anbieter
+    if data.get("loeschen"):
+        return await asyncio.to_thread(_vb, ki_anbieter.schluessel_loeschen, get_core(), art)
+    return await asyncio.to_thread(_vb, ki_anbieter.schluessel_setzen, get_core(), art, str(data.get("wert", "")),
+                                   str(data.get("url", "")))
+
+
+@app.post("/verbindungen/ki")
+async def verbindungen_ki_waehlen(data: dict, _: None = Depends(auth)):
+    from atlas import ki_anbieter
+    return await asyncio.to_thread(_vb, ki_anbieter.waehlen, get_core(), str(data.get("haupt", "claude")),
+                                   str(data.get("ausweich", "")), data.get("modelle") or {})
+
+
+@app.get("/verbindungen/mail")
+async def verbindungen_mail(_: None = Depends(auth)):
+    from atlas import mailkonto
+    return await asyncio.to_thread(mailkonto.status)
+
+
+@app.post("/verbindungen/mail/{aktion}")
+async def verbindungen_mail_aktion(aktion: str, data: dict | None = None, _: None = Depends(auth)):
+    from atlas import mailkonto
+    data = data or {}
+    if aktion == "speichern":
+        return await asyncio.to_thread(_vb, mailkonto.speichern, get_core(), data)
+    if aktion == "outlook-start":
+        return await asyncio.to_thread(_vb, mailkonto.outlook_start, get_core(), data)
+    if aktion == "outlook-stand":
+        return mailkonto.outlook_stand()
+    if aktion == "icloud":
+        return await asyncio.to_thread(_vb, mailkonto.zurueck_zu_icloud, get_core())
+    raise HTTPException(status_code=404, detail="unbekannt")
+
+
 @app.get("/verbindungen/stimmen")
 async def verbindungen_stimmen(_: None = Depends(auth)):
     from atlas import verbindungen as vb
@@ -2006,8 +2156,10 @@ async def verbindungen_profil(data: dict, _: None = Depends(auth)):
 
 
 @app.post("/verbindungen/archiv/{aktion}")
-async def verbindungen_archiv(aktion: str, _: None = Depends(auth)):
+async def verbindungen_archiv(aktion: str, data: dict | None = None, _: None = Depends(auth)):
     from atlas import verbindungen as vb
+    if aktion != "entfernen" and (data or {}).get("start"):
+        return await asyncio.to_thread(_vb, vb.archiv_waehlen, get_core(), str(data["start"]))
     f = vb.archiv_entfernen if aktion == "entfernen" else vb.archiv_waehlen
     return await asyncio.to_thread(_vb, f, get_core())
 
@@ -2025,7 +2177,9 @@ async def link_oeffnen(data: dict, _: None = Depends(auth)):
     url = str(data.get("url", ""))
     erlaubt = ("console.anthropic.com", "elevenlabs.io", "account.apple.com", "t.me", "serper.dev", "developer.tesla.com",
                "auth.tesla.com", "tesla.com", "developer.ford.com",
-               "console.cloud.google.com", "login.tailscale.com", "tailscale.com", "apps.apple.com", "web.nuki.io")
+               "console.cloud.google.com", "login.tailscale.com", "tailscale.com", "apps.apple.com", "web.nuki.io",
+               "platform.openai.com", "aistudio.google.com", "console.mistral.ai", "myaccount.google.com",
+               "entra.microsoft.com", "microsoft.com", "login.microsoft.com", "openrouter.ai")
     host = urlparse(url).hostname or ""
     if urlparse(url).scheme != "https" or not any(host == h or host.endswith("." + h) for h in erlaubt):
         raise HTTPException(400, "Link nicht erlaubt")
@@ -2394,6 +2548,13 @@ def run():
         ("lokales Modell vorwärmen", lambda: c.cfg["router"].get("einfach") == "lokal" and
             threading.Thread(target=c.providers["lokal"].warmup, daemon=True).start()),
     ]
+    from atlas import plattform
+    if plattform.WINDOWS:                # Mac-eigene Dienste (iMessage, Timer/Wecker mit Mac-Ton, Apple Music) auslassen
+        starts = [(n, f) for n, f in starts if n not in plattform.NUR_MAC_DIENSTE]
+        try:
+            (LOCAL_DIR / "core.pid").write_text(str(os.getpid()))   # für „jarvis neustart“ unter Windows
+        except OSError:
+            pass
     for name, f in starts:
         try:
             f()

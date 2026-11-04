@@ -12,6 +12,7 @@
 5. Morgenbriefing: Zahlungen 7 und 3 Tage vor dem Zahlungstermin, Überfälliges täglich.
 Alles läuft lokal und nur auf dem Mac mit der Wache (kein doppeltes Verarbeiten)."""
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -379,12 +380,37 @@ class Beihilfe:
                         continue
                     if not sofort and time.time() - st.st_mtime < 45:   # Upload noch nicht fertig
                         continue
+                    if st.st_size == 0:                 # Genius Scan schreibt noch
+                        continue
+                    # Datei liegt nur in iCloud (Platzhalter)? Erst herunterladen – sonst scheitert das Lesen
+                    # („Resource deadlock avoided“). Klappt es nicht, im nächsten Durchgang still erneut versuchen.
+                    from atlas.archiv.indexer import SF_DATALESS, aus_icloud_laden
+                    aus_icloud_laden(f, 60 if sofort else 20)
+                    try:
+                        if os.stat(f).st_flags & SF_DATALESS:
+                            continue
+                    except (OSError, AttributeError):
+                        pass
+                    if (z.get("fehler_gemeldet") or {}).get(f"{f.name}:{int(st.st_mtime)}") and not sofort:
+                        continue                        # schon gemeldet, Datei unverändert
                     try:
                         b = self.datei(f, z)
                     except Exception as e:
-                        self.c.audit.log("fehler", bereich="beihilfe", datei=f.name, text=str(e)[:300])
+                        self.c.audit.log("fehler", bereich="beihilfe", datei=f.name, text=f"{type(e).__name__}: {e}"[:300])
                         b = None
-                        self.melden(f"Konnte „{f.name}“ nicht verarbeiten: {e}", f"fehler:{f.name}")
+                        # vorübergehend (iCloud lädt noch, Datei gesperrt)? still erneut versuchen; sonst EINMAL melden –
+                        # gemerkt je Datei und Stand, damit nach einem Neustart nicht wieder dieselbe Meldung kommt
+                        fz = z.setdefault("fehler_versuche", {})
+                        k = f"{f.name}:{int(st.st_mtime)}"
+                        fz[k] = fz.get(k, 0) + 1
+                        voruebergehend = isinstance(e, OSError) and getattr(e, "errno", None) in (11, 16, 35, 60, 89)
+                        if fz[k] >= (3 if voruebergehend else 1) and not z.setdefault("fehler_gemeldet", {}).get(k):
+                            z["fehler_gemeldet"][k] = datetime.now().isoformat(timespec="seconds")
+                            grund = ("Die Datei ließ sich aus iCloud nicht laden" if voruebergehend else
+                                     f"{type(e).__name__}: {str(e)[:160]}")
+                            self.melden(f"Konnte den Scan „{f.name}“ nicht verarbeiten ({grund}). Die Datei bleibt im "
+                                        f"Scan-Ordner – ich versuche es nicht weiter, bis sie sich ändert.", f"fehler:{k}")
+                        self.speichern(z)
                     if b:
                         berichte.append(b)
                         self.speichern(z)
@@ -631,6 +657,9 @@ class Beihilfe:
 
     # ------------------------------------------------------------ Erinnerungen → Excel
     def erinnerungen_abgleichen(self, z: dict) -> list[str]:
+        from atlas.plattform import MAC
+        if not MAC:                                   # Apple-Erinnerungen gibt es nur auf dem Mac
+            return []
         ids = {}
         for key, r in z["rechnungen"].items():
             for art, rid in (r.get("erinnerungen") or {}).items():
@@ -830,7 +859,8 @@ class Beihilfe:
             return ()
 
     def _offene_erinnerungen(self) -> bool:
-        return any(not (r.get("erledigt") or {}).get(a)
+        from atlas.plattform import MAC
+        return MAC and any(not (r.get("erledigt") or {}).get(a)
                    for r in self.zustand()["rechnungen"].values() for a in (r.get("erinnerungen") or {}))
 
     def schleife(self, stop: threading.Event) -> None:

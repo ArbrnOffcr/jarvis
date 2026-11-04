@@ -22,8 +22,11 @@
   jarvis speichern "Text"   Änderungen sichern und zu GitHub hochladen
   jarvis iphone       JARVIS aufs iPhone: Web-App über Tailscale + Siri-Kurzbefehl „Frag Jarvis“
   jarvis sperren <Kennung|alle> [Grund]   weitergegebene Installation abschalten (entsperren, sperrliste)
-  jarvis paket        Installations-DMG für Freunde bauen (Schreibtisch)
-  jarvis veroeffentlichen   DMG bauen und Freundesversion auf GitHub veröffentlichen (Updates)
+  jarvis version-sperren <x.y.z|x.y.*> [Grund] [--mac|--windows]   eine Version abschalten (version-entsperren)
+  jarvis mindestversion <x.y.z|aus>   alle Versionen darunter dauerhaft abschalten (Mac und Windows)
+  jarvis app          eigene Mac-App bauen und installieren – baut zusätzlich das Windows-Paket (Schreibtisch)
+  jarvis paket        Installationspakete bauen: Mac-DMG und Windows-ZIP (Schreibtisch)
+  jarvis veroeffentlichen   Mac- und Windows-Paket bauen und auf GitHub veröffentlichen (automatische Updates)
   jarvis einrichten --stdin   Ersteinrichtung aus dem grafischen Installer
 """
 import getpass
@@ -48,7 +51,7 @@ console = Console()
 BASE = f"http://127.0.0.1:{PORT}"
 LABEL = "de.atlas.core"
 PLIST = os.path.expanduser(f"~/Library/LaunchAgents/{LABEL}.plist")
-VENV_PY = LOCAL_DIR / "venv/bin/python"
+VENV_PY = LOCAL_DIR / ("venv/Scripts/python.exe" if sys.platform == "win32" else "venv/bin/python")
 
 HELP = """[bold cyan]Befehle im Gespräch[/]
   /auto            Router entscheidet (Standard)
@@ -67,6 +70,30 @@ def _launchctl(*args) -> int:
 
 
 def dienst(cmd: str) -> None:
+    from atlas import plattform
+    if plattform.WINDOWS:                         # Windows: Kreislauf start.ps1 (Autostart) hält den Kern am Laufen
+        vbs = REPO_DIR / "windows" / "kern.vbs"
+        if cmd in ("start", "neustart"):
+            if cmd == "neustart":
+                pid = LOCAL_DIR / "core.pid"
+                if pid.exists():
+                    subprocess.run(["taskkill", "/PID", pid.read_text().strip(), "/F"], capture_output=True)
+            subprocess.Popen(["wscript.exe", str(vbs)])    # startet den Kreislauf, falls er nicht läuft (sonst nichts)
+            console.print("[green]JARVIS-Core neu gestartet.[/]" if cmd == "neustart" else "[green]JARVIS-Core gestartet.[/]")
+        elif cmd == "stop":
+            subprocess.run(["powershell", "-NoProfile", "-Command",
+                            "Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.CommandLine -like '*windows\\start.ps1*' } | "
+                            "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"], capture_output=True)
+            pid = LOCAL_DIR / "core.pid"
+            if pid.exists():
+                subprocess.run(["taskkill", "/PID", pid.read_text().strip(), "/F"], capture_output=True)
+            console.print("[yellow]JARVIS-Core gestoppt.[/]")
+        elif cmd == "log":
+            zeilen = (LOCAL_DIR / "logs/core.log").read_text(encoding="utf-8", errors="ignore").splitlines()[-40:]
+            console.print("\n".join(zeilen))
+        else:
+            console.print("start | stop | neustart | log")
+        return
     target = f"gui/{UID}"
     if cmd == "start":
         _launchctl("bootstrap", target, PLIST)
@@ -224,6 +251,18 @@ def signieren(app) -> None:
 
 
 def app_bauen() -> None:
+    """Eigene Mac-App bauen und installieren – und dabei immer auch das Windows-Paket (Schreibtisch)."""
+    _mac_app_bauen()
+    try:
+        from atlas import paket
+        paket.windows_paket_bauen()
+    except SystemExit as e:
+        console.print(f"[red]Windows-Paket nicht gebaut:[/] {e}")
+    except Exception as e:
+        console.print(f"[red]Windows-Paket nicht gebaut:[/] {type(e).__name__}: {e}")
+
+
+def _mac_app_bauen() -> None:
     """Eigene Mac-App für das Dashboard bauen (~/Applications/JARVIS.app).
     Vorteil gegenüber der Safari-Web-App: Mikrofon dauerhaft erlaubt, Stimme ohne Klick."""
     import shutil
@@ -845,7 +884,7 @@ def main() -> None:
         weckwort(args[1:])
     elif cmd == "app":
         app_bauen()
-    elif cmd in ("sperren", "entsperren", "sperrliste", "mindestversion"):
+    elif cmd in ("sperren", "entsperren", "sperrliste", "mindestversion", "version-sperren", "version-entsperren"):
         from atlas import lizenz
         lizenz.verwalten([cmd, *args[1:]])
     elif cmd == "iphone":

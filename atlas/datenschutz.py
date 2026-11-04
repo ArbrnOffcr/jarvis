@@ -222,8 +222,13 @@ class GeschuetzterAnbieter:
     def step(self, model, system, messages, tools, max_tokens, **kw):
         from atlas.providers.base import StepResult, ToolCall
         stat: dict = {}
+        letzte_alt = messages[-1] if messages else {}
         msgs = self._werkzeugergebnisse(list(messages), stat)
+        zus = 0
+        if msgs and isinstance(msgs[-1].get("content"), list) and isinstance(letzte_alt.get("content"), list):
+            zus = sum(1 for x, y in zip(letzte_alt["content"], msgs[-1]["content"]) if x is not y)
         msgs = self.schleier.tief(msgs, lambda t: self.schleier.maskieren(t, stat))
+        self._sichtbar(letzte_alt, msgs[-1] if msgs else {}, zus)
         system = self.schleier.maskieren(system, stat)
         zeichen = len(system) + sum(len(str(m.get("content", ""))) for m in msgs)
         strom = Strom(self.schleier)
@@ -248,6 +253,18 @@ class GeschuetzterAnbieter:
                              ersetzt={k: v for k, v in stat.items() if k.isupper()},
                              lokal_zusammengefasst=stat.get("lokal_zusammengefasst", 0),
                              zurueckgehalten=stat.get("zurueckgehalten", 0))
+        except Exception:
+            pass
+
+    def _sichtbar(self, alt: dict, neu: dict, zusammengefasst: int) -> None:
+        """Oberfläche zeigt den Schleier (MOSAIK beschlägt kurz) – nur wenn in der NEUEN Nachricht etwas verdeckt
+        wurde. Es gehen nur Anzahl und Arten raus, nie Werte oder Platzhalter-Zuordnungen."""
+        try:
+            vorher = set(PLATZHALTER.findall(str(alt.get("content", ""))))
+            jetzt = set(PLATZHALTER.findall(str(neu.get("content", "")))) - vorher
+            if jetzt or zusammengefasst:
+                self.c.broadcast({"type": "schleier", "anzahl": len(jetzt), "zusammengefasst": zusammengefasst,
+                                  "arten": sorted({a for a, _ in jetzt})})
         except Exception:
             pass
 

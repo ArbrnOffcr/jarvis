@@ -9,8 +9,10 @@
      verschwinden; Farbe je Quelle (Kalender, Mail, Archiv …).
    - Startsequenz: warten() hält den Teppich flach, laden(x) lässt ihn von der Mitte her anwachsen, zuenden() entfaltet ihn.
 
+   - Sparsam: in Ruhe 30 Bilder/s, gedrosselt 20/24, Wächter senkt bei Ruckeln die Pixeldichte.
+
    window.JarvisAvatar.erzeugen(container, {qualitaet})
-     → {zustand, pegel, viseme, text, werkzeug, farbe, warten, laden, zuenden, drehen, info, entfernen}
+     → {zustand, pegel, viseme, text, werkzeug, farbe, stufe, drossel, warten, laden, zuenden, drehen, info, entfernen}
    Bauen: npx esbuild src/mosaik.js --bundle --minify --format=iife --outfile=mosaik.bundle.js */
 import * as THREE from "three";
 import { T1, T2, T3, SEITE } from "./mosaik_gesicht.js";
@@ -199,7 +201,13 @@ class Stroeme {
 function mosaik(container, { qualitaet = "hoch" } = {}) {
   const niedrig = qualitaet === "niedrig";
   const renderer = new THREE.WebGLRenderer({ antialias: !niedrig, alpha: false, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, niedrig ? 1.5 : 2));
+  // Pixeldichte: Stufe „sparsam“ und der Ruckel-Wächter senken sie (2 → 1,5 → 1,25 → 1)
+  const PR_STUFEN = [2, 1.5, 1.25, 1];
+  let prIndex = PR_STUFEN.findIndex((x) => x <= Math.min(devicePixelRatio || 1, niedrig ? 1.5 : 2));
+  if (prIndex < 0) prIndex = PR_STUFEN.length - 1;
+  let stufe = "auto", drossel = 0;
+  const prWert = () => Math.min(devicePixelRatio || 1, PR_STUFEN[stufe === "sparsam" ? Math.max(prIndex, 2) : prIndex]);
+  renderer.setPixelRatio(prWert());
   renderer.setClearColor(0x01050a, 1);                  // dunkler Grund wie im Plexus-Stil
   renderer.domElement.className = "mosaik-cv";
   container.appendChild(renderer.domElement);
@@ -247,7 +255,7 @@ function mosaik(container, { qualitaet = "hoch" } = {}) {
   }
   function groesse() {
     const r = container.getBoundingClientRect(), w = Math.max(1, r.width), h = Math.max(1, r.height);
-    renderer.setSize(w, h, false); kamera.aspect = w / h; kamera.updateProjectionMatrix();
+    renderer.setPixelRatio(prWert()); renderer.setSize(w, h, false); kamera.aspect = w / h; kamera.updateProjectionMatrix();
     aufbauen(w, h);
   }
   const ro = new ResizeObserver(groesse); ro.observe(container); groesse();
@@ -260,13 +268,18 @@ function mosaik(container, { qualitaet = "hoch" } = {}) {
   let ziel = "ruhe", roh = 0, pegelZeit = -1e9, pegel = 0, visem = "rest", visemZeit = -1e9, stromT = 0;
   let folge = [], folgeStart = 0, folgeDauer = 70;
   const ist = { a: 0, o: 0, e: 0, m: 0, f: 0, smile: 0, brauen: 0, stirn: 0, licht: 0.95, staerke: 0, puls: 0 };
+  let fpsN = 0, fpsT = 0, fps = 0, langsam = 0, kappe = 60;
   const tint = new THREE.Color(GRUEN);
   const nah = (k, wert, rate, dt) => { ist[k] += (wert - ist[k]) * (1 - Math.exp(-dt * rate)); };
   function zeichne(now) {
     if (weg) return; frame = requestAnimationFrame(zeichne);
-    if (niedrig && letzte && now - letzte < 1000 / 30 - 0.5) return;
+    if (document.hidden) { letzte = 0; return; }
+    // Bildrate je Lage: Ruhe 30 (gedrosselt 20), Arbeit 60; ein anderes 3D-Fenster vorn → 24; „sparsam“ → höchstens 30
+    const still = ziel === "ruhe" && !stroeme.punkte.visible && now > stummBis;
+    kappe = drossel >= 2 ? 24 : still ? (drossel >= 1 ? 20 : 30) : 60;
+    if (stufe === "sparsam" || niedrig) kappe = Math.min(kappe, 30);
+    if (letzte && now - letzte < 1000 / kappe - 1) return;
     const dt = Math.min(0.1, (now - (letzte || now)) / 1000); letzte = now;
-    if (document.hidden) return;
     const t = (now - start) / 1000, ruhig = reduziert.matches, z = ZUST[ziel];
     // Mund: Laute aus dem Text bzw. Viseme, Öffnung aus dem Stimmpegel – weich und dezent
     let form = "rest";
@@ -296,6 +309,14 @@ function mosaik(container, { qualitaet = "hoch" } = {}) {
     u.uSmile.value = ist.smile; u.uBrauen.value = ist.brauen; u.uStirn.value = ist.stirn;
     u.uLicht.value = ist.licht; u.uTintStaerke.value = ist.staerke; u.uPuls.value = ist.puls; u.uTint.value.copy(tint);
     renderer.render(szene, kamera);
+    // Ruckel-Wächter: schafft der Rechner die Kappe nicht, sinkt die Pixeldichte (nur Stufe „auto“)
+    fpsN++; fpsT += dt;
+    if (fpsT > 3) {
+      fps = Math.round(fpsN / fpsT); fpsN = 0; fpsT = 0;
+      if (stufe === "auto" && !ruhig && fps < Math.min(40, kappe * 0.7) && prIndex < PR_STUFEN.length - 1) {
+        if (++langsam >= 2) { prIndex++; langsam = 0; groesse(); }
+      } else langsam = 0;
+    }
   }
   frame = requestAnimationFrame(zeichne);
   return {
@@ -315,11 +336,13 @@ function mosaik(container, { qualitaet = "hoch" } = {}) {
       stroeme.spawn(Math.random() * Math.PI * 2, q ? q[1] : HEISS, 200);
     },
     farbe(hex) { u.uFarbe.value.set(hex); },
+    stufe(s) { if (["auto", "hoch", "sparsam"].includes(s) && s !== stufe) { stufe = s; if (s === "hoch") prIndex = 0; groesse(); } },
+    drossel(n) { drossel = Math.max(0, Math.min(2, n | 0)); },
     warten() { bereitZiel = 0; bereitIst = 0; },                       // Startsequenz läuft: flach und still
     laden(x) { bereitZiel = Math.max(bereitZiel, Math.min(0.6, x)); bereitRate = 0.8; },   // Energie sammelt sich
     zuenden() { bereitZiel = 1; bereitRate = 1.6; },
     drehen() {},
-    info() { return { modell: false, mosaik: true, kacheln: netz ? netz.geometry.instanceCount : 0 }; },
+    info() { return { modell: false, mosaik: true, kacheln: netz ? netz.geometry.instanceCount : 0, fps, kappe, pixeldichte: renderer.getPixelRatio(), stufe, drossel }; },
     entfernen() {
       weg = true; cancelAnimationFrame(frame); ro.disconnect(); removeEventListener("pointermove", onMaus);
       texs.forEach((x) => x.dispose()); geo.dispose(); netz?.geometry.dispose(); mat.dispose();

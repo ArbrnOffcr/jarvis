@@ -1,8 +1,10 @@
-"""Freundesversion: Installations-DMG bauen und (optional) veröffentlichen.
+"""Freundesversion: Installationspakete für Mac UND Windows bauen und (optional) veröffentlichen.
 
-    jarvis paket              → ~/Desktop/JARVIS-<Version>.dmg
-    jarvis veroeffentlichen   → Code ins öffentliche Repo (eigene, saubere Historie), DMG als GitHub-Release.
-                                 Installationen deiner Freunde holen sich neue Versionen von dort.
+    jarvis paket              → ~/Desktop/JARVIS-<Version>.dmg  und  ~/Desktop/JARVIS-<Version>-windows.zip
+    jarvis app                → eigene Mac-App installieren + Windows-ZIP auf den Schreibtisch
+    jarvis veroeffentlichen   → Code ins öffentliche Repo (eigene, saubere Historie), DMG und Windows-ZIP als
+                                 GitHub-Release; GitHub baut daraus zusätzlich JARVIS-Setup.exe (.github/workflows).
+                                 Installationen (Mac und Windows) holen sich neue Versionen von dort.
 
 Ins Paket kommt nur der Programmcode (zuletzt gesicherter Stand). Persönliche Einstellungen, Gedächtnis,
 Schlüssel und Archiv liegen ohnehin außerhalb (iCloud/ATLAS-Privat, Schlüsselbund). Vor jedem Export
@@ -22,15 +24,23 @@ from atlas import __version__
 from atlas.paths import LOCAL_DIR, REPO_DIR
 
 console = Console()
-EXPORT = ["atlas", "app", "installer", "tools", "install.sh", "pyproject.toml", ".gitignore", "FUNKTIONEN.md"]
+EXPORT = ["atlas", "app", "installer", "windows", ".github", "tools", "install.sh", "pyproject.toml", ".gitignore",
+          "FUNKTIONEN.md"]
 TEXT = {".py", ".js", ".html", ".css", ".swift", ".sh", ".toml", ".md", ".txt", ".json", ".yaml", ".yml"}
 
-README = """# JARVIS – persönlicher Assistent für den Mac
+README = """# JARVIS – persönlicher Assistent für Mac und Windows
 
 Termine, Erinnerungen, Einkaufsliste, Mails, Dokumente und Wetter – per Sprache oder Text,
 mit Claude als Gehirn und optional einem lokalen Sprachmodell für Privates.
 
-## Installation
+## Installation unter Windows 10/11
+1. Unter **Releases** `JARVIS-Setup-….exe` laden und starten (oder `JARVIS-…-windows.zip` entpacken und
+   „JARVIS installieren.cmd“ doppelklicken). Windows warnt evtl. („Der Computer wurde durch Windows geschützt“):
+   „Weitere Informationen“ → „Trotzdem ausführen“ – die Datei ist nicht von Microsoft signiert.
+2. Im JARVIS-Fenster führt der Setup-Guide durch die Schlüssel.
+Keine Administratorrechte nötig. Updates kommen automatisch.
+
+## Installation am Mac
 1. Unter **Releases** die neueste `JARVIS-….dmg` laden und öffnen.
 2. **Rechtsklick** auf „JARVIS installieren“ → **Öffnen** → nochmals **Öffnen**
    (die App ist nicht von Apple beglaubigt – nur beim ersten Start nötig).
@@ -63,6 +73,26 @@ ANLEITUNG = """JARVIS installieren
 
 Danach liegt JARVIS unter Benutzer → Programme und startet bei jeder Anmeldung.
 Die DMG kann anschließend ausgeworfen und gelöscht werden.
+"""
+
+
+ANLEITUNG_WINDOWS = """JARVIS installieren (Windows 10/11)
+===================================
+
+1. Diesen Ordner vollständig entpacken (Rechtsklick auf die ZIP → „Alle extrahieren“).
+
+2. Doppelklick auf „JARVIS installieren.cmd“.
+   Falls Windows warnt („Der Computer wurde durch Windows geschützt“): „Weitere Informationen“ → „Trotzdem ausführen“.
+   Keine Administratorrechte nötig. Dauer: etwa 5 Minuten (lädt Python und die Programmbibliotheken).
+
+3. Am Ende öffnet sich JARVIS. Der Setup-Guide erklärt Schritt für Schritt, welche Schlüssel du brauchst
+   (Pflicht ist nur ein KI-Schlüssel, z. B. von console.anthropic.com).
+
+Danach: „JARVIS“ im Startmenü und auf dem Desktop; der Hintergrunddienst startet bei jeder Anmeldung.
+Updates kommen automatisch. Deinstallieren: Startmenü → JARVIS → „JARVIS deinstallieren“.
+
+Unter Windows gibt es (noch) nicht: Apple-Erinnerungen, -Notizen und -Kontakte, iMessage, HomeKit-Kurzbefehle,
+Apple Music. Kalender und Mail laufen über iCloud (CalDAV/IMAP) oder einen anderen Maildienst.
 """
 
 
@@ -208,70 +238,138 @@ def exportieren(ziel: Path, cfg: dict) -> None:
     console.print(f"[green]✓[/] Datenschutz-Scan ohne Befund ({len(verboten)} Prüfmuster)")
 
 
-# ------------------------------------------------------------------ DMG
-def paket(sha: str = "", repo: str = "") -> Path | None:
-    from atlas.cli import baue_app, signieren
-    for werkzeug in ("swiftc", "hdiutil", "git", "ditto"):
-        if not shutil.which(werkzeug):
-            console.print(f"[red]{werkzeug} fehlt[/] – 'xcode-select --install' ausführen.")
-            return None
+# ------------------------------------------------------------------ Pakete (Mac + Windows)
+def _version() -> str:
+    return f"{__version__}-{time.strftime('%Y%m%d')}"
+
+
+def paket(sha: str = "", repo: str = "") -> list[Path]:
+    """Immer beide Pakete: Mac-DMG (wenn die Mac-Werkzeuge da sind) und Windows-ZIP."""
     cfg = _cfg()
     repo = repo or (cfg.get("veroeffentlichen") or {}).get("repo", "")
-    version = f"{__version__}-{time.strftime('%Y%m%d')}"
-    ziel_dmg = Path.home() / "Desktop" / f"JARVIS-{version}.dmg"
+    version = _version()
+    fertig: list[Path] = []
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         console.print("→ Programmcode exportieren …")
         code = tmp / "code"
         exportieren(code, cfg)
-        res_dateien = tmp / "res"
-        res_dateien.mkdir()
-        with tarfile.open(res_dateien / "jarvis-code.tar.gz", "w:gz") as tf:
-            for p in sorted(code.iterdir()):
-                tf.add(p, arcname=p.name)
-
-        console.print("→ JARVIS-App übersetzen …")
-        (tmp / "a").mkdir()
-        app = baue_app(tmp / "a")
-        if not app:
-            return None
-        signieren(app)
-
-        console.print("→ Installer übersetzen …")
-        (tmp / "i").mkdir()
-        inst = baue_app(tmp / "i", quelle=code / "installer" / "Installer.swift", name="JARVIS installieren",
-                        bundle_id="de.atlas.jarvis.installer", frameworks=("Cocoa", "WebKit"), mikrofon=False)
-        if not inst:
-            return None
-        r = inst / "Contents/Resources"
-        shutil.copy2(code / "installer" / "assistent.html", r / "assistent.html")
-        shutil.copy2(code / "installer" / "installieren.sh", r / "installieren.sh")
-        shutil.copy2(res_dateien / "jarvis-code.tar.gz", r / "jarvis-code.tar.gz")
-        _run(["ditto", str(app), str(r / "JARVIS.app")])
-        (r / "release.json").write_text(json.dumps({"version": version, "sha": sha, "repo": repo,
-                                                    "datum": time.strftime("%Y-%m-%d")}), encoding="utf-8")
-        signieren(inst)
-
-        console.print("→ DMG erstellen …")
-        dmg = tmp / "dmg"
-        dmg.mkdir()
-        _run(["ditto", str(inst), str(dmg / inst.name)])
-        (dmg / "So geht's.txt").write_text(ANLEITUNG, encoding="utf-8")
-        liste = code / "FUNKTIONEN.md"
-        if liste.exists():
-            (dmg / "Was JARVIS kann.txt").write_text(funktionen_als_text(liste.read_text(encoding="utf-8")),
-                                                       encoding="utf-8")
-        ziel_dmg.unlink(missing_ok=True)
-        r = _run(["hdiutil", "create", "-volname", f"JARVIS {__version__}", "-srcfolder", str(dmg),
-                  "-ov", "-format", "UDZO", str(ziel_dmg)])
-        if r.returncode:
-            console.print(f"[red]hdiutil:[/] {r.stderr[-400:]}")
-            return None
-    mb = ziel_dmg.stat().st_size / 1e6
-    console.print(f"[green]✓ Installations-DMG:[/] {ziel_dmg} ({mb:.0f} MB)")
+        console.print("[bold]Mac[/]")
+        dmg = _mac_dmg(tmp, code, sha, repo, version)
+        if dmg:
+            fertig.append(dmg)
+        console.print("[bold]Windows[/]")
+        try:
+            fertig.append(_windows_zip(code, sha, repo, version))
+        except Exception as e:
+            console.print(f"[red]Windows-Paket fehlgeschlagen:[/] {type(e).__name__}: {e}")
     if not repo:
         console.print("[dim]Ohne Veröffentlichung bekommen diese Installationen keine automatischen Updates "
                       "('jarvis veroeffentlichen').[/]")
+    return fertig
+
+
+def windows_paket_bauen() -> Path | None:
+    """Nur das Windows-Paket (für 'jarvis app')."""
+    cfg = _cfg()
+    repo = (cfg.get("veroeffentlichen") or {}).get("repo", "")
+    with tempfile.TemporaryDirectory() as tmp:
+        code = Path(tmp) / "code"
+        console.print("→ Windows-Paket: Programmcode exportieren …")
+        exportieren(code, cfg)
+        return _windows_zip(code, "", repo, _version())
+
+
+def _windows_text(pfad: Path, bom: bool = False) -> None:
+    """Zeilenenden CRLF; PowerShell-Skripte mit UTF-8-BOM (sonst liest Windows PowerShell Umlaute falsch)."""
+    t = pfad.read_text(encoding="utf-8-sig").replace("\r\n", "\n").replace("\n", "\r\n")
+    pfad.write_bytes((b"\xef\xbb\xbf" if bom else b"") + t.encode("utf-8"))
+
+
+def _windows_zip(code: Path, sha: str, repo: str, version: str) -> Path:
+    import zipfile
+    if not (code / "windows" / "installieren.ps1").exists():
+        raise SystemExit("windows/installieren.ps1 fehlt im gesicherten Stand – erst 'jarvis speichern'.")
+    ziel = Path.home() / "Desktop" / f"JARVIS-{version}-windows.zip"
+    name = f"JARVIS-{version}-windows"
+    with tempfile.TemporaryDirectory() as t:
+        w = Path(t) / name
+        inst = w / "installer"
+        inst.mkdir(parents=True)
+        shutil.copytree(code, inst / "programm")
+        shutil.copy2(code / "windows" / "installieren.ps1", inst / "installieren.ps1")
+        (inst / "release.json").write_text(json.dumps({"version": version, "sha": sha, "repo": repo,
+                                                       "datum": time.strftime("%Y-%m-%d")}), encoding="utf-8")
+        (w / "JARVIS installieren.cmd").write_text(
+            "@echo off\nchcp 65001 >nul\ntitle JARVIS installieren\n"
+            "powershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0installer\\installieren.ps1\" %*\npause\n", encoding="utf-8")
+        (w / "So geht's.txt").write_text(ANLEITUNG_WINDOWS, encoding="utf-8")
+        liste = code / "FUNKTIONEN.md"
+        if liste.exists():
+            (w / "Was JARVIS kann.txt").write_text(funktionen_als_text(liste.read_text(encoding="utf-8")), encoding="utf-8")
+        for f in w.rglob("*"):
+            if f.suffix.lower() in (".ps1", ".cmd", ".vbs", ".txt", ".iss") and f.is_file():
+                _windows_text(f, bom=f.suffix.lower() == ".ps1")
+        ziel.unlink(missing_ok=True)
+        with zipfile.ZipFile(ziel, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+            for f in sorted(w.rglob("*")):
+                if f.is_file():
+                    z.write(f, f.relative_to(Path(t)))
+    console.print(f"[green]✓ Windows-Paket:[/] {ziel} ({ziel.stat().st_size / 1e6:.0f} MB)")
+    return ziel
+
+
+def _mac_dmg(tmp: Path, code: Path, sha: str, repo: str, version: str) -> Path | None:
+    from atlas.cli import baue_app, signieren
+    for werkzeug in ("swiftc", "hdiutil", "git", "ditto"):
+        if not shutil.which(werkzeug):
+            console.print(f"[yellow]Mac-DMG übersprungen:[/] {werkzeug} fehlt ('xcode-select --install').")
+            return None
+    ziel_dmg = Path.home() / "Desktop" / f"JARVIS-{version}.dmg"
+    res_dateien = tmp / "res"
+    res_dateien.mkdir()
+    with tarfile.open(res_dateien / "jarvis-code.tar.gz", "w:gz") as tf:
+        for p in sorted(code.iterdir()):
+            tf.add(p, arcname=p.name)
+
+    console.print("→ JARVIS-App übersetzen …")
+    (tmp / "a").mkdir()
+    app = baue_app(tmp / "a")
+    if not app:
+        return None
+    signieren(app)
+
+    console.print("→ Installer übersetzen …")
+    (tmp / "i").mkdir()
+    inst = baue_app(tmp / "i", quelle=code / "installer" / "Installer.swift", name="JARVIS installieren",
+                    bundle_id="de.atlas.jarvis.installer", frameworks=("Cocoa", "WebKit"), mikrofon=False)
+    if not inst:
+        return None
+    r = inst / "Contents/Resources"
+    shutil.copy2(code / "installer" / "assistent.html", r / "assistent.html")
+    shutil.copy2(code / "installer" / "installieren.sh", r / "installieren.sh")
+    shutil.copy2(res_dateien / "jarvis-code.tar.gz", r / "jarvis-code.tar.gz")
+    _run(["ditto", str(app), str(r / "JARVIS.app")])
+    (r / "release.json").write_text(json.dumps({"version": version, "sha": sha, "repo": repo,
+                                                "datum": time.strftime("%Y-%m-%d")}), encoding="utf-8")
+    signieren(inst)
+
+    console.print("→ DMG erstellen …")
+    dmg = tmp / "dmg"
+    dmg.mkdir()
+    _run(["ditto", str(inst), str(dmg / inst.name)])
+    (dmg / "So geht's.txt").write_text(ANLEITUNG, encoding="utf-8")
+    liste = code / "FUNKTIONEN.md"
+    if liste.exists():
+        (dmg / "Was JARVIS kann.txt").write_text(funktionen_als_text(liste.read_text(encoding="utf-8")),
+                                                   encoding="utf-8")
+    ziel_dmg.unlink(missing_ok=True)
+    r = _run(["hdiutil", "create", "-volname", f"JARVIS {__version__}", "-srcfolder", str(dmg),
+              "-ov", "-format", "UDZO", str(ziel_dmg)])
+    if r.returncode:
+        console.print(f"[red]hdiutil:[/] {r.stderr[-400:]}")
+        return None
+    console.print(f"[green]✓ Mac-Installations-DMG:[/] {ziel_dmg} ({ziel_dmg.stat().st_size / 1e6:.0f} MB)")
     return ziel_dmg
 
 
@@ -333,23 +431,27 @@ def veroeffentlichen() -> None:
             return
     sha = _run([*g, "rev-parse", "HEAD"]).stdout.strip()
     console.print(f"[green]✓ Code veröffentlicht[/] ({sha[:7]}{'' if neu else ', bereits aktuell'})")
-    dmg = paket(sha, repo)
-    if not dmg:
+    dateien = paket(sha, repo)
+    if not dateien:
         return
     tag = f"v{__version__}-{sha[:7]}"
     vorhanden = _netz(["gh", "release", "view", tag, "--repo", repo], timeout=120)
     if vorhanden.returncode and NETZFEHLER.search(vorhanden.stderr or ""):
         console.print(f"[red]Release fehlgeschlagen – GitHub nicht erreichbar:[/] {vorhanden.stderr[-200:]}\n"
-                      f"  Das DMG liegt bereit ({dmg.name}); später erneut 'jarvis veroeffentlichen'.")
+                      f"  Die Pakete liegen bereit ({', '.join(d.name for d in dateien)}); später erneut 'jarvis veroeffentlichen'.")
         return
     if vorhanden.returncode == 0:
-        r = _netz(["gh", "release", "upload", tag, str(dmg), "--clobber", "--repo", repo], timeout=600)
+        r = _netz(["gh", "release", "upload", tag, *map(str, dateien), "--clobber", "--repo", repo], timeout=900)
     else:
-        r = _netz(["gh", "release", "create", tag, str(dmg), "--repo", repo, "--title", f"JARVIS {__version__}",
-                   "--notes", "DMG laden, öffnen, „JARVIS installieren“ per Rechtsklick → Öffnen starten."], timeout=600)
+        r = _netz(["gh", "release", "create", tag, *map(str, dateien), "--repo", repo, "--title", f"JARVIS {__version__}",
+                   "--notes", "Mac: DMG laden, öffnen, „JARVIS installieren“ per Rechtsklick → Öffnen starten.\n"
+                              "Windows: JARVIS-Setup-….exe (erscheint wenige Minuten später, von GitHub gebaut) starten – "
+                              "oder die Windows-ZIP entpacken und „JARVIS installieren.cmd“ doppelklicken."], timeout=900)
     if r.returncode:
         console.print(f"[red]Release fehlgeschlagen:[/] {r.stderr[-300:]}\n"
                       "  Nichts verloren – später einfach erneut 'jarvis veroeffentlichen'.")
         return
     console.print(f"[green]✓ Download für deine Freunde:[/] https://github.com/{repo}/releases/latest")
-    console.print("  Bereits installierte Freundes-Macs übernehmen die neue Version innerhalb weniger Stunden.")
+    console.print("  Mac-DMG und Windows-ZIP sind hochgeladen; JARVIS-Setup.exe baut GitHub in wenigen Minuten dazu "
+                  f"(Fortschritt: https://github.com/{repo}/actions).")
+    console.print("  Bereits installierte Macs und Windows-PCs übernehmen die neue Version innerhalb weniger Stunden.")

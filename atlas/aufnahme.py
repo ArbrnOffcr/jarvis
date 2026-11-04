@@ -92,10 +92,10 @@ def transkribieren(wav_pfad: Path, whisper_modell: str, lock: threading.Lock) ->
     with wave.open(str(wav_pfad), "rb") as w:
         pcm = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
     audio = pcm.astype(np.float32) / 32768.0
-    import mlx_whisper
+    from atlas.plattform import whisper          # Mac: mlx-whisper, Windows: faster-whisper
     with lock:
-        r = mlx_whisper.transcribe(audio, path_or_hf_repo=whisper_modell,
-                                   condition_on_previous_text=False, verbose=None)
+        r = whisper(audio, whisper_modell, condition_on_previous_text=False,
+                    **({} if __import__("sys").platform == "win32" else {"verbose": None}))
     return {"sprache": r.get("language") or "de", "absaetze": _absaetze(r.get("segments") or []),
             "dauer": len(pcm) / RATE}
 

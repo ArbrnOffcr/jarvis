@@ -237,7 +237,7 @@ class Proaktiv:
             except Exception:
                 pass
         # 3) wichtige neue Mails – Einschätzung lokal, Inhalte verlassen den Mac nicht
-        if self.cfg_h.get("mail", True) and self.c.secrets.get("icloud_app_pw"):
+        if self.cfg_h.get("mail", True) and self.c.secrets.get("mail_bereit"):
             try:
                 neu += self._mail_hints(st)
             except Exception:

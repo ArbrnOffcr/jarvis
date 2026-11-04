@@ -4,7 +4,9 @@ Jeder Scan im Genius-Scan-Ordner, der keine Kinder-Rechnung und kein Bescheid is
 JARVIS liest ihn lokal (nichts geht in die Cloud), erkennt Absender, Betreff, Fristen und
 Steuerrelevanz und schlägt Ordner und Dateinamen im DATENARCHIV vor. Abgelegt wird erst nach
 Bestätigung (Karte im Dashboard oder im Chat). Bestätigt der Nutzer einen Absender mehrmals für
-denselben Ordner, legt JARVIS ihn nach einem Monat selbst ab und meldet es."""
+denselben Ordner, legt JARVIS ihn nach einem Monat selbst ab und meldet es. Wählt der Nutzer den Ordner einmal
+ausdrücklich mit „künftig immer hier“ (Ordner-Browser auf der Briefkarte), gilt die Regel sofort: Briefe dieses
+Absenders legt JARVIS ab dann selbst ab und meldet es."""
 import hashlib
 import re
 import shutil
@@ -115,6 +117,71 @@ class Post:
             liste = hilfen.ordnerliste(self.archiv, 3)
             self._ordner = (time.time(), liste)
         return liste
+
+    # ------------------------------------------------------------ Ordner-Browser (DATENARCHIV)
+    def _innen(self, rel: str) -> Path:
+        a = self.archiv
+        if not a:
+            raise ToolError("DATENARCHIV nicht gefunden")
+        rel = (rel or "").strip().strip("/")
+        p = (a / rel).resolve() if rel else a.resolve()
+        if p != a.resolve() and not str(p).startswith(str(a.resolve()) + "/"):
+            raise ToolError("Ordner liegt nicht im DATENARCHIV")
+        if not p.is_dir():
+            raise ToolError(f"Ordner „{rel}“ gibt es nicht")
+        if rel and hilfen.ausgeschlossen(rel):
+            raise ToolError("Das ist JARVIS' interner Datenordner bzw. in config.yaml ausgeschlossen")
+        return p
+
+    def baum(self, rel: str = "") -> dict:
+        """Unterordner eines Ordners im DATENARCHIV – zum Durchklicken auf der Briefkarte."""
+        p = self._innen(rel)
+        rel = str(p.relative_to(self.archiv.resolve())) if p != self.archiv.resolve() else ""
+        kinder = []
+        try:
+            for k in sorted(p.iterdir(), key=lambda x: x.name.lower()):
+                if not k.is_dir() or k.name.startswith(".") or k.name.endswith((".app", ".pkg", ".photoslibrary")):
+                    continue
+                r = f"{rel}/{k.name}" if rel else k.name
+                if hilfen.ausgeschlossen(r):
+                    continue
+                try:
+                    hat = any(x.is_dir() and not x.name.startswith(".") for x in k.iterdir())
+                except OSError:
+                    hat = False
+                kinder.append({"name": k.name, "pfad": r, "unterordner": hat})
+        except OSError as e:
+            raise ToolError(f"Ordner nicht lesbar: {e}")
+        teile = rel.split("/") if rel else []
+        return {"pfad": rel, "eltern": "/".join(teile[:-1]) if teile else None,
+                "pfadteile": [{"name": t, "pfad": "/".join(teile[:i + 1])} for i, t in enumerate(teile)],
+                "ordner": kinder, "archiv": self.archiv.name}
+
+    def ordner_anlegen(self, rel: str, name: str) -> dict:
+        name = hilfen.dateiname(name or "", 80).strip(" .")
+        if not name:
+            raise ToolError("Bitte einen Ordnernamen angeben")
+        p = self._innen(rel) / name
+        if p.exists():
+            raise ToolError(f"„{name}“ gibt es dort schon")
+        p.mkdir()
+        self._ordner = (0.0, [])
+        r = str(p.relative_to(self.archiv.resolve()))
+        self.c.audit.log("post", aktion="ordner_angelegt", ordner=r)
+        return {"ok": True, "pfad": r}
+
+    def regeln(self) -> list[dict]:
+        z = self.zustand()
+        return sorted(({"schluessel": k, **v} for k, v in z["regeln"].items()), key=lambda r: (r.get("absender") or "").lower())
+
+    def regel_loeschen(self, schluessel: str) -> dict:
+        with self.lock:
+            z = self.zustand()
+            r = z["regeln"].pop(schluessel, None)
+            self.speichern(z)
+        if not r:
+            raise ToolError("Regel nicht gefunden")
+        return {"ok": True, "text": f"Regel für {r.get('absender') or '?'} entfernt"}
 
     # ------------------------------------------------------------ Auswertung (lokal)
     def analysieren(self, text: str, name: str = "", schnell: bool = False) -> dict:
@@ -301,8 +368,8 @@ class Post:
         z = self.zustand()
         regel = z["regeln"].get(_norm(a["absender"])) if a["absender"] else None
         if (regel and regel.get("ordner") and a["ordner"].startswith(regel["ordner"])
-                and regel.get("n", 0) >= int(self.cfg.get("auto_ab_bestaetigungen", 3))
-                and (date.today() - date.fromisoformat(regel["erste"])).days >= int(self.cfg.get("auto_nach_tagen", 30))):
+                and (regel.get("fest") or (regel.get("n", 0) >= int(self.cfg.get("auto_ab_bestaetigungen", 3))
+                     and (date.today() - date.fromisoformat(regel["erste"])).days >= int(self.cfg.get("auto_nach_tagen", 30))))):
             with self.lock:
                 z["offen"][pid] = eintrag
                 self.speichern(z)
@@ -331,7 +398,8 @@ class Post:
                 "ordner_grund": e["ordner_grund"], "name": e["name"], "original": e["original"]}
 
     # ------------------------------------------------------------ Ablage / Lernen
-    def lernen(self, absender: str, ordner: str) -> None:
+    def lernen(self, absender: str, ordner: str, fest: bool = False) -> None:
+        """fest=True: ausdrücklich „künftig immer hier“ – gilt ab sofort, ohne Wartezeit."""
         if not absender or not ordner:
             return
         with self.lock:
@@ -340,12 +408,14 @@ class Post:
             basis = re.sub(r"/\d{4}$", "", ordner)          # Jahresordner nicht mitlernen
             if r and r.get("ordner") == basis:
                 r["n"] = r.get("n", 0) + 1
+                r["fest"] = bool(r.get("fest") or fest)
             else:
                 z["regeln"][_norm(absender)] = {"absender": absender, "ordner": basis, "n": 1,
-                                                "erste": date.today().isoformat()}
+                                                "erste": date.today().isoformat(), "fest": bool(fest)}
             self.speichern(z)
 
-    def ablegen(self, brief_id: str, ordner: str = "", dateiname: str = "", automatisch: bool = False) -> dict:
+    def ablegen(self, brief_id: str, ordner: str = "", dateiname: str = "", automatisch: bool = False,
+                merken: bool = False) -> dict:
         with self.lock:
             z = self.zustand()
             e = z["offen"].get(brief_id)
@@ -370,7 +440,7 @@ class Post:
         shutil.move(str(quelle), str(ziel))
         rel = str(ziel.relative_to(a))
         if not automatisch:
-            self.lernen(e["absender"], ordner)
+            self.lernen(e["absender"], ordner, fest=merken)
         steuer_txt = ""
         if e.get("steuer") and e["steuer"] != "Finanzamt & Bescheide":
             try:
@@ -387,7 +457,8 @@ class Post:
             self.speichern(z)
         self.c.audit.log("post", aktion="abgelegt", ziel=rel, automatisch=automatisch)
         self.c.broadcast({"type": "post_erledigt", "id": brief_id})
-        return {"abgelegt": rel, **({"steuer": steuer_txt} if steuer_txt else {})}
+        return {"abgelegt": rel, **({"steuer": steuer_txt} if steuer_txt else {}),
+                **({"regel": f"Briefe von {e['absender']} lege ich künftig selbst hier ab."} if merken and e.get("absender") else {})}
 
     def verwerfen(self, brief_id: str) -> dict:
         with self.lock:

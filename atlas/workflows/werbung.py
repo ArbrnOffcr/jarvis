@@ -250,7 +250,7 @@ class Werbung:
         while not stop.wait(60):
             try:
                 if not self.aktiv or not getattr(self.c.proaktiv, "leader", False) \
-                        or not self.c.secrets.get("icloud_app_pw"):
+                        or not self.c.secrets.get("mail_bereit"):
                     continue
                 if time.time() - self.letzter > int(self.cfg.get("intervall_min", 15)) * 60:
                     self.letzter = time.time()

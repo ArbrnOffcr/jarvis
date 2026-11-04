@@ -1,5 +1,7 @@
-"""iCloud-Mail über IMAP/SMTP. Entwürfe landen im Ordner 'Entwürfe' und
-erscheinen in Apple Mail auf allen Geräten. Senden nur nach Bestätigung."""
+"""Mail über IMAP/SMTP – iCloud oder ein anderer Dienst (Gmail, Outlook/Microsoft 365, GMX, WEB.DE, T-Online,
+beliebiger IMAP-Server; siehe atlas/mailkonto.py). Entwürfe landen im Entwürfe-Ordner des Postfachs und
+erscheinen in jeder Mail-App. Senden nur nach Bestätigung."""
+import base64
 import email
 import html as htmlmod
 import imaplib
@@ -58,19 +60,41 @@ def _anhang_dateien(cfg: dict, pfade: list | None) -> list:
 class Mail:
     def __init__(self, secrets: dict, cfg: dict | None = None):
         self.cfg = cfg or {}
+        k = secrets.get("mail_konto") or {}
+        self.konto = k if k.get("anbieter") not in (None, "", "icloud") else None
+        self._ordner_cache: dict = {}
+        if self.konto:                                   # anderer Maildienst
+            self.dienst = k.get("name") or k["anbieter"]
+            self.addr = k.get("adresse")
+            self.pw = secrets.get("mail_pw")
+            self.logins = [k.get("benutzer") or self.addr]
+            self.imap_host, self.imap_port = k.get("imap_host"), int(k.get("imap_port") or 993)
+            self.smtp_host, self.smtp_port = k.get("smtp_host"), int(k.get("smtp_port") or 587)
+            self.smtp_ssl, self.oauth = bool(k.get("smtp_ssl")), bool(k.get("oauth"))
+            return
+        self.dienst, self.oauth = "iCloud", False
+        self.imap_host, self.imap_port, self.smtp_host, self.smtp_port, self.smtp_ssl = IMAP_HOST, 993, SMTP_HOST, 587, False
         self.addr = secrets.get("icloud_email") or secrets.get("icloud_apple_id")
         self.pw = secrets.get("icloud_app_pw")
         names = [self.addr, (self.addr or "").split("@")[0], secrets.get("icloud_apple_id")]
         self.logins = [n for i, n in enumerate(names) if n and n not in names[:i]]
 
+    def _xoauth(self) -> str:
+        from atlas import mailkonto
+        return f"user={self.logins[0]}\x01auth=Bearer {mailkonto.zugriffstoken()}\x01\x01"
+
     def _imap(self) -> imaplib.IMAP4_SSL:
-        if not (self.addr and self.pw):
-            raise ToolError("iCloud-Zugang fehlt – bitte 'jarvis setup' ausführen")
+        if not (self.addr and (self.pw or self.oauth)):
+            raise ToolError(f"{self.dienst}-Zugang fehlt – Einstellungen → Verbindungen → Mail-Konto")
         last = None
         for name in self.logins:
-            m = imaplib.IMAP4_SSL(IMAP_HOST, 993, timeout=30)
+            m = imaplib.IMAP4_SSL(self.imap_host, self.imap_port, timeout=30)
             try:
-                m.login(name, self.pw)
+                if self.oauth:
+                    tok = self._xoauth()
+                    m.authenticate("XOAUTH2", lambda _: tok.encode())
+                else:
+                    m.login(name, self.pw)
                 self.login_name = name
                 return m
             except imaplib.IMAP4.error as e:
@@ -79,8 +103,56 @@ class Mail:
                     m.logout()
                 except Exception:
                     pass
+        if self.konto:
+            raise ToolError(f"{self.dienst}: Mail-Anmeldung fehlgeschlagen ({last}). Passwort/App-Passwort und Adresse "
+                            f"prüfen: Einstellungen → Verbindungen → Mail-Konto")
         raise ToolError(f"iCloud-Mail-Anmeldung fehlgeschlagen ({last}). "
                         f"App-spezifisches Passwort und Adresse prüfen: 'jarvis setup icloud'")
+
+    def _smtp(self):
+        """Angemeldete SMTP-Verbindung (mit 'with' benutzen)."""
+        s = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=30) if self.smtp_ssl \
+            else smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30)
+        try:
+            if not self.smtp_ssl:
+                s.starttls()
+            if self.oauth:
+                s.ehlo()
+                code, antwort = s.docmd("AUTH", "XOAUTH2 " + base64.b64encode(self._xoauth().encode()).decode())
+                if code != 235:
+                    raise smtplib.SMTPAuthenticationError(code, antwort)
+            else:
+                s.login(getattr(self, "login_name", None) or self.logins[0] if self.konto else
+                        getattr(self, "login_name", None) or self.addr, self.pw)
+        except Exception:
+            try:
+                s.quit()
+            except Exception:
+                pass
+            raise
+        return s
+
+    def ordner(self, m, art: str) -> str:
+        """Entwürfe-/Gesendet-Ordner (art 'Drafts' | 'Sent') – bei iCloud fest, sonst über die IMAP-Kennzeichnung
+        (\\Drafts, \\Sent), die Gmail, Outlook, GMX & Co. mitliefern. Ergebnis in Anführungszeichen."""
+        if not self.konto:
+            return f'"{DRAFTS if art == "Drafts" else SENT}"'
+        if art in self._ordner_cache:
+            return self._ordner_cache[art]
+        name = None
+        try:
+            typ, daten = m.list()
+            for z in daten or []:
+                z = z.decode(errors="ignore") if isinstance(z, bytes) else str(z)
+                treffer = re.match(r'\((?P<f>[^)]*)\)\s+(?:"[^"]*"|NIL)\s+(?P<n>.+)$', z)
+                if treffer and f"\\{art}" in treffer.group("f"):
+                    name = treffer.group("n").strip().strip('"')
+                    break
+        except Exception:
+            pass
+        name = name or {"Drafts": "Drafts", "Sent": "Sent"}[art]
+        self._ordner_cache[art] = f'"{name}"'
+        return self._ordner_cache[art]
 
     def _overview(self, m, uids: list[bytes]) -> list[dict]:
         if not uids:
@@ -193,7 +265,7 @@ class Mail:
         msg = self._build(an, betreff, text, antwort_auf, anhaenge)
         m = self._imap()
         try:
-            m.append(DRAFTS, "(\\Draft)", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+            m.append(self.ordner(m, "Drafts"), "(\\Draft)", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
         finally:
             m.logout()
         return {"entwurf_gespeichert": True, "an": msg["To"], "betreff": msg["Subject"],
@@ -204,15 +276,19 @@ class Mail:
                anhaenge: list | None = None) -> dict:
         msg = self._build(an, betreff, text, antwort_auf, anhaenge)
         try:
-            with smtplib.SMTP(SMTP_HOST, 587, timeout=30) as s:
-                s.starttls()
-                s.login(getattr(self, "login_name", None) or self.addr, self.pw)
+            if not self.oauth:
+                self._imap().logout()                      # Anmeldename ermitteln
+            with self._smtp() as s:
                 s.send_message(msg)
         except smtplib.SMTPException as e:
             raise ToolError(f"Senden fehlgeschlagen: {e}")
         try:
             m = self._imap()
-            m.append(SENT, "(\\Seen)", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+            if self.konto and self.konto.get("anbieter") in ("gmail", "outlook"):
+                m.logout()                                 # legen Gesendetes selbst ab
+                return {"gesendet": True, "an": msg["To"], "betreff": msg["Subject"],
+                        "anhaenge": [str(a).split("/")[-1] for a in (anhaenge or [])]}
+            m.append(self.ordner(m, "Sent"), "(\\Seen)", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
             m.logout()
         except Exception:
             pass

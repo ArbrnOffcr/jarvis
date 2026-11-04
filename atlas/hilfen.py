@@ -78,11 +78,18 @@ def maskieren(text: str) -> str:
 
 
 # ------------------------------------------------------------------ DATENARCHIV-Ordner
-AUSGESCHLOSSEN: tuple = ()      # beim Start aus config.yaml (archiv.ausschluss + archiv.ablage_ausschluss)
+AUSGESCHLOSSEN: tuple = ()      # beim Start aus config.yaml (archiv.ausschluss + archiv.ablage_ausschluss) – Wunsch des Nutzers
+INTERN: tuple = ()              # JARVIS' eigener Datenordner im Archiv (Suchindex, Systemdateien)
+
+
+def ausgeschlossen(rel: str) -> bool:
+    rel = (rel or "").strip("/")
+    return any(rel == x.strip("/") or rel.startswith(x.strip("/") + "/") for x in (*AUSGESCHLOSSEN, *INTERN) if x.strip("/"))
 
 
 def ordnerliste(archiv: Path, tiefe: int = 3) -> list[str]:
-    """Ordner des DATENARCHIVS (relativ) als Ablageziele – ohne dienstliche Unterordner."""
+    """Ordner des DATENARCHIVS (relativ) als Ablageziele – ohne JARVIS' eigenen Datenordner und ohne das, was der
+    Nutzer in config.yaml ausgeschlossen hat."""
     out = []
     if not archiv or not archiv.exists():
         return out
@@ -94,7 +101,7 @@ def ordnerliste(archiv: Path, tiefe: int = 3) -> list[str]:
             return
         for k in kinder:
             r = f"{rel}/{k.name}" if rel else k.name
-            if any(r.startswith(a) for a in AUSGESCHLOSSEN):
+            if ausgeschlossen(r):
                 continue
             out.append(r)
             if t > 1:

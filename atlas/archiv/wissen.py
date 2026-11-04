@@ -189,16 +189,17 @@ class Wissen:
 
     # ------------------------------------------------------------ weitere Quellen
     def _mails(self) -> int:
-        if not self.c.secrets.get("icloud_app_pw"):
+        if not self.c.secrets.get("mail_bereit"):
             return 0
         from atlas.tools.mail import Mail, _h
         s = self.search
         monate = int(self.cfg.get("mail_monate", 12))
         seit = (date.today() - timedelta(days=30 * monate)).strftime("%d-%b-%Y")
-        m = Mail(self.c.secrets, self.c.cfg)._imap()
+        mk = Mail(self.c.secrets, self.c.cfg)
+        m = mk._imap()
         n = 0
         try:
-            for ordner in ("INBOX", "Sent Messages"):
+            for ordner in ("INBOX", mk.ordner(m, "Sent").strip('"')):
                 try:
                     if m.select(f'"{ordner}"', readonly=True)[0] != "OK":
                         continue

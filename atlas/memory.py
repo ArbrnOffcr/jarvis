@@ -105,6 +105,34 @@ class Memory:
                         "frist": get("Frist"), "naechster_schritt": get("Nächster Schritt")})
         return out
 
+    def _vorgang_datei(self, titel: str):
+        f = self.vorgaenge / f"{_slug(titel)}.md"
+        if f.exists():
+            return f
+        for p in self.vorgaenge.glob("*.md"):                 # über die Überschrift finden
+            try:
+                if p.read_text(encoding="utf-8").splitlines()[0].lstrip("# ").strip() == titel.strip():
+                    return p
+            except (OSError, IndexError):
+                continue
+        return None
+
+    def vorgang_loeschen(self, titel: str) -> dict:
+        """Vorgang entfernen – die Datei wandert in den Papierkorb (wiederherstellbar)."""
+        import shutil
+        from pathlib import Path
+        f = self._vorgang_datei(titel)
+        if not f:
+            raise ValueError(f"Vorgang „{titel}“ nicht gefunden")
+        korb = Path.home() / ".Trash"
+        ziel = korb / f"JARVIS-Vorgang {f.stem}{'' if not (korb / f'JARVIS-Vorgang {f.stem}.md').exists() else datetime.now().strftime(' %Y%m%d-%H%M%S')}.md"
+        try:
+            korb.mkdir(exist_ok=True)
+            shutil.move(str(f), str(ziel))
+        except OSError:
+            f.rename(f.with_suffix(".geloescht"))          # ohne Papierkorb: nur ausblenden
+        return {"geloescht": titel, "hinweis": "Liegt im Papierkorb"}
+
     def vorgang_lesen(self, titel: str) -> str:
         f = self.vorgaenge / f"{_slug(titel)}.md"
         if not f.exists():

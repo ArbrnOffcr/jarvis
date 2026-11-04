@@ -131,13 +131,59 @@ def datum_aus(name: str) -> str:
     return f"{j}-{mo}-{t}" if t and mo else f"{j}-{mo}" if mo else j
 
 
+class _Ergebnis:
+    """Abfrageergebnis, vollständig gelesen, solange die Verbindung gesperrt war (wie ein Cursor benutzbar)."""
+    __slots__ = ("zeilen", "rowcount", "lastrowid")
+
+    def __init__(self, cur):
+        self.zeilen = cur.fetchall() if cur.description else []
+        self.rowcount, self.lastrowid = cur.rowcount, cur.lastrowid
+
+    def fetchone(self):
+        return self.zeilen[0] if self.zeilen else None
+
+    def fetchall(self):
+        return list(self.zeilen)
+
+    def __iter__(self):
+        return iter(self.zeilen)
+
+
+class _SichereDB:
+    """Eine SQLite-Verbindung für viele Threads (Indexer, Wissen, Suche, Dashboard): jeder Zugriff wird
+    serialisiert und vollständig gelesen – sonst „sqlite3.InterfaceError: bad parameter or other API misuse“,
+    wenn zwei Threads gleichzeitig einen Cursor derselben Verbindung benutzen."""
+
+    def __init__(self, conn):
+        self.conn, self._l = conn, threading.RLock()
+
+    def execute(self, sql, params=()):
+        with self._l:
+            return _Ergebnis(self.conn.execute(sql, params))
+
+    def executemany(self, sql, folge):
+        with self._l:
+            return _Ergebnis(self.conn.executemany(sql, folge))
+
+    def executescript(self, sql):
+        with self._l:
+            self.conn.executescript(sql)
+
+    def commit(self):
+        with self._l:
+            self.conn.commit()
+
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
+
+
 class LocalSearch:
     def __init__(self, folder: Path, shared: SharedIndex, embedder, model: str):
         folder.mkdir(parents=True, exist_ok=True)
         self.shared, self.embedder, self.model = shared, embedder, model
         self.vec_path = folder / "vektoren.f16"
         self.lock = threading.Lock()
-        self.db = sqlite3.connect(folder / "suche.sqlite", check_same_thread=False)
+        self.db = _SichereDB(sqlite3.connect(folder / "suche.sqlite", check_same_thread=False))
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS docs(id TEXT PRIMARY KEY, pfad TEXT, mtime REAL,
                                             datei_mtime REAL);

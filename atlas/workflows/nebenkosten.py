@@ -788,7 +788,7 @@ class Nebenkosten:
             self._status_pruefen(j)
 
     def _mail_senden(self, an: str, betreff: str, text: str, anhaenge: list[Path] | None = None) -> None:
-        from atlas.tools.mail import Mail, SMTP_HOST
+        from atlas.tools.mail import Mail
         mail = Mail(self.c.secrets, self.c.cfg)
         msg = EmailMessage()
         alias = self.alias()
@@ -802,17 +802,15 @@ class Nebenkosten:
         for p in anhaenge or []:
             msg.add_attachment(p.read_bytes(), maintype="application", subtype="pdf", filename=p.name)
         try:
-            mail._imap().logout()                      # Anmeldename ermitteln
-            with smtplib.SMTP(SMTP_HOST, 587, timeout=30) as s:
-                s.starttls()
-                s.login(getattr(mail, "login_name", None) or mail.addr, mail.pw)
+            if not mail.oauth:
+                mail._imap().logout()                  # Anmeldename ermitteln
+            with mail._smtp() as s:
                 s.send_message(msg)
         except (smtplib.SMTPException, OSError) as e:
             raise ToolError(f"Senden fehlgeschlagen: {e}")
         try:
-            from atlas.tools.mail import SENT
             m = mail._imap()
-            m.append(SENT, "(\\Seen)", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
+            m.append(mail.ordner(m, "Sent"), "(\\Seen)", imaplib.Time2Internaldate(time.time()), msg.as_bytes())
             m.logout()
         except Exception:
             pass
@@ -1065,7 +1063,7 @@ class Nebenkosten:
                     except ToolError:
                         pass
                 p = self._z()["postfach"]
-                if p.get("alias") and self.c.secrets.get("icloud_app_pw") and \
+                if p.get("alias") and self.c.secrets.get("mail_bereit") and \
                         time.time() - self.letzter > int(p.get("intervall_min") or 15) * 60:
                     self.letzter = time.time()
                     self.postfach_pruefen()

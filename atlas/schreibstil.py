@@ -51,7 +51,7 @@ class Schreibstil:
         imap = m._imap()
         texte = []
         try:
-            imap.select(f"\"{SENT}\"", readonly=True)
+            imap.select(m.ordner(imap, "Sent"), readonly=True)
             typ, data = imap.uid("SEARCH", None, "ALL")
             for uid in _uids(data)[-40:][::-1]:
                 typ, d = imap.uid("FETCH", uid, "(BODY.PEEK[])")

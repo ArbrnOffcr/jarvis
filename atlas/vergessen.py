@@ -67,7 +67,7 @@ def pruefen(core) -> dict:
             add(30 + len(o) * 3, f"{len(o)} gescannte Brief{'e' if len(o) != 1 else ''} noch nicht abgelegt.")
     except Exception:
         pass
-    if c.secrets.get("icloud_app_pw"):
+    if c.secrets.get("mail_bereit"):
         try:
             from atlas.tools.mail import Mail
             for m in Mail(c.secrets).posteingang(30, nur_ungelesen=True):

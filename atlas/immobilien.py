@@ -138,6 +138,10 @@ class Immobilien:
                 else:
                     d["lat"], d["lon"] = alt.get("lat"), alt.get("lon")
                 d["bilder"] = alt.get("bilder") or {"haupt": "", "galerie": []}
+                if "einheiten" not in daten:          # Formular ohne Einheiten/Profi-Annahmen: vorhandene behalten
+                    d["einheiten"] = alt.get("einheiten") or []
+                if "profi" not in daten:
+                    d["profi"] = alt.get("profi") or {}
                 d["id"] = oid
                 d["angelegt"] = alt.get("angelegt")
                 z["objekte"] = [d if o["id"] == oid else o for o in z["objekte"]]
@@ -184,6 +188,9 @@ class Immobilien:
                 d["erhoehungen"].append({"datum": _datum(e["datum"]).isoformat(), "kalt_neu": _zahl(e["kalt_neu"]),
                                          "art": str(e.get("art") or "vergleichsmiete")[:20]})
         d["betriebskosten"] = [str(b)[:60] for b in (x.get("betriebskosten") or [])][:20]
+        from atlas import immo_profi
+        d["einheiten"] = immo_profi.einheiten_bereinigen(x.get("einheiten"))
+        d["profi"] = immo_profi.objekt_profi_bereinigen(x.get("profi"))
         d["versorger"] = []
         for v in (x.get("versorger") or [])[:20]:
             if str(v.get("kostenart") or "").strip():
@@ -276,6 +283,10 @@ class Immobilien:
     def kennzahlen(self, o: dict) -> dict:
         g, heute = self.grenzen(), date.today()
         mi = o.get("miete") or {}
+        if o.get("einheiten"):                        # mehrere Wohneinheiten: Summe der vermieteten
+            v = [e for e in o["einheiten"] if e.get("status") == "vermietet"]
+            mi = {**mi, "kalt": sum((e["miete"].get("kalt") or 0) for e in v) or None,
+                  "nk": sum((e["miete"].get("nk") or 0) for e in v) or None}
         kalt, nk = mi.get("kalt"), mi.get("nk")
         warm = (kalt or 0) + (nk or 0) if kalt is not None else None
         jk = kalt * 12 if kalt else None
@@ -382,13 +393,58 @@ class Immobilien:
                 out["mietvertrag"], out["mietvertrag_auto"] = treffer[1], True
         return out
 
+    # ------------------------------------------------------------ Profi-Dashboard (Portfolio)
+    def profi(self) -> dict:
+        from atlas.immo_profi import PROFI
+        return {**PROFI, **(self._laden().get("profi") or {})}
+
+    def profi_setzen(self, neu: dict) -> dict:
+        from atlas.immo_profi import PROFI
+        with self.lock:
+            z = self._laden()
+            p = {**PROFI, **(z.get("profi") or {})}
+            if "aktiv" in neu:
+                p["aktiv"] = bool(neu["aktiv"])
+            for k in PROFI:
+                if k == "aktiv":
+                    continue
+                v = _zahl(neu.get(k))
+                if v is not None:
+                    p[k] = max(1, min(30, int(v))) if k == "horizont" else v
+            z["profi"] = p
+            self._speichern(z)
+        return {"ok": True, "profi": p, "text": "✓ Profi-Dashboard " + ("eingeschaltet" if p["aktiv"] else "ausgeschaltet")
+                                                 + " · Annahmen gespeichert"}
+
+    def portfolio(self) -> dict:
+        from atlas import immo_profi
+        z = self._laden()
+        return {**immo_profi.portfolio(z["objekte"], self.profi(), self.grenzen()), "profi": self.profi()}
+
+    def einheiten_speichern(self, oid: str, daten: dict) -> dict:
+        from atlas import immo_profi
+        with self.lock:
+            z = self._laden()
+            o = next((x for x in z["objekte"] if x["id"] == oid), None)
+            if not o:
+                raise ToolError("Immobilie nicht gefunden")
+            if "einheiten" in daten:
+                o["einheiten"] = immo_profi.einheiten_bereinigen(daten.get("einheiten"))
+                if o["einheiten"]:
+                    o["wohnflaeche"] = sum(e.get("flaeche") or 0 for e in o["einheiten"]) or o.get("wohnflaeche")
+            if "profi" in daten:
+                o["profi"] = immo_profi.objekt_profi_bereinigen(daten.get("profi"))
+            self._speichern(z)
+        self.c.audit.log("immo_objekt", objekt=oid, aktion="einheiten")
+        return {"ok": True, "text": f"✓ {len(o.get('einheiten') or [])} Wohneinheiten gespeichert"}
+
     def alle(self) -> dict:
         z = self._laden()
         objs = [self.ansicht(o) for o in z["objekte"]]
         summe = {"objekte": len(objs), "kalt_monat": sum((o["miete"].get("kalt") or 0) for o in objs),
                  "restschuld": sum((o["kennzahlen"].get("restschuld") or 0) for o in objs),
                  "cashflow": sum((o["kennzahlen"].get("cashflow") or 0) for o in objs)}
-        return {"objekte": objs, "summe": summe, "grenzen": self.grenzen()}
+        return {"objekte": objs, "summe": summe, "grenzen": self.grenzen(), "profi": self.profi()}
 
     # ------------------------------------------------------------ Bilder
     def bild_hochladen(self, oid: str, daten: bytes, name: str, haupt: bool = False) -> dict:
@@ -549,7 +605,25 @@ def tools(core) -> list[Tool]:
         ke = erg["objekt"]["kennzahlen"]["erhoehungen"]
         return {"ok": True, "geplant": ke[-1] if ke else None}
 
+    def portfolio(zeigen=True):
+        p = im.portfolio()
+        if zeigen:
+            core.broadcast({"type": "immo_portfolio"})
+        s = p["summe"]
+        return {"angezeigt": bool(zeigen), **s, "hinweise": [h["text"] + f" ({h['objekt']})" for h in p["hinweise"][:12]],
+                "objekte": [{"objekt": x["name"], **{k: x["kennzahlen"].get(k) for k in (
+                    "einheiten_anzahl", "vermietet", "vakant", "ist_kalt", "soll_kalt", "faktor", "brutto", "netto", "cf_op",
+                    "cf_ns", "beleihung", "dscr", "break_even")},
+                    "naechste_erhoehungen": [{"einheit": e["name"], "ab": e["erhoehung"].get("ab"),
+                                              "potenzial_eur": e["erhoehung"].get("potenzial")}
+                                             for e in x["einheiten"] if e["erhoehung"].get("ab")]} for x in p["objekte"]]}
+
     return [
+        Tool("immobilien_portfolio",
+             "Profi-Dashboard aller Mietobjekte öffnen bzw. auswerten: Einheiten (vermietet/vakant), Soll-/Ist-Miete, "
+             "Cashflow operativ und nach Steuern je Objekt und Einheit, Faktor, Rendite, Beleihung, nächste mögliche "
+             "Mieterhöhungen, Handlungsbedarf. Für „Wie steht mein Portfolio?“, „Wo ist Leerstand?“, „Wann kann ich "
+             "die Mieten erhöhen?“.", "immo.lesen", portfolio, {"zeigen": {"type": "boolean"}}),
         Tool("immobilien_zeigen",
              "Immobiliendashboard im Dashboard öffnen: Karte, Bilder, Mieter, Miete, Darlehen, Kennzahlen "
              "(Bruttomietrendite, Cashflow, Beleihung …). Für „Zeig mir meine Immobilie(n)“, „Wie läuft das Haus?“.",

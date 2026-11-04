@@ -69,8 +69,8 @@ class Lagebild:
         return (t.func() or []) if t else []
 
     def _mail(self):
-        if not self.c.secrets.get("icloud_app_pw"):
-            raise RuntimeError("iCloud-Mail nicht eingerichtet")
+        if not self.c.secrets.get("mail_bereit"):
+            raise RuntimeError("Mail nicht eingerichtet")
         return Mail(self.c.secrets).kurzinfo(5)
 
     # ---------- Gesamtbild ----------

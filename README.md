@@ -1,9 +1,16 @@
-# JARVIS – persönlicher Assistent für den Mac
+# JARVIS – persönlicher Assistent für Mac und Windows
 
 Termine, Erinnerungen, Einkaufsliste, Mails, Dokumente und Wetter – per Sprache oder Text,
 mit Claude als Gehirn und optional einem lokalen Sprachmodell für Privates.
 
-## Installation
+## Installation unter Windows 10/11
+1. Unter **Releases** `JARVIS-Setup-….exe` laden und starten (oder `JARVIS-…-windows.zip` entpacken und
+   „JARVIS installieren.cmd“ doppelklicken). Windows warnt evtl. („Der Computer wurde durch Windows geschützt“):
+   „Weitere Informationen“ → „Trotzdem ausführen“ – die Datei ist nicht von Microsoft signiert.
+2. Im JARVIS-Fenster führt der Setup-Guide durch die Schlüssel.
+Keine Administratorrechte nötig. Updates kommen automatisch.
+
+## Installation am Mac
 1. Unter **Releases** die neueste `JARVIS-….dmg` laden und öffnen.
 2. **Rechtsklick** auf „JARVIS installieren“ → **Öffnen** → nochmals **Öffnen**
    (die App ist nicht von Apple beglaubigt – nur beim ersten Start nötig).

@@ -33,6 +33,30 @@ from atlas.paths import LOCAL_DIR
 from atlas.tools import S, Tool, ToolError
 
 ORDNER = LOCAL_DIR / "pkv_portal"                 # lokal (nicht iCloud): Rezept, Browserprofil, Fehlerbilder
+from atlas import ablauf as _ablauf                 # noqa: E402
+_ablauf.BILDORDNER["pkv"] = ORDNER / "fehler"     # Fehlerbilder dürfen in der Ablauf-Anzeige erscheinen (nur lokal)
+
+
+def stationen(r: dict) -> list[str]:
+    """Schrittnamen für die sichtbare Strecke: Portal öffnen, je Rezeptschritt ein Name, Bestätigung ablegen.
+    Nur Bezeichnungen – nie Werte."""
+    namen = ["Portal öffnen"]
+    for s in r.get("schritte") or []:
+        art, wert = s.get("art"), str(s.get("wert") or "")
+        if art == "mailcode":
+            n = "Mail-Code"
+        elif art == "hochladen":
+            n = "Belege hochladen"
+        elif art == "fuellen":
+            n = "Benutzer" if "{{benutzer}}" in wert else "Passwort" if "{{passwort}}" in wert else (s.get("label") or "Feld")
+        elif art == "waehlen":
+            n = s.get("label") or "Auswahl"
+        elif s.get("absenden"):
+            n = "Absenden"
+        else:
+            n = s.get("text") or s.get("label") or "Klick"
+        namen.append(re.sub(r"\s+", " ", str(n)).strip()[:22] or "Schritt")
+    return namen + ["Bestätigung ablegen"]
 REZEPT = ORDNER / "rezept.json"
 PROFIL = ORDNER / "browser"
 SCHLUESSEL_BENUTZER, SCHLUESSEL_PASSWORT = "universa_benutzer", "universa_passwort"
@@ -405,6 +429,15 @@ class PkvPortal:
         self.laeuft = ""
         self.lernen_stop = threading.Event()
         self.lernen_start = {"ereignis": threading.Event(), "fehler": None}
+        self._ab = None                          # sichtbare Strecke der laufenden Einreichung
+        self._letztes_bild = None
+
+    def _zeige(self, i: int, text: str = "") -> None:
+        if getattr(self, "_ab", None) is not None:
+            try:
+                self._ab.schritt(i, text)
+            except Exception:
+                pass
 
     def melden(self, text: str, einmal: str = "") -> None:
         """Ergebnisse der Browsersteuerung sofort zustellen – nicht im Hinweis-Stapel parken."""
@@ -720,19 +753,32 @@ class PkvPortal:
     def _einreichen_alle(self, r: dict, belege: list[dict], selbststaendig: bool) -> None:
         with self.lock:
             self.laeuft = "PKV-Antrag"
+            self._letztes_bild = None
+            try:
+                self._ab = _ablauf.Ablauf(self.c, "pkv", "PKV-Antrag · uniVersa", stationen(r))
+            except Exception:
+                self._ab = None
             try:
                 beweis, merkmal_ok = self._abspielen(r, belege)
+                self._zeige(len(r["schritte"]) + 1, "Lege die Bestätigung ab …")
                 self._erledigt(belege, beweis, "selbstständig" if selbststaendig else "auf deinen Auftrag",
                                unsicher=not merkmal_ok)
+                if self._ab is not None:
+                    self._ab.fertig("Eingereicht" + (" – Bestätigung bitte prüfen" if not merkmal_ok else ""))
             except Abbruch as e:
                 self.c.audit.log("pkv_portal", aktion="abbruch", belege=len(belege), grund=str(e)[:200])
+                if self._ab is not None:
+                    self._ab.fehler(str(e), self._letztes_bild)
                 self.melden(f"PKV-Antrag nicht gestellt: {e}")
             except Exception as e:
                 self.c.audit.log("fehler", bereich="pkv_einreichen", text=f"{type(e).__name__}: {e}"[:300])
+                if self._ab is not None:
+                    self._ab.fehler(f"Unerwarteter Fehler ({type(e).__name__})", self._letztes_bild)
                 self.melden(f"PKV-Antrag: unerwarteter Fehler ({type(e).__name__}). Bitte im Portal nachsehen, "
                                f"bevor ich es noch einmal versuche.")
             finally:
                 self.laeuft = ""
+                self._ab = None
             self._vorschlagen()
 
     def _abspielen(self, r: dict, belege: list[dict]) -> tuple[bytes | None, bool]:
@@ -765,6 +811,7 @@ class PkvPortal:
                 i = 0
                 while i < len(schritte):
                     s = schritte[i]
+                    self._zeige(i + 1)
                     self._captcha(page)
                     if s.get("absenden"):
                         if abgesendet:
@@ -815,6 +862,7 @@ class PkvPortal:
                         page.wait_for_timeout(1500)
                     elif art == "mailcode":
                         gesamt = int(self.cfg.get("code_warten_s", 180))
+                        self._zeige(i + 1, "Warte auf den Code per Mail …")
                         c = MailCode(self.c).warten(letzter_klick, r.get("mail_absender", ""), min(60, gesamt))
                         if not c:
                             # Kein Code nach einer Minute: Anmelde-Knopf hat evtl. nicht ausgelöst – einmal erneut drücken
@@ -824,6 +872,7 @@ class PkvPortal:
                                 letzter_klick = datetime.now()
                                 knopf.click()
                                 page.wait_for_timeout(1500)
+                                self._zeige(i + 1, "Kein Code nach einer Minute – Anmelden erneut gedrückt, warte weiter …")
                             c = MailCode(self.c).warten(letzter_klick, r.get("mail_absender", ""), max(60, gesamt - 60))
                         if not c:
                             self._fehlerbild(page)
@@ -943,7 +992,9 @@ class PkvPortal:
         try:
             d = ORDNER / "fehler"
             d.mkdir(parents=True, exist_ok=True)
-            page.screenshot(path=str(d / f"{datetime.now():%Y-%m-%d_%H%M%S}.png"))
+            ziel = d / f"{datetime.now():%Y-%m-%d_%H%M%S}.png"
+            page.screenshot(path=str(ziel))
+            self._letztes_bild = ziel
             for alt in sorted(d.glob("*.png"))[:-5]:
                 alt.unlink(missing_ok=True)
         except Exception:

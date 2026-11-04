@@ -199,7 +199,7 @@ class MailWache:
     def schleife(self, stop: threading.Event) -> None:
         while not stop.wait(20):
             try:
-                if not getattr(self.c.proaktiv, "leader", False) or not self.c.secrets.get("icloud_app_pw"):
+                if not getattr(self.c.proaktiv, "leader", False) or not self.c.secrets.get("mail_bereit"):
                     continue
                 if not self.aktiv() or (getattr(self.c, "notfall", None) and self.c.notfall.aktiv()):
                     continue

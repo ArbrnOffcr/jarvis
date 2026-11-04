@@ -240,7 +240,12 @@ class Speaker:
 
     @staticmethod
     def _macos_pcm(text, voice) -> bytes:
+        import io
         import wave
+        from atlas.plattform import WINDOWS, ersatzstimme_wav
+        if WINDOWS:
+            with wave.open(io.BytesIO(ersatzstimme_wav(text, RATE_TTS))) as w:
+                return w.readframes(w.getnframes())
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "a.wav"
             cmd = ["say", "-v", voice, "--file-format=WAVE", f"--data-format=LEI16@{RATE_TTS}", "-o", str(out), text]
@@ -303,6 +308,9 @@ class Speaker:
 
     @staticmethod
     def _macos(text, voice) -> bytes:
+        from atlas.plattform import WINDOWS, ersatzstimme_wav
+        if WINDOWS:
+            return ersatzstimme_wav(text)
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "a.wav"
             cmd = ["say", "-v", voice, "--file-format=WAVE", "--data-format=LEI16@22050", "-o", str(out), text]
@@ -317,7 +325,7 @@ class Transcriber:
         self.lock = threading.Lock()
 
     def transcribe(self, pcm: np.ndarray, sprache: str | None = None, vorher: str = "") -> dict:
-        import mlx_whisper                      # lädt das Modell beim ersten Mal (~1,6 GB)
+        from atlas.plattform import whisper     # Mac: mlx-whisper, Windows: faster-whisper (lädt beim ersten Mal ~1,6 GB)
         audio = pcm.astype(np.float32) / 32768.0
         extra = {}
         if sprache:
@@ -328,14 +336,14 @@ class Transcriber:
         if zusatzsprache():
             erlaubt.append(zusatzsprache())
         with self.lock:
-            r = mlx_whisper.transcribe(audio, path_or_hf_repo=settings()["whisper"],
+            r = whisper(audio, settings()["whisper"],
                                        condition_on_previous_text=False, **extra)
             erkannt = r.get("language") or sprache or "de"
             if not sprache and erkannt not in erlaubt:
                 # Kurze Sätze erkennt Whisper gern als falsche Sprache – und schreibt sie dann auch in dieser
                 # Sprache (oder übersetzt). Darauf antwortet das Modell dann in der fremden Sprache.
                 extra["language"] = "de"
-                r = mlx_whisper.transcribe(audio, path_or_hf_repo=settings()["whisper"],
+                r = whisper(audio, settings()["whisper"],
                                            condition_on_previous_text=False, **extra)
         lang = r.get("language") or "de"
         return {"text": (r.get("text") or "").strip(), "lang": lang if lang in erlaubt else "de",

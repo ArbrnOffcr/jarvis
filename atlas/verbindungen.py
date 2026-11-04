@@ -55,6 +55,8 @@ def status(core) -> dict:
         "profil": {"name": cfg.get("name") or core.name, "anrede": cfg.get("anrede", "Sir"), "ort": w.get("ort", ""),
                    "standort": core.standort.status() if hasattr(core, "standort") else {"bekannt": False}},
         "archiv": str(core.archiv.archive) if core.archiv and core.archiv.archive else "",
+        "archiv_quelle": _quelle(core),
+        "archiv_quellen": _quellen(),
         "lokal": lokal_status(),
     }
 
@@ -114,9 +116,9 @@ def schluessel_setzen(core, art: str, wert: str) -> dict:
     if not ok:
         raise ToolError(text)
     set_secret(art, wert)
-    if art == "anthropic":                        # sofort wirksam, ohne Neustart
-        from atlas.providers import ClaudeProvider
-        core.providers["claude"] = ClaudeProvider(wert, core.cfg["recherche"], (core.cfg.get("wetter") or {}).get("ort", ""))
+    if art == "anthropic":                        # sofort wirksam, ohne Neustart – bleibt hinter Weiche und Schleier
+        from atlas import ki_anbieter
+        ki_anbieter.neu_laden(core)
     if art == "telegram":                         # neuer Bot: Chat neu verbinden
         write_private_json("telegram.json", {"chat_id": None})
         _bot_cache.clear()
@@ -235,17 +237,27 @@ def profil_setzen(core, name: str, anrede: str, ort: str) -> dict:
     return {"ok": True, "text": "✓ Gespeichert – JARVIS startet neu"}
 
 
-def archiv_waehlen(core) -> dict:
-    """macOS-Dialog „Ordner wählen“ auf diesem Mac öffnen."""
-    skript = ('tell application "System Events" to activate\n'
-              'set f to choose folder with prompt "Dokumenten-Ordner für JARVIS wählen"\n'
-              'return POSIX path of f')
+def _quelle(core) -> dict:
+    from atlas.paths import archiv_quelle
+    return archiv_quelle(core.archiv.archive if core.archiv and core.archiv.archive else None)
+
+
+def _quellen() -> list[dict]:
+    from atlas.paths import cloud_quellen
+    return cloud_quellen()
+
+
+def archiv_waehlen(core, start: str = "") -> dict:
+    """macOS-Dialog „Ordner wählen“ auf diesem Mac öffnen – optional beginnend in iCloud Drive, OneDrive,
+    Google Drive, Dropbox oder einem lokalen Ordner (start = Pfad aus cloud_quellen)."""
+    from atlas.plattform import ordner_waehlen
+    erlaubt = {q["pfad"] for q in _quellen()}
+    beginn = start if start and start in erlaubt and Path(start).is_dir() else ""
     try:
-        r = subprocess.run(["osascript", "-e", skript], capture_output=True, text=True, timeout=300)
+        pfad = ordner_waehlen("Dokumenten-Ordner (DATENARCHIV) für JARVIS wählen", beginn)
     except (OSError, subprocess.SubprocessError):
-        raise ToolError("Ordnerauswahl nur am Mac möglich")
-    pfad = r.stdout.strip().rstrip("/")
-    if r.returncode or not pfad:
+        raise ToolError("Ordnerauswahl nur direkt am Rechner möglich")
+    if not pfad:
         return {"ok": False, "text": "Abgebrochen"}
     _config_aendern(lambda cfg: cfg.__setitem__("archive_path", pfad))
     neustart(core, "Archiv-Ordner gesetzt")
@@ -280,6 +292,13 @@ def lokal_status() -> dict:
 
 
 def lokal_einrichten(core) -> dict:
+    from atlas.plattform import WINDOWS
+    if WINDOWS and not _ollama():
+        p = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Ollama/ollama.exe"
+        if not p.exists():
+            return {"ok": False, "text": "Unter Windows: Ollama von ollama.com/download installieren (oder den JARVIS-Installer "
+                                         "erneut mit lokalem Modell ausführen), danach hier erneut klicken."}
+        OLLAMA.insert(0, str(p))
     if _laden.get("prozess") and _laden["prozess"].poll() is None:
         return {"ok": True, "text": "Lädt bereits …"}
     threading.Thread(target=_lokal_job, daemon=True).start()
@@ -314,6 +333,13 @@ def _lokal_job() -> None:
                 (ziel / "ollama").unlink(missing_ok=True)
                 (ziel / "ollama").symlink_to(kand[0])
             b = str(ziel / "ollama")
+        from atlas.plattform import WINDOWS
+        if WINDOWS and not lokal_status()["laeuft"]:          # Windows: Ollama einfach im Hintergrund starten
+            subprocess.Popen([b, "serve"], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            for _ in range(30):
+                if lokal_status()["laeuft"]:
+                    break
+                time.sleep(1)
         if not lokal_status()["laeuft"]:
             _laden["stand"] = "Starte Ollama …"
             plist = Path.home() / "Library/LaunchAgents/de.atlas.ollama.plist"

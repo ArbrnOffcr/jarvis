@@ -317,7 +317,7 @@ function handle(ev) {
       current = addMsg("atlas", "");
       current.dataset.text = "";
       const r = document.createElement("div"); r.className = "route";
-      r.textContent = `${ev.target === "lokal" ? "◆ LOKAL" : "◇ CLAUDE"} · ${ev.model} · ${ev.reason}`;
+      r.textContent = `${ev.target === "lokal" ? "◆ LOKAL" : /claude/i.test(ev.model || "") ? "◇ CLAUDE" : "◇ CLOUD"} · ${ev.model} · ${ev.reason}`;
       current.appendChild(r);
       break; }
     case "delta":
@@ -497,9 +497,10 @@ function renderVorgaenge(rows) {
       const txt = v.tage < 0 ? `✕ ${-v.tage} T. ÜBER FRIST` : v.tage === 0 ? "⚠ HEUTE" : `${v.tage} TAGE`;
       badge = `<span class="badge ${lvl}">${txt}</span>`;
     }
-    return li(v.tage !== null && v.tage <= 7 ? "now" : "",
+    return li((v.tage !== null && v.tage <= 7 ? "now " : "") + "vg-zeile",
       `<div class="x">${esc(v.titel)}${badge}</div><div class="m">${esc(v.status)} · Frist ${esc(v.frist)}</div>` +
-      (v.naechster_schritt && v.naechster_schritt !== "–" ? `<div class="m">→ ${esc(v.naechster_schritt)}</div>` : ""));
+      (v.naechster_schritt && v.naechster_schritt !== "–" ? `<div class="m">→ ${esc(v.naechster_schritt)}</div>` : "") +
+      vgKnoepfe(v.titel));
   }).join("");
 }
 
@@ -1842,7 +1843,7 @@ function postKarte(ev) {
     <div class="k-betreff">${esc(ev.betreff || ev.original)}</div>
     ${fr ? `<ul class="k-fristen">${fr}</ul><div class="k-klein">Erinnerung ist angelegt.</div>` : ""}
     ${ev.steuer ? `<div class="k-klein">Steuer: ${esc(ev.steuer)} – wird beim Ablegen vorgemerkt.</div>` : ""}
-    <label class="k-feld">ORDNER<input class="k-ordner" list="ordnerliste" value="${esc(ev.ordner || "")}"></label>
+    <label class="k-feld">ORDNER<span class="k-ordner-zeile"><input class="k-ordner" list="ordnerliste" value="${esc(ev.ordner || "")}"><button type="button" data-a="durchsuchen" class="k-durch" title="Im DATENARCHIV auswählen">▤ DURCHSUCHEN</button></span></label>
     <label class="k-feld">NAME<input class="k-name" value="${esc(ev.name || "")}"></label>
     <div class="k-klein">${esc(ev.ordner_grund || "")}</div>
     <div class="nk-knoepfe"><button type="button" data-a="ablegen" class="primaer">ABLEGEN</button>
@@ -1851,6 +1852,18 @@ function postKarte(ev) {
     const a = e.target.dataset.a; if (!a) return;
     e.stopPropagation();
     if (a === "spaeter") { k.remove(); return; }
+    if (a === "durchsuchen") {
+      const w = await ordnerWahl({ start: k.querySelector(".k-ordner").value.trim(), absender: ev.absender, titel: ev.betreff || ev.original });
+      if (!w) return;
+      k.querySelector(".k-ordner").value = w.pfad;
+      if (!w.ablegen) return;
+      try {
+        const r = await api(`/post/${ev.id}/ablegen`, { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ordner: w.pfad, dateiname: k.querySelector(".k-name").value.trim(), merken: w.merken }) });
+        toast(`Abgelegt: ${r.abgelegt}${r.regel ? " · " + r.regel : ""}`); sfx("ok"); k.remove();
+      } catch (err) { toast("Ablage nicht möglich – Ordner prüfen"); sfx("warn"); }
+      return;
+    }
     try {
       const r = await api(`/post/${ev.id}/${a}`, { method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ ordner: k.querySelector(".k-ordner").value.trim(), dateiname: k.querySelector(".k-name").value.trim() }) });
@@ -2739,7 +2752,11 @@ api("/einstellungen").then((st) => {
   if (!st.einfuehrung_offen || st.einfuehrung_gesehen) return;
   (function warte(n) {
     if (document.querySelector(".boot") || !$("modal").hidden || n < 4) { if (n < 120) setTimeout(() => warte(n + 1), 500); return; }
-    window.einfuehrung(false);
+    // Erst einrichten (KI-Schlüssel, Archiv …), dann die Einführung – so kann JARVIS in der Einführung schon antworten
+    api("/verbindungen/ki").then((k) => {
+      const hatKi = Object.values(k.anbieter || {}).some((x) => x.gesetzt);
+      if (!hatKi && window.setupGuide) window.setupGuide({ danachTour: true, schritt: 0 }); else window.einfuehrung(false);
+    }).catch(() => window.einfuehrung(false));
   })(0);
 }).catch(() => {});
 
@@ -3247,16 +3264,34 @@ async function vbAufbauen(versuch = 0) {
      <div class="vb-feld"><label>Heimatort (Wetter, wenn der Standort unbekannt ist; Routen „nach Hause“)</label><input type="text" data-f="ort" value="${esc(d.profil.ort)}" placeholder="z. B. Leipzig oder 04109 Leipzig"></div>
      <p class="vb-hilfe">${d.profil.standort?.bekannt ? `Aktueller Standort: <b>${esc(d.profil.standort.ort || "bekannt")}</b> (${esc({ mac: "Mac", iphone: "iPhone", browser: "Browser" }[d.profil.standort.quelle] || d.profil.standort.quelle)}, vor ${d.profil.standort.alter_min < 60 ? d.profil.standort.alter_min + " Min." : Math.round(d.profil.standort.alter_min / 60) + " Std."})${d.profil.standort.aktuell ? " – das Wetter gilt dort." : " – zu alt, Wetter gilt für den Heimatort."}` : "Standort noch unbekannt: Beim nächsten Start fragt die JARVIS-App einmal nach den Ortungsdiensten (am iPhone fragt Safari)."} Termine von heute mit Ort, die mehr als 50 km entfernt sind, bekommen ihr eigenes Wetter.</p>
      <div class="vb-reihe"><button type="button" data-a="profil" class="primary">SPEICHERN</button></div>`));
-  html.push(vbZeile("archiv", "Dokumenten-Ordner", d.archiv ? { ok: true, text: "✓ " + d.archiv.split("/").pop() } : { text: "– keiner" },
-    `<p class="vb-hilfe">${d.archiv ? esc(d.archiv) : "JARVIS durchsucht diesen Ordner, legt Post ab und zeigt Dokumente."}</p>
-     <div class="vb-reihe">${MOBIL ? "<span class='vb-hilfe'>Nur am Mac änderbar.</span>" : `<button type="button" data-a="archiv" class="primary">ORDNER WÄHLEN …</button>${d.archiv ? `<button type="button" data-a="archiv-weg">ENTFERNEN</button>` : ""}`}</div>`));
+  const aq = d.archiv_quelle || {};
+  html.push(vbZeile("archiv", "Dokumenten-Ordner (DATENARCHIV)", d.archiv ? { ok: true, text: "✓ " + d.archiv.split("/").pop() + (aq.name ? " · " + aq.name : "") } : { warn: true, text: "– keiner" },
+    `<p class="vb-hilfe">${d.archiv ? `<b>${esc(aq.name || "")}</b> · ${esc(d.archiv)}` : "JARVIS durchsucht diesen Ordner, legt Post ab und zeigt Dokumente."}</p>
+     <p class="vb-hilfe">Das Archiv kann in <b>iCloud Drive</b>, <b>OneDrive</b>, <b>Google Drive</b>, <b>Dropbox</b> oder in einem <b>lokalen Ordner</b> liegen.
+       Cloud-Speicher erscheinen hier, sobald ihre App auf dem Mac angemeldet ist (sie liegen dann unter „Orte“ im Finder). Dateien, die nur in der Cloud liegen, lädt JARVIS beim Lesen selbst herunter.
+       Mit mehreren Macs: ein Cloud-Speicher, damit alle dasselbe Archiv und denselben Suchindex sehen.</p>
+     <div class="vb-reihe vb-quellen">${MOBIL ? "<span class='vb-hilfe'>Nur am Mac änderbar.</span>" : (d.archiv_quellen || []).map((q) =>
+        `<button type="button" data-a="archiv-q" data-start="${esc(q.pfad)}" class="${q.art === aq.art ? "primary" : ""}">${{ icloud: "☁", onedrive: "☁", gdrive: "☁", dropbox: "☁", box: "☁", cloud: "☁", lokal: "▤" }[q.art] || "▤"} ${esc(q.name.toUpperCase())} …</button>`).join("")
+        + (d.archiv ? `<button type="button" data-a="archiv-weg">ENTFERNEN</button>` : "")}</div>
+     ${(d.archiv_quellen || []).some((q) => q.art === "onedrive") || MOBIL ? "" : `<p class="vb-hilfe">OneDrive fehlt? OneDrive-App aus dem App Store installieren, anmelden – dann hier neu öffnen.</p>`}`));
   const l = d.lokal;
   html.push(vbZeile("lokal", "Lokales Sprachmodell (Privates bleibt am Mac)",
     l.bereit ? { ok: true, text: "✓ bereit" } : l.laedt ? { warn: true, text: "lädt …" } : { text: "– nicht eingerichtet" },
     `<p class="vb-hilfe">${l.bereit ? "Modelle: " + esc(l.modelle.join(", ")) : "Gesundheit, Finanzen und Zugangsdaten werden dann auf dem Mac beantwortet. Download ca. 7 GB, läuft im Hintergrund."}
       ${l.fortschritt ? "<br>Stand: " + esc(l.fortschritt) : ""}</p>
      ${l.bereit || MOBIL ? "" : `<div class="vb-reihe"><button type="button" data-a="lokal" class="primary" ${l.laedt ? "disabled" : ""}>${l.laedt ? "LÄDT …" : "JETZT EINRICHTEN"}</button></div>`}`));
+  html.push(vbZeile("ki", "KI-Modelle (Cloud): Haupt- und Ausweichmodell", { text: "…" }, `<div data-ki class="vb-hilfe">Lädt …</div>`));
+  html.push(vbZeile("mail", "Mail-Konto (iCloud, Gmail, Outlook, GMX …)", { text: "…" }, `<div data-mailk class="vb-hilfe">Lädt …</div>`));
+  html.push(vbZeile("postregeln", "Ablageregeln für gescannte Briefe", { text: "…" }, `<div data-postregeln class="vb-hilfe">Lädt …</div>`));
+  html.push(vbZeile("grafik", "3D-Grafik (Kern und MOSAIK)", { ok: true, text: { auto: "automatisch", hoch: "immer hoch", sparsam: "sparsam" }[J3D.stufe] },
+    `<p class="vb-hilfe"><b>Automatisch:</b> volle Qualität, in Ruhe 30 Bilder/s; ruckelt es, sinkt die Pixeldichte von selbst.
+      <b>Immer hoch:</b> nie absenken. <b>Sparsam:</b> höchstens 30 Bilder/s und geringere Pixeldichte – schont den Akku des MacBook Air.
+      Ist ein anderes 3D-Fenster (Grundriss, Fahrzeug) offen, läuft der Hintergrund gedrosselt.</p>
+     <div class="vb-reihe">${["auto", "hoch", "sparsam"].map((x) => `<button type="button" data-a="grafik" data-stufe="${x}" class="${J3D.stufe === x ? "primary" : ""}">${{ auto: "AUTOMATISCH", hoch: "IMMER HOCH", sparsam: "SPARSAM" }[x]}</button>`).join("")}</div>
+     <p class="vb-hilfe" data-grafik-info></p>`));
   box.innerHTML = html.join("");
+  j3dInfoZeigen?.(box);
+  kiAufbauen(box).catch(() => {}); mailkAufbauen(box).catch(() => {}); postRegelnAufbauen(box).catch(() => {});
   offen.forEach((id) => { const x = box.querySelector(`details[data-id="${id}"]`); if (x) x.open = true; });
   if (k.elevenlabs.gesetzt) api("/verbindungen/stimmen").then((liste) => {
     const sel = box.querySelector("[data-stimmen]"); if (!sel || !liste.length) return;
@@ -3302,6 +3337,7 @@ $("einst-vb").addEventListener("click", async (e) => {
     } else if (b.dataset.a === "icloud") r = await vbPost("/verbindungen/icloud", { apple_id: f("apple_id"), mail: f("mail"), pw: f("pw") });
     else if (b.dataset.a === "profil") r = await vbPost("/verbindungen/profil", { name: f("name"), anrede: f("anrede"), ort: f("ort") });
     else if (b.dataset.a === "archiv") { melde("Bitte im Fenster „Ordner wählen“ auswählen …"); r = await vbPost("/verbindungen/archiv/waehlen"); }
+    else if (b.dataset.a === "archiv-q") { melde("Bitte im Fenster „Ordner wählen“ den Archiv-Ordner auswählen …"); r = await vbPost("/verbindungen/archiv/waehlen", { start: b.dataset.start }); }
     else if (b.dataset.a === "archiv-weg") r = await vbPost("/verbindungen/archiv/entfernen");
     else if (b.dataset.a === "lokal") r = await vbPost("/verbindungen/lokal");
     melde(r?.text || "✓ Gespeichert", "ok");
@@ -5934,7 +5970,8 @@ async function zuhauseEinstAufbauen() {
   let d; try { d = await fdGet("/zuhause"); } catch (e) { box.innerHTML = "<p class='vb-hilfe'>Nicht verfügbar.</p>"; return; }
   const kb = d.kurzbefehle.map((k) => `<button type="button" class="zh-kb" data-zh="kb" data-a="${esc(k)}">${esc(k)}</button>`).join("");
   const locks = (d.schloesser || []).map((l) => `<div class="einst-zeile"><span><b>${l.abgeschlossen ? "🔒" : "🔓"} ${esc(l.name)}</b>
-      <small class="im-einst-sub">${esc(l.schloss)} · Tür ${esc(l.tuer)}${l.batterie != null ? ` · Batterie ${l.batterie} %` : ""}${l.batterie_kritisch ? " · ⚠ Batterie kritisch" : ""}</small></span>
+      <small class="im-einst-sub">${esc(l.schloss)} · Tür ${esc(l.tuer)}${l.batterie != null ? ` · Batterie ${l.batterie} %${l.laedt ? " (lädt)" : ""}` : ""}${l.batterie_kritisch ? " · ⚠ Batterie kritisch" : l.batterie == null ? " · Batterie ok" : ""}${l.keypad_batterie_kritisch ? " · ⚠ Keypad-Batterie" : ""}${l.tuersensor_batterie_kritisch ? " · ⚠ Türsensor-Batterie" : ""}
+        <br>${l.offline ? "⚠ " : ""}${esc(l.verbindung || "")}${l.stand_alter_min != null ? ` · Stand vor ${l.stand_alter_min < 60 ? l.stand_alter_min + " Min." : l.stand_alter_min < 2880 ? Math.round(l.stand_alter_min / 60) + " Std." : Math.round(l.stand_alter_min / 1440) + " Tagen"}` : ""}</small></span>
       ${l.abgeschlossen ? "" : `<button type="button" data-zh="ab" data-a="${esc(l.name)}">ABSCHLIESSEN</button>`}</div>`).join("");
   box.innerHTML = `
     <p class="vb-hilfe"><b>HomeKit (Lichter, Lautsprecher, Szenen):</b> In der App „Kurzbefehle“ je Aktion einen Kurzbefehl mit „Steuere Zuhause“ anlegen,
@@ -5943,6 +5980,7 @@ async function zuhauseEinstAufbauen() {
     <div class="zh-kbs">${kb || "<span class='vb-hilfe'>Noch keine JARVIS-Kurzbefehle gefunden.</span>"}</div>
     ${d.gesperrte_kurzbefehle?.length ? `<p class="vb-hilfe">Gesperrt (Sicherheit): ${d.gesperrte_kurzbefehle.map(esc).join(", ")}</p>` : ""}
     <p class="vb-hilfe"><b>NUKI:</b> JARVIS liest den Status und darf abschließen – aufschließen und öffnen kann er nicht. Um 21:45 meldet er eine offene Tür.
+      Nach dem Abschließen prüft er bis zu 30 s, ob das Schloss es bestätigt. Der Status kommt vom NUKI-Server und ist so alt wie die letzte Meldung des Schlosses.
       ${d.nuki ? "" : "Token oben unter „NUKI Smart Lock“ eintragen."}${d.nuki_fehler ? " ⚠ " + esc(d.nuki_fehler) : ""}</p>
     ${locks}<div class="vb-status"></div>`;
 }
@@ -5952,7 +5990,8 @@ document.addEventListener("click", async (ev) => {
   try {
     const r = await vbPost(b.dataset.zh === "kb" ? "/zuhause/steuern" : "/zuhause/abschliessen", { aktion: b.dataset.a, schloss: b.dataset.a });
     if (st) { st.textContent = "✓ " + (r.ausgefuehrt || `${r.schloss}: ${r.status}`); st.className = "vb-status ok"; }
-    if (b.dataset.zh === "ab") setTimeout(zuhauseEinstAufbauen, 4000);
+    if (st && r.bestaetigt === false) st.className = "vb-status fehler";
+    if (b.dataset.zh === "ab") setTimeout(zuhauseEinstAufbauen, 1500);
   } catch (err) { if (st) { st.textContent = err.message; st.className = "vb-status fehler"; } }
 });
 
@@ -6090,7 +6129,7 @@ vbAufbauen = async function (...a) { await _vbAufbauenZN(...a); zuhauseEinstAufb
   l.addEventListener("click", (e) => {
     const b = e.target.closest("[data-sl]"); if (!b) return;
     sfx?.("tick");
-    if (b.dataset.sl === "fahrzeug") window.teslaAnzeigen?.(); else imLaden();
+    if (b.dataset.sl === "fahrzeug") window.teslaAnzeigen?.(); else if (window.PF_PROFI_AKTIV) pfLaden(); else imLaden();
   });
 })();
 
@@ -6104,7 +6143,7 @@ const AV_ZUSTAND = { idle: "ruhe", listen: "zuhoeren", think: "denken", tool: "d
   error: "warnung", off: "ruhe" };
 function avatarLib() {
   if (window.JarvisAvatar) return Promise.resolve();
-  if (!AV.laden) AV.laden = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "mosaik.bundle.js?v=20261029h";
+  if (!AV.laden) AV.laden = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "mosaik.bundle.js?v=20261104a";
     s.onload = res; s.onerror = () => { AV.laden = null; rej(new Error("Mosaik-Modul fehlt")); }; document.head.appendChild(s); });
   return AV.laden;
 }
@@ -6124,6 +6163,7 @@ async function avatarSetzen(person) {
     if (AV.person !== person) return;
     AV.inst = window.JarvisAvatar.erzeugen(box, { qualitaet: window.MOSAIK_QUALITAET || (MOBIL ? "niedrig" : "hoch") });
     AV.inst.zustand(AV_ZUSTAND[coreState] || "ruhe");
+    j3dAnwenden?.();
     if (window.JARVIS_BOOT_LAEUFT && document.querySelector(".boot")) AV.inst.warten?.();
     document.body.dataset.avatar = person; kernFuerAvatar();
   } catch (e) {
@@ -6217,7 +6257,7 @@ function pjDetail(p) {
       <i class="pj-rel" style="--r:${f.relevanz / 10}" title="Relevanz ${f.relevanz}/10"></i>
       <div><a href="#" data-pj="fund" data-f="${esc(f.id)}">${esc(f.titel)}</a>
         <small>${esc(f.quelle)} · ${pjZeit(f.datum || f.gefunden)} · ${esc(f.beobachtung)}</small>${f.satz ? `<p>${esc(f.satz)}</p>` : ""}${f.stand ? `<p class="pj-stand">${esc(f.stand)}</p>` : ""}</div></li>`).join("");
-  const vg = p.vorgaenge.map((x) => `<li><b>${esc(x.titel)}</b><small>${esc(x.status)}${x.frist && x.frist !== "–" ? ` · Frist ${esc(x.frist)}` : ""}${x.naechster_schritt && x.naechster_schritt !== "–" ? ` · nächster Schritt: ${esc(x.naechster_schritt)}` : ""}</small></li>`).join("");
+  const vg = p.vorgaenge.map((x) => `<li class="vg-zeile">${vgKnoepfe(x.titel)}<b>${esc(x.titel)}</b><small>${esc(x.status)}${x.frist && x.frist !== "–" ? ` · Frist ${esc(x.frist)}` : ""}${x.naechster_schritt && x.naechster_schritt !== "–" ? ` · nächster Schritt: ${esc(x.naechster_schritt)}` : ""}</small></li>`).join("");
   const fr = p.fristen.map((x) => `<li><b>${esc(x.titel)}</b><small>${esc(x.datum.split("-").reverse().join("."))} · ${x.in_tagen < 0 ? `${-x.in_tagen} Tage überfällig` : `in ${x.in_tagen} Tagen`}</small></li>`).join("");
   return `<div class="pj-kopf"><h3>${esc(p.name)}</h3><select data-pj="status">${["aktiv", "pausiert", "abgeschlossen"].map((s) => `<option ${s === p.status ? "selected" : ""}>${s}</option>`).join("")}</select>
       <button type="button" data-pj="lauf" title="Alle Beobachtungen jetzt ausführen">⟳ JETZT RECHERCHIEREN</button></div>
@@ -6503,3 +6543,832 @@ function frage({ titel = "BESTÄTIGEN", text = "", ok = "OK", abbrechen = "ABBRE
     setTimeout(() => (inp || el.querySelector('[data-f="ja"]'))?.focus(), 30);
   });
 }
+
+
+// =====================================================================
+//  3D-FUNDAMENT (0.28): eine Stelle steuert Bildrate und Qualität aller three.js-Szenen.
+//  Stufe (automatisch / immer hoch / sparsam) gilt für Kern und MOSAIK; Drosselung, wenn JARVIS im Hintergrund ruht
+//  (Fenster ohne Fokus → nur in Ruhe 20 Bilder/s) oder ein anderes 3D-Fenster vorne ist (→ 24 Bilder/s).
+// =====================================================================
+const J3D = { stufe: "auto", drossel: 0 };
+try { J3D.stufe = ["auto", "hoch", "sparsam"].includes(localStorage.getItem("jarvis-3d-stufe")) ? localStorage.getItem("jarvis-3d-stufe") : "auto"; } catch (e) {}
+function j3dAnwenden() {
+  try { window.jarvis3d?.stufe?.(J3D.stufe); window.jarvis3d?.drossel?.(J3D.drossel); } catch (e) {}
+  try { AV.inst?.stufe?.(J3D.stufe); AV.inst?.drossel?.(J3D.drossel); } catch (e) {}
+}
+function j3dFremdeGrafik() {
+  // Eine andere große Zeichenfläche ist sichtbar (Grundriss, Fahrzeug …) – Kern, MOSAIK und Ablauf-Strecke zählen nicht
+  for (const c of document.querySelectorAll("canvas")) {
+    if (c.id === "core3d" || c.id === "core" || c.classList.contains("mosaik-cv") || false) continue;
+    const r = c.getBoundingClientRect();
+    if (r.width * r.height > 90000 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth && getComputedStyle(c).visibility !== "hidden") return true;
+  }
+  return false;
+}
+function j3dPruefen() {
+  const n = j3dFremdeGrafik() ? 2 : document.hasFocus() ? 0 : 1;
+  if (n !== J3D.drossel) { J3D.drossel = n; j3dAnwenden(); }
+}
+setInterval(j3dPruefen, 2000);
+addEventListener("focus", j3dPruefen); addEventListener("blur", () => setTimeout(j3dPruefen, 50));
+addEventListener("jarvis3d-ready", j3dAnwenden);
+j3dAnwenden();
+function j3dInfoZeigen(box) {
+  const el = box.querySelector("[data-grafik-info]"); if (!el) return;
+  const k = window.jarvis3d?.info?.() || {}, m = AV.inst?.info?.() || null;
+  const teile = [];
+  if (m) teile.push(`MOSAIK ${m.fps || "–"} Bilder/s (Kappe ${m.kappe}), Pixeldichte ${String(m.pixeldichte).replace(".", ",")}`);
+  else if (k.fps !== undefined) teile.push(`Kern ${k.fps ?? "–"} Bilder/s (Kappe ${k.kappe ?? "–"}), Qualität ${k.quality}`);
+  teile.push(J3D.drossel === 2 ? "gedrosselt: anderes 3D-Fenster offen" : J3D.drossel === 1 ? "gedrosselt: JARVIS im Hintergrund" : "nicht gedrosselt");
+  el.textContent = "Jetzt: " + teile.join(" · ");
+}
+$("einst-vb").addEventListener("click", (e) => {
+  const b = e.target.closest('button[data-a="grafik"]'); if (!b) return;
+  e.stopPropagation(); e.preventDefault();
+  J3D.stufe = b.dataset.stufe;
+  try { localStorage.setItem("jarvis-3d-stufe", J3D.stufe); } catch (x) {}
+  j3dAnwenden(); sfx?.("ok");
+  const zeile = b.closest(".vb-zeile");
+  zeile.querySelectorAll('button[data-a="grafik"]').forEach((x) => x.classList.toggle("primary", x === b));
+  const em = zeile.querySelector("summary em"); if (em) em.textContent = { auto: "automatisch", hoch: "immer hoch", sparsam: "sparsam" }[J3D.stufe];
+  setTimeout(() => j3dInfoZeigen(zeile), 3500);
+}, true);
+
+// =====================================================================
+//  KI-MODELLE: Claude, OpenAI, Gemini, Mistral oder ein eigener OpenAI-kompatibler Dienst als Haupt- und
+//  Ausweichmodell. Schlüssel nur im Schlüsselbund; der Datenschutz-Schleier gilt für jeden Anbieter.
+// =====================================================================
+const KI = { d: null };
+const KI_STUFE = { haiku: "Schnell", sonnet: "Standard", opus: "Stark" };
+async function kiAufbauen(box) {
+  const ziel = box.querySelector("[data-ki]"); if (!ziel) return;
+  const d = KI.d = await api("/verbindungen/ki");
+  const zeile = ziel.closest(".vb-zeile");
+  const em = zeile.querySelector("summary em");
+  em.textContent = d.anbieter[d.haupt].name + (d.ausweich ? " · Ausweich " + d.anbieter[d.ausweich].name : ""); em.className = "ok";
+  const opt = (sel, leer) => (leer ? `<option value="">– keins –</option>` : "") + Object.entries(d.anbieter).map(([k, a]) =>
+    `<option value="${k}" ${k === sel ? "selected" : ""} ${a.gesetzt ? "" : "disabled"}>${esc(a.name)}${a.gesetzt ? "" : " (kein Schlüssel)"}</option>`).join("");
+  const anb = Object.entries(d.anbieter).filter(([k]) => k !== "claude").map(([k, a]) => `
+    <details class="ki-anb" data-ki-art="${k}"><summary>${esc(a.name)} <em class="${a.gesetzt ? "ok" : ""}">${a.gesetzt ? "✓ " + esc(a.maske) : "– kein Schlüssel"}</em></summary>
+      ${a.hinweis ? `<p class="vb-hilfe">${esc(a.hinweis)}</p>` : ""}
+      ${a.konsole ? `<p class="vb-hilfe"><a data-link="${esc(a.konsole)}">Schlüssel beim Anbieter holen ↗</a></p>` : ""}
+      ${k === "eigen" ? `<div class="vb-feld"><label>Adresse des Dienstes</label><input type="text" data-ki-url value="${esc(d.url_eigen || "")}" placeholder="https://openrouter.ai/api/v1"></div>` : ""}
+      <div class="vb-reihe"><input type="password" autocomplete="off" data-ki-wert placeholder="${a.gesetzt ? "neuen Schlüssel einfügen" : "API-Schlüssel einfügen"}">
+        <button type="button" data-a="ki-schluessel" class="primary">PRÜFEN &amp; SPEICHERN</button>${a.gesetzt ? `<button type="button" data-a="ki-weg">ENTFERNEN</button>` : ""}</div>
+      ${a.gesetzt ? `<div class="ki-stufen">${d.stufen.map((st) => `<div class="vb-feld"><label>${KI_STUFE[st]}</label>
+        <input type="text" list="ki-liste-${k}" data-ki-stufe="${st}" value="${esc(a.modelle[st] || "")}"></div>`).join("")}
+        <datalist id="ki-liste-${k}"></datalist></div>` : ""}
+      <div class="vb-status" data-ki-st></div>
+    </details>`).join("");
+  ziel.className = "";
+  ziel.innerHTML = `<p class="vb-hilfe">JARVIS nutzt das <b>Hauptmodell</b> für alles, was nicht lokal bleibt. Fällt es aus (Störung,
+      Schlüssel ungültig, Limit), springt das <b>Ausweichmodell</b> ein – mitten im Gespräch, ohne Verlust. Der Datenschutz-Schleier
+      gilt für jeden Anbieter. Websuche, Prompt-Cache und das direkte Lesen von PDFs gibt es nur mit Claude (bei anderen liest
+      JARVIS PDFs vorher lokal aus).${d.zuletzt ? ` Zuletzt geantwortet: <b>${esc(d.zuletzt)}</b>.` : ""}</p>
+    <div class="vb-feld"><label>Hauptmodell</label><select data-ki-haupt>${opt(d.haupt)}</select></div>
+    <div class="vb-feld"><label>Ausweichmodell</label><select data-ki-ausweich>${opt(d.ausweich, true)}</select></div>
+    <div class="vb-reihe"><button type="button" data-a="ki-waehlen" class="primary">ÜBERNEHMEN</button></div>
+    <div class="vb-status" data-ki-st0></div>
+    <p class="vb-hilfe" style="margin-top:12px"><b>Anbieter einrichten</b> (Claude-Schlüssel steht oben unter „Claude“):</p>${anb}`;
+  ziel.querySelectorAll(".ki-anb").forEach((det) => det.addEventListener("toggle", () => {
+    if (!det.open || det.dataset.geladen) return; det.dataset.geladen = "1";
+    const k = det.dataset.kiArt, dl = det.querySelector("datalist"); if (!dl) return;
+    api(`/verbindungen/ki/modelle/${k}`).then((l) => { dl.innerHTML = (l || []).map((m) => `<option value="${esc(m)}">`).join(""); }).catch(() => {});
+  }));
+}
+function kiModelleSammeln(box) {
+  const out = {};
+  box.querySelectorAll(".ki-anb").forEach((det) => {
+    const f = det.querySelectorAll("[data-ki-stufe]"); if (!f.length) return;
+    out[det.dataset.kiArt] = Object.fromEntries([...f].map((i) => [i.dataset.kiStufe, i.value.trim()]));
+  });
+  return out;
+}
+$("einst-vb").addEventListener("click", async (e) => {
+  const b = e.target.closest('button[data-a^="ki-"]'); if (!b) return;
+  e.stopPropagation(); e.preventDefault();
+  const box = b.closest("[data-ki]") || $("einst-vb"), det = b.closest(".ki-anb");
+  const st = det ? det.querySelector("[data-ki-st]") : box.querySelector("[data-ki-st0]");
+  const melde = (t, art = "") => { if (st) { st.textContent = t; st.className = "vb-status " + art; } };
+  if (b.dataset.a === "ki-weg" && !b.dataset.sicher) { b.dataset.sicher = "1"; b.textContent = "WIRKLICH?"; return; }
+  b.disabled = true; melde("Einen Moment …");
+  try {
+    let r;
+    if (b.dataset.a === "ki-schluessel") {
+      const wert = det.querySelector("[data-ki-wert]").value.trim();
+      r = await vbPost(`/verbindungen/ki/schluessel/${det.dataset.kiArt}`, { wert, url: det.querySelector("[data-ki-url]")?.value || "" });
+    } else if (b.dataset.a === "ki-weg") {
+      r = await vbPost(`/verbindungen/ki/schluessel/${det.dataset.kiArt}`, { loeschen: true });
+    } else {
+      r = await vbPost("/verbindungen/ki", { haupt: box.querySelector("[data-ki-haupt]").value,
+        ausweich: box.querySelector("[data-ki-ausweich]").value, modelle: kiModelleSammeln(box) });
+    }
+    melde(r.text || "✓", "ok"); sfx?.("ok");
+    setTimeout(() => kiAufbauen($("einst-vb")).catch(() => {}), 1500);
+  } catch (x) { melde("✕ " + x.message, "fehler"); b.disabled = false; }
+}, true);
+
+// =====================================================================
+//  MAIL-KONTO: iCloud (Standard) oder Gmail, Outlook/Microsoft 365, GMX, WEB.DE, T-Online, beliebiger IMAP-Server.
+//  Passwörter/Token nur im Schlüsselbund; vor dem Speichern werden Lesen (IMAP) und Senden (SMTP) geprüft.
+// =====================================================================
+const MKO = { d: null, timer: null };
+async function mailkAufbauen(box) {
+  const ziel = box.querySelector("[data-mailk]"); if (!ziel) return;
+  const d = MKO.d = await api("/verbindungen/mail");
+  const em = ziel.closest(".vb-zeile").querySelector("summary em");
+  em.textContent = (d.vorlagen[d.anbieter]?.name || d.anbieter) + (d.adresse ? " · " + d.adresse : ""); em.className = d.gesetzt ? "ok" : "";
+  ziel.className = "";
+  ziel.innerHTML = `<p class="vb-hilfe">Ein Mail-Konto für alles: Posteingang, Entwürfe, Senden, Mailwache, Code-Abruf (PKV), Schreibstil.
+      Der Kalender bleibt bei iCloud. Nach dem Wechsel startet JARVIS neu.</p>
+    <div class="vb-feld"><label>Anbieter</label><select data-mk-art>${Object.entries(d.vorlagen).map(([k, v]) =>
+      `<option value="${k}" ${k === d.anbieter ? "selected" : ""}>${esc(v.name)}</option>`).join("")}</select></div>
+    <div data-mk-form></div><div class="vb-status" data-mk-st></div>`;
+  const sel = ziel.querySelector("[data-mk-art]");
+  const form = () => {
+    const art = sel.value, v = d.vorlagen[art], gleich = art === d.anbieter, f = ziel.querySelector("[data-mk-form]");
+    if (art === "icloud") {
+      f.innerHTML = `<p class="vb-hilfe">${esc(v.hilfe)}</p>${d.anbieter !== "icloud" ? `<div class="vb-reihe"><button type="button" data-a="mk-icloud" class="primary">WIEDER ÜBER ICLOUD</button></div>` : ""}`;
+      return;
+    }
+    f.innerHTML = `<p class="vb-hilfe">${esc(v.hilfe)}${v.link ? ` <a data-link="${esc(v.link)}">Seite öffnen ↗</a>` : ""}</p>
+      <div class="vb-feld"><label>Mailadresse</label><input type="email" data-mf="adresse" value="${esc(gleich ? d.adresse : "")}" placeholder="name@beispiel.de"></div>
+      ${art === "imap" ? `<div class="vb-feld"><label>Benutzername (falls anders als Adresse)</label><input type="text" data-mf="benutzer" value="${esc(gleich && d.benutzer !== d.adresse ? d.benutzer : "")}"></div>
+        <div class="vb-feld"><label>IMAP-Server · Port (SSL)</label><div class="vb-reihe"><input type="text" data-mf="imap_host" value="${esc(gleich ? d.imap_host : "")}" placeholder="imap.beispiel.de"><input type="number" data-mf="imap_port" value="${gleich ? d.imap_port : 993}" style="max-width:90px;min-width:70px"></div></div>
+        <div class="vb-feld"><label>SMTP-Server · Port</label><div class="vb-reihe"><input type="text" data-mf="smtp_host" value="${esc(gleich ? d.smtp_host : "")}" placeholder="smtp.beispiel.de"><input type="number" data-mf="smtp_port" value="${gleich ? d.smtp_port : 587}" style="max-width:90px;min-width:70px">
+          <label style="display:flex;gap:6px;align-items:center;font:12px var(--sans);letter-spacing:0;text-transform:none"><input type="checkbox" data-mf="smtp_ssl" ${gleich && d.smtp_ssl ? "checked" : ""} style="min-width:0;width:16px;height:16px;flex:none;margin:0"> SSL statt STARTTLS</label></div></div>` : ""}
+      ${v.oauth ? `<div class="vb-feld"><label>Anwendungs-ID (Client-ID)</label><input type="text" data-mf="client_id" value="${esc(d.client_id || "")}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+          <div class="vb-reihe"><button type="button" data-a="mk-outlook" class="primary">BEI MICROSOFT ANMELDEN</button></div><div data-mk-code></div>`
+        : `<div class="vb-feld"><label>${art === "gmail" ? "App-Passwort" : "Passwort"}</label><input type="password" data-mf="passwort" autocomplete="off" placeholder="${gleich && d.gesetzt ? "gespeichert – nur zum Ändern eingeben" : ""}"></div>
+          <div class="vb-reihe"><button type="button" data-a="mk-speichern" class="primary">PRÜFEN &amp; SPEICHERN</button></div>`}`;
+  };
+  sel.addEventListener("change", form); form();
+}
+function mkCodeZeigen(ziel, r) {
+  const c = ziel.querySelector("[data-mk-code]"); if (!c) return;
+  c.innerHTML = `<p class="vb-hilfe" style="margin-top:10px">1. <a data-link="${esc(r.url)}">${esc(r.url)} öffnen ↗</a><br>2. Code eingeben:
+    <b style="font:600 16px var(--mono);letter-spacing:.2em;color:var(--accent)">${esc(r.code)}</b><br>3. Mit deinem Microsoft-Konto anmelden und zustimmen.</p>`;
+}
+$("einst-vb").addEventListener("click", async (e) => {
+  const b = e.target.closest('button[data-a^="mk-"]'); if (!b) return;
+  e.stopPropagation(); e.preventDefault();
+  const ziel = b.closest("[data-mailk]"), st = ziel.querySelector("[data-mk-st]");
+  const melde = (t, art = "") => { st.textContent = t; st.className = "vb-status " + art; };
+  const f = Object.fromEntries([...ziel.querySelectorAll("[data-mf]")].map((i) => [i.dataset.mf, i.type === "checkbox" ? i.checked : i.value]));
+  f.anbieter = ziel.querySelector("[data-mk-art]").value;
+  b.disabled = true; melde(b.dataset.a === "mk-speichern" ? "Prüfe Lesen und Senden …" : "Einen Moment …");
+  try {
+    if (b.dataset.a === "mk-icloud") { const r = await vbPost("/verbindungen/mail/icloud", {}); melde(r.text, "ok"); return; }
+    if (b.dataset.a === "mk-speichern") { const r = await vbPost("/verbindungen/mail/speichern", f); melde(r.text, "ok"); sfx?.("ok"); return; }
+    const r = await vbPost("/verbindungen/mail/outlook-start", f);
+    mkCodeZeigen(ziel, r); melde("Warte auf deine Anmeldung bei Microsoft …");
+    clearInterval(MKO.timer);
+    MKO.timer = setInterval(async () => {
+      const s = await api("/verbindungen/mail/outlook-stand").catch(() => null); if (!s) return;
+      if (s.status === "ok") { clearInterval(MKO.timer); melde(s.text, "ok"); sfx?.("ok"); }
+      else if (s.status === "fehler") { clearInterval(MKO.timer); melde("✕ " + s.text, "fehler"); b.disabled = false; }
+    }, 3000);
+  } catch (x) { melde("✕ " + x.message, "fehler"); b.disabled = false; }
+}, true);
+
+// =====================================================================
+//  HESTIA PROFI-DASHBOARD: Portfolio aller Mietobjekte – Einheiten (vermietet/vakant), Soll-/Ist-Miete, Cashflow
+//  operativ und nach Steuern je Objekt und Einheit, Faktor, Renditen, Beleihung, Mieterhöhungs-Zeitplan,
+//  Hochrechnung Wert/Restschuld. Einschalten: Einstellungen → Immobilien → Profi-Dashboard.
+// =====================================================================
+const PF = { el: null, d: null, wahl: null, cf: "ns", tip: null };
+const PF_STATUS = { vermietet: ["VERMIETET", "gut", "●"], vakant: ["VAKANT", "krit", "○"], renovierung: ["RENOVIERUNG", "warn", "◐"], eigennutzung: ["EIGENNUTZUNG", "neutral", "◇"] };
+const PF_ERH = { jetzt: ["JETZT MÖGLICH", "gut"], bald: ["IN ≤ 3 MONATEN", "warn"], spaeter: ["SPÄTER", "info"] };
+const PF_ART = { vergleichsmiete: "Vergleichsmiete", staffelmiete: "Staffel", indexmiete: "Index" };
+const pfVz = (v) => v == null ? "–" : (v > 0 ? "+" : "") + imEuro(v);
+const pfPfeil = (v) => v == null ? "" : v >= 0 ? `<i class="pf-pf gut">▲</i>` : `<i class="pf-pf krit">▼</i>`;
+async function pfLaden(wahl) {
+  try { const r = await fetch("/immobilien/portfolio", { headers: imH() }); const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.status); pfZeigen(j, wahl); }
+  catch (e) { toast("Portfolio: " + e.message); }
+}
+function pfZu() { PF.ro?.disconnect(); if (!PF.el) return; const el = PF.el; PF.el = null; el.classList.remove("an"); setTimeout(() => el.remove(), 500); PF.tip?.remove(); PF.tip = null; }
+function pfKachel(titel, inhalt, extra = "", cls = "") { return `<section class="ts-kachel pf-kachel ${cls}"><h5>${titel}${extra}</h5>${inhalt}</section>`; }
+function pfKpis(s) {
+  const t = (l, v, sub = "", tip = "") => `<div class="pf-kpi" data-tip="${esc(tip)}"><span>${l}</span><b>${v}</b>${sub ? `<small>${sub}</small>` : ""}</div>`;
+  return `<div class="pf-kpis">
+    ${t("OBJEKTE · EINHEITEN", `${s.objekte} · ${s.einheiten}`, `${s.vermietet} vermietet · ${s.vakant + s.renovierung} leer${s.eigennutzung ? " · " + s.eigennutzung + " selbst" : ""}`)}
+    ${t("KALTMIETE IST / MONAT", imEuro(s.ist_kalt), `Soll ${imEuro(s.soll_kalt)}${s.leerstand_euro > 0 ? " · −" + imEuro(s.leerstand_euro) + " Leerstand" : ""}`, "Ist: vermietete Einheiten. Soll: inkl. Marktmiete der leeren Einheiten.")}
+    ${t("LEERSTAND", imZahl(s.leerstand, 1, " %"), "nach Fläche")}
+    ${t("CASHFLOW OPERATIV", pfPfeil(s.cf_op) + pfVz(s.cf_op), "je Monat · vor Steuern", "Kaltmiete − nicht umlagefähige Kosten (inkl. Rücklage, Mietausfall) − Zins − Tilgung")}
+    ${t("CASHFLOW NACH STEUERN", pfPfeil(s.cf_ns) + pfVz(s.cf_ns), s.break_even ? `≥ 0 ab ${s.break_even}` : "je Monat", "Operativ − Steuer auf (Kaltmiete − Kosten − Zinsen − AfA) × Grenzsteuersatz")}
+    ${t("Ø FAKTOR · BRUTTO", `${imZahl(s.faktor, 1, "×")} · ${imZahl(s.brutto, 2, " %")}`, "Kaufpreis / Jahreskaltmiete")}
+    ${t("WERT − RESTSCHULD", imEuro(s.netto_vermoegen), `Wert ${imEuro(s.wert)} · Schuld ${imEuro(s.restschuld)}`)}
+    ${t("BELEIHUNG · DSCR", `${imZahl(s.beleihung, 1, " %")} · ${imZahl(s.dscr, 2)}`, "Restschuld/Wert · Jahresmiete/Kapitaldienst")}
+    ${t("VERMÖGENSZUWACHS P. A.", imEuro(s.zuwachs_mit_wert), `ohne Wertsteigerung ${imEuro(s.zuwachs)}`, "Tilgung + Cashflow nach Steuern (+ Wertsteigerung)")}
+  </div>`;
+}
+function pfHinweise(h) {
+  if (!h.length) return `<p class="ts-hinweis">Kein Handlungsbedarf.</p>`;
+  const ic = { kritisch: ["●", "krit"], warnung: ["▲", "warn"], gut: ["✓", "gut"] };
+  return `<ul class="pf-hin">${h.slice(0, 14).map((x) => `<li><i class="${ic[x.stufe][1]}">${ic[x.stufe][0]}</i><span><b>${esc(x.objekt)}</b> · ${esc(x.text)}</span>
+    <button type="button" data-pf="wahl" data-id="${esc(x.id)}">›</button></li>`).join("")}</ul>`;
+}
+function pfBand(o) {
+  return `<div class="pf-band" role="img" aria-label="${o.kennzahlen.vermietet} von ${o.kennzahlen.einheiten_anzahl} Einheiten vermietet">${o.einheiten.map((e) => {
+    const [l, c] = PF_STATUS[e.status];
+    return `<i class="${c}" style="flex:${Math.max(1, e.flaeche || 1)}" data-tip="${esc(e.name)} · ${l}${e.flaeche ? " · " + imZahl(e.flaeche, 0, " m²") : ""}${e.miete?.kalt && e.status === "vermietet" ? " · " + imEuro(e.miete.kalt) + " kalt" : ""}"></i>`;
+  }).join("")}</div>`;
+}
+function pfObjekte(obs) {
+  const z = (l, v, tip = "") => `<div data-tip="${esc(tip)}"><span>${l}</span><b>${v}</b></div>`;
+  return `<div class="pf-objekte">${obs.map((o) => { const k = o.kennzahlen; return `
+    <article class="pf-obj ${PF.wahl === o.id ? "an" : ""}" data-pf="wahl" data-id="${esc(o.id)}">
+      <header><b>${esc(o.name)}</b><small>${esc([o.art, k.flaeche ? imZahl(k.flaeche, 0, " m²") : "", o.baujahr].filter(Boolean).join(" · "))}</small></header>
+      ${pfBand(o)}
+      <p class="pf-belegt">${k.vermietet}/${k.einheiten_anzahl} vermietet${k.vakant ? ` · <em class="krit">${k.vakant} vakant</em>` : ""}${k.renovierung ? ` · <em class="warn">${k.renovierung} in Renovierung</em>` : ""}</p>
+      <div class="pf-mini">
+        ${z("KALT IST/SOLL", `${imEuro(k.ist_kalt)} <small>/ ${imEuro(k.soll_kalt)}</small>`)}${z("FAKTOR", imZahl(k.faktor, 1, "×"), "Kaufpreis / Jahreskaltmiete")}
+        ${z("BRUTTO · NETTO", `${imZahl(k.brutto, 1, " %")} · ${imZahl(k.netto, 1, " %")}`, "Netto: (Jahreskalt − nicht umlagef. Kosten) / Gesamtinvestition")}
+        ${z("CF OPERATIV", pfPfeil(k.cf_op) + pfVz(k.cf_op))}${z("CF N. STEUERN", pfPfeil(k.cf_ns) + pfVz(k.cf_ns))}
+        ${z("BELEIHUNG · DSCR", `${imZahl(k.beleihung, 0, " %")} · ${imZahl(k.dscr, 2)}`)}
+        ${z("ZINS Ø · VOLLTILGUNG", `${imZahl(k.zins_gewichtet, 2, " %")} · ${k.volltilgung || "–"}`)}${z("CF ≥ 0 AB", k.break_even || "–", "erstes Jahr mit Cashflow nach Steuern ≥ 0 (Hochrechnung)")}
+      </div>
+      <footer><button type="button" data-pf="editor" data-id="${esc(o.id)}">✎ EINHEITEN &amp; ANNAHMEN</button><button type="button" data-pf="objekt" data-id="${esc(o.id)}">OBJEKT ›</button></footer>
+    </article>`; }).join("")}</div>`;
+}
+function pfCashflow(obs, W = 520) {
+  const key = PF.cf === "ns" ? "cf_ns" : "cf_op", werte = obs.map((o) => o.kennzahlen[key] || 0);
+  const L = Math.min(170, W * 0.34), R = 80, plot = W - L - R, H = 30;
+  const neg = Math.max(0, -Math.min(0, ...werte)), pos = Math.max(0, ...werte), summe = Math.max(1, neg + pos);
+  const mitte = L + neg / summe * plot;
+  const zeilen = obs.map((o, i) => {
+    const v = werte[i], w = Math.max(2, Math.abs(v) / summe * plot), x = v >= 0 ? mitte : mitte - w, y = i * H + 6;
+    return `<g class="pf-hit" data-tip="${esc(o.name)}: ${pfVz(v)} je Monat (${PF.cf === "ns" ? "nach Steuern" : "operativ"})">
+      <rect x="0" y="${y - 4}" width="${W}" height="${H}" fill="transparent"/>
+      <text x="${L - 10}" y="${y + 13}" text-anchor="end" class="pf-t">${esc(o.name.length > 22 ? o.name.slice(0, 21) + "…" : o.name)}</text>
+      <rect x="${x}" y="${y + 2}" width="${w}" height="16" rx="3" class="${v >= 0 ? "pf-pos" : "pf-neg"}"/>
+      <text x="${v >= 0 ? x + w + 6 : mitte + 6}" y="${y + 14}" class="pf-t pf-wert">${pfVz(v)}</text></g>`;
+  }).join("");
+  const h = obs.length * H + 12;
+  return `<div class="pf-schalter"><button type="button" data-pf="cf" data-art="op" class="${PF.cf === "op" ? "an" : ""}">OPERATIV</button><button type="button" data-pf="cf" data-art="ns" class="${PF.cf === "ns" ? "an" : ""}">NACH STEUERN</button></div>
+    <svg viewBox="0 0 ${W} ${h}" class="pf-svg" role="img" aria-label="Cashflow je Objekt"><line x1="${mitte}" x2="${mitte}" y1="0" y2="${h}" class="pf-null"/>${zeilen}</svg>
+    <p class="ts-hinweis">Monatlich, je Objekt. ▲ Überschuss · ▼ Zuschuss.</p>`;
+}
+function pfZeitplan(obs, W = 760) {
+  const heute = new Date(); heute.setDate(1);
+  const start = new Date(heute); start.setMonth(start.getMonth() - 1);
+  const ende = new Date(heute); ende.setMonth(ende.getMonth() + 25);
+  const L = W < 600 ? W * 0.36 : Math.min(230, W * 0.3), R = Math.min(170, W * 0.25), H = 26, span = ende - start, xd = (d) => L + Math.max(0, Math.min(1, (d - start) / span)) * (W - L - R);
+  const rows = [];
+  obs.forEach((o) => o.einheiten.forEach((e) => rows.push({ o, e })));
+  const ticks = [];
+  for (let m = 0; m <= 25; m += W < 600 ? 6 : 3) { const d = new Date(start); d.setMonth(d.getMonth() + m + 1); ticks.push(d); }
+  const h = rows.length * H + 28;
+  const zeilen = rows.map(({ o, e }, i) => {
+    const y = 24 + i * H, er = e.erhoehung || {}, d = er.ab ? new Date(er.ab) : null;
+    const kurz = W < 600 ? 8 : 20, name = e.virtuell ? (o.name.length > kurz + 8 ? o.name.slice(0, kurz + 7) + "…" : o.name) : `${o.name.length > kurz ? o.name.slice(0, kurz - 1) + "…" : o.name} · ${e.name}`;
+    let mark = "", rechts = "";
+    if (e.status !== "vermietet") { const [l, c] = PF_STATUS[e.status]; rechts = `<tspan class="pf-${c}">${PF_STATUS[e.status][2]}</tspan> ${l}`; }
+    else if (!d) rechts = er.text ? esc(W < 600 ? "–" : er.text) : "–";
+    else {
+      const [l, c] = PF_ERH[er.stand] || ["", "info"], x = xd(d);
+      const an = er.ankuendigen_ab ? xd(new Date(er.ankuendigen_ab)) : null;
+      mark = `${an != null && an < x ? `<line x1="${an}" x2="${x}" y1="${y}" y2="${y}" class="pf-vorlauf"/>` : ""}<circle cx="${x}" cy="${y}" r="6" class="pf-${c}"/>`;
+      rechts = `${er.stand === "jetzt" ? "jetzt" : (W < 600 ? "" : "ab ") + imDatum(er.ab)}${er.potenzial && W >= 600 ? ` · +${imEuro(er.potenzial)}` : ""}`;
+    }
+    const tip = `${o.name} · ${e.name}${e.mieter?.mietart && e.status === "vermietet" ? " · " + PF_ART[e.mieter.mietart] : ""}${er.ab ? " · wirksam ab " + imDatum(er.ab) : ""}${er.ankuendigen_ab ? " · Verlangen ab " + imDatum(er.ankuendigen_ab) : ""}${er.max_kalt ? " · bis " + imEuro(er.max_kalt) + (er.bis_marktmiete ? " (Marktmiete)" : er.art === "vergleichsmiete" ? " (Kappungsgrenze)" : "") : ""}`;
+    return `<g class="pf-hit" data-tip="${esc(tip)}"><rect x="0" y="${y - H / 2}" width="${W}" height="${H}" fill="transparent"/>
+      <text x="${L - 10}" y="${y + 4}" text-anchor="end" class="pf-t">${esc(name)}</text>
+      <line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" class="pf-spur"/>${mark}
+      <text x="${W - R + 10}" y="${y + 4}" class="pf-t pf-wert">${rechts}</text></g>`;
+  }).join("");
+  const xh = xd(new Date());
+  return `<svg viewBox="0 0 ${W} ${h}" class="pf-svg" role="img" aria-label="Mieterhöhungen: frühestmögliche Termine je Einheit">
+      ${ticks.map((d) => `<line x1="${xd(d)}" x2="${xd(d)}" y1="12" y2="${h}" class="pf-gitter"/><text x="${xd(d)}" y="9" text-anchor="middle" class="pf-t pf-klein">${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getFullYear()).slice(2)}</text>`).join("")}
+      <line x1="${xh}" x2="${xh}" y1="12" y2="${h}" class="pf-heute"/>${zeilen}</svg>
+    <p class="pf-legende"><span><i class="pf-dot gut"></i>jetzt möglich</span><span><i class="pf-dot warn"></i>in ≤ 3 Monaten</span><span><i class="pf-dot info"></i>später</span><span><i class="pf-strich"></i>Vorlauf: Erhöhungsverlangen zustellen</span><span><i class="pf-strich heute"></i>heute</span></p>
+    <p class="ts-hinweis">Vergleichsmiete (§ 558 BGB): frühestens 15 Monate nach Einzug/letzter Erhöhung, Kappungsgrenze ${imZahl(PF.d?.grenzen?.kappung ?? IM.d?.grenzen?.kappung ?? 20, 0, " %")} in 3 Jahren – Potenzial bis Marktmiete, wenn eingetragen. Index: 12 Monate. Staffel: nächste Stufe. Keine Rechtsberatung.</p>`;
+}
+function pfMatrix(o) {
+  if (!o) return `<p class="ts-hinweis">Objekt oben anklicken.</p>`;
+  const nachEtage = {};
+  o.einheiten.forEach((e) => (nachEtage[e.etage || "–"] = nachEtage[e.etage || "–"] || []).push(e));
+  const etagen = Object.keys(nachEtage).sort((a, b) => (parseFloat(b) || (b === "DG" ? 99 : 0)) - (parseFloat(a) || (a === "DG" ? 99 : 0)));
+  const kachel = (e) => {
+    const [l, c, ic] = PF_STATUS[e.status], er = e.erhoehung || {};
+    return `<div class="pf-we ${c}"><header><b>${esc(e.name)}</b><span class="pf-chip ${c}">${ic} ${l}</span></header>
+      <p>${[e.flaeche ? imZahl(e.flaeche, 1, " m²") : "", e.zimmer ? imZahl(e.zimmer, 1, " Zi.") : "", e.mieter?.name && e.status === "vermietet" ? esc(e.mieter.name) : ""].filter(Boolean).join(" · ") || "&nbsp;"}</p>
+      <div class="pf-we-z"><span>Kalt</span><b>${e.status === "vermietet" ? imEuro(e.miete?.kalt) : "–"}${e.kalt_qm ? ` <small>${imEuro(e.kalt_qm, 2)}/m²</small>` : ""}</b></div>
+      <div class="pf-we-z"><span>CF op. · n. St.</span><b>${pfVz(e.cf_op)} · ${pfVz(e.cf_ns)}</b></div>
+      <div class="pf-we-z"><span>Nächste Erhöhung</span><b>${e.status !== "vermietet" ? "–" : er.ab ? `${er.stand === "jetzt" ? "<em class='gut'>jetzt</em>" : imDatum(er.ab)}${er.potenzial ? ` <small>+${imEuro(er.potenzial)}</small>` : ""}` : esc(er.text || "–")}</b></div></div>`;
+  };
+  return `<div class="pf-matrix">${etagen.map((et) => `<div class="pf-etage"><span>${esc(et === "–" ? "OHNE ETAGE" : et.toUpperCase())}</span><div>${nachEtage[et].map(kachel).join("")}</div></div>`).join("")}</div>
+    <p class="ts-hinweis">Cashflow je Einheit: Miete minus anteiliger Kosten (nach Fläche) – Kapitaldienst, Verwaltung, Rücklage, Mietausfall, Steuer.</p>`;
+}
+function pfProjektion(reihe, W = 760) {
+  if (!reihe.length) return "";
+  const H = 240, L = 64, R = W < 600 ? 84 : 110, T = 14, B = 26, max = Math.max(1, ...reihe.map((z) => Math.max(z.wert, z.restschuld)));
+  const x = (i) => L + (reihe.length === 1 ? 0 : i / (reihe.length - 1)) * (W - L - R), y = (v) => T + (1 - v / max) * (H - T - B);
+  const linie = (k) => reihe.map((z, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(z[k]).toFixed(1)}`).join("");
+  const ticks = [0, .25, .5, .75, 1].map((f) => max * f);
+  const letzte = reihe[reihe.length - 1];
+  return `<div class="pf-proj" data-pf-proj>
+    <p class="pf-legende"><span><i class="pf-linie wert"></i>Wert der Immobilien</span><span><i class="pf-linie schuld"></i>Restschuld</span></p>
+    <svg viewBox="0 0 ${W} ${H}" class="pf-svg" role="img" aria-label="Hochrechnung Wert und Restschuld">
+      ${ticks.map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="pf-gitter"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" class="pf-t pf-klein">${(v / 1000).toLocaleString("de-DE", { maximumFractionDigits: 0 })} T€</text>`).join("")}
+      ${reihe.map((z, i) => i % 2 === 0 || i === reihe.length - 1 ? `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" class="pf-t pf-klein">${z.jahr}</text>` : "").join("")}
+      <path d="${linie("wert")}" class="pf-l wert"/><path d="${linie("restschuld")}" class="pf-l schuld"/>
+      <text x="${x(reihe.length - 1) + 8}" y="${y(letzte.wert) + 4}" class="pf-t">Wert ${(letzte.wert / 1000).toLocaleString("de-DE", { maximumFractionDigits: 0 })} T€</text>
+      <text x="${x(reihe.length - 1) + 8}" y="${y(letzte.restschuld) + 4}" class="pf-t">Schuld ${(letzte.restschuld / 1000).toLocaleString("de-DE", { maximumFractionDigits: 0 })} T€</text>
+      <line class="pf-kreuz" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/>
+      <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" data-pf-flaeche/>
+    </svg>
+    <details class="pf-tabelle"><summary>ALS TABELLE</summary><table><thead><tr><th>Jahr</th><th>Wert</th><th>Restschuld</th><th>Wert − Schuld</th><th>CF n. St./Monat</th><th>CF kumuliert</th></tr></thead>
+      <tbody>${reihe.map((z) => `<tr><td>${z.jahr}</td><td>${imEuro(z.wert)}</td><td>${imEuro(z.restschuld)}</td><td>${imEuro(z.wert - z.restschuld)}</td><td>${pfVz(z.cf_ns_monat)}</td><td>${pfVz(z.kumuliert)}</td></tr>`).join("")}</tbody></table></details></div>`;
+}
+function pfZeigen(d, wahl) {
+  PF.d = d; if (wahl) PF.wahl = wahl;
+  if (!d.objekte.find((o) => o.id === PF.wahl)) PF.wahl = d.objekte[0]?.id || null;
+  if (!PF.el) {
+    PF.el = document.createElement("div"); PF.el.className = "tesla immo pf";
+    PF.el.innerHTML = `<div class="ts-rahmen" role="dialog" aria-label="Immobilien-Portfolio"><header class="vt-kopf"><span class="vt-marke im-marke">${stabLogo("IMMO", "klein")} PORTFOLIO</span>
+      <span class="vt-kapitel ts-titel"></span><button type="button" class="ts-neu" data-pf="neu-laden">↻</button><button type="button" class="vt-zu" data-pf="zu" title="Schließen (Esc)">✕</button></header>
+      <div class="ts-inhalt"></div></div>`;
+    document.body.appendChild(PF.el);
+    requestAnimationFrame(() => PF.el.classList.add("an"));
+  }
+  const a = d.annahmen || {};
+  PF.el.querySelector(".ts-titel").textContent = `STAND ${imDatum(d.stand)} · GRENZSTEUERSATZ ${imZahl(a.grenzsteuersatz, 0, " %")} · HORIZONT ${a.horizont} J.`;
+  const w = d.objekte.find((o) => o.id === PF.wahl);
+  PF.el.querySelector(".ts-inhalt").innerHTML = !d.objekte.length ? `<p class="ts-hinweis">Noch keine Immobilie angelegt.</p>` : `
+    ${pfKpis(d.summe)}
+    <div class="pf-zwei">${pfKachel("HANDLUNGSBEDARF", pfHinweise(d.hinweise))}${pfKachel("CASHFLOW JE OBJEKT", `<div data-pf-chart="cf"></div>`)}</div>
+    ${pfKachel("OBJEKTE", `${pfObjekte(d.objekte)}<p class="pf-legende">${Object.values(PF_STATUS).map(([l, c, ic]) => `<span><i class="pf-dot ${c}"></i>${ic} ${l.toLowerCase()}</span>`).join("")}</p>`)}
+    ${pfKachel(`WOHNEINHEITEN · ${esc((w?.name || "").toUpperCase())}`, pfMatrix(w), w ? ` <button type="button" class="ts-mini" data-pf="editor" data-id="${esc(w.id)}">✎ BEARBEITEN</button>` : "")}
+    ${pfKachel("MIETERHÖHUNGEN · NÄCHSTE 24 MONATE", `<div data-pf-chart="zeit"></div>`)}
+    ${pfKachel(`HOCHRECHNUNG BIS ${d.reihe[d.reihe.length - 1]?.jahr || ""}`, `<div data-pf-chart="proj"></div>`, ` <em>Miete +${imZahl(a.mietsteigerung, 1, " %")} · Kosten +${imZahl(a.kostensteigerung, 1, " %")} · Wert +${imZahl(a.wertsteigerung, 1, " %")} p. a.</em>`)}
+    <p class="ts-hinweis pf-fuss" data-fuss>Rechenweg wie im Kalkulationstool: Rücklage ${imZahl(a.instandhaltung_qm, 1, " €/m²")} p. a., Mietausfall ${imZahl(a.mietausfall, 1, " %")}, AfA ${imZahl(a.afa_satz, 1, " %")} auf ${imZahl(a.gebaeudeanteil, 0, " %")} Gebäudeanteil (je Objekt änderbar). Keine Steuer- oder Rechtsberatung.</p>`;
+  pfDiagramme();
+  if (!PF.ro) { PF.ro = new ResizeObserver(() => { clearTimeout(PF.roT); PF.roT = setTimeout(pfDiagramme, 120); }); }
+  PF.ro.disconnect(); PF.ro.observe(PF.el.querySelector(".ts-inhalt"));
+}
+// Diagramme in ihrer echten Breite zeichnen – Schrift bleibt so auf Mac und iPhone gleich groß
+function pfDiagramme() {
+  if (!PF.el || !PF.d) return;
+  const breite = (el) => Math.max(300, Math.round(el.clientWidth));
+  const cf = PF.el.querySelector('[data-pf-chart="cf"]'); if (cf) cf.innerHTML = pfCashflow(PF.d.objekte, breite(cf));
+  const z = PF.el.querySelector('[data-pf-chart="zeit"]'); if (z) z.innerHTML = pfZeitplan(PF.d.objekte, breite(z));
+  const p = PF.el.querySelector('[data-pf-chart="proj"]'); if (p) { const offen = p.querySelector("details")?.open; p.innerHTML = pfProjektion(PF.d.reihe, breite(p)); if (offen) p.querySelector("details").open = true; }
+  pfProjHover();
+}
+function pfProjHover() {
+  const box = PF.el?.querySelector("[data-pf-proj]"); if (!box) return;
+  const svg = box.querySelector("svg"), fl = svg.querySelector("[data-pf-flaeche]"), kreuz = svg.querySelector(".pf-kreuz"), reihe = PF.d.reihe;
+  fl.addEventListener("mousemove", (ev) => {
+    const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const x0 = +fl.getAttribute("x"), w = +fl.getAttribute("width"), i = Math.round((p.x - x0) / w * (reihe.length - 1));
+    const z = reihe[Math.max(0, Math.min(reihe.length - 1, i))], xs = x0 + (reihe.length === 1 ? 0 : Math.max(0, Math.min(reihe.length - 1, i)) / (reihe.length - 1)) * w;
+    kreuz.setAttribute("x1", xs); kreuz.setAttribute("x2", xs); kreuz.setAttribute("visibility", "visible");
+    pfTip(ev, `${z.jahr}: Wert ${imEuro(z.wert)} · Restschuld ${imEuro(z.restschuld)} · CF n. St. ${pfVz(z.cf_ns_monat)}/Monat`);
+  });
+  fl.addEventListener("mouseleave", () => { kreuz.setAttribute("visibility", "hidden"); pfTip(null); });
+}
+function pfTip(ev, text) {
+  if (!PF.tip) { PF.tip = document.createElement("div"); PF.tip.className = "pf-tip"; document.body.appendChild(PF.tip); }
+  if (!ev || !text) { PF.tip.hidden = true; return; }
+  PF.tip.hidden = false; PF.tip.textContent = text;
+  const r = PF.tip.getBoundingClientRect();
+  PF.tip.style.left = Math.min(innerWidth - r.width - 8, ev.clientX + 14) + "px"; PF.tip.style.top = Math.max(8, ev.clientY - r.height - 10) + "px";
+}
+document.addEventListener("mousemove", (ev) => {
+  if (!PF.el) return;
+  const t = ev.target.closest?.("[data-tip]");
+  if (t && PF.el.contains(t) && t.dataset.tip) pfTip(ev, t.dataset.tip); else if (!ev.target.closest?.("[data-pf-flaeche]")) pfTip(null);
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && PF.el && !PF.ed) pfZu(); });
+document.addEventListener("click", async (e) => {
+  if (e.target.closest('[data-im="portfolio"],[data-ime="portfolio"]')) { if (e.target.closest("[data-ime]")) einstZu(); return pfLaden(); }
+  const b = e.target.closest("[data-pf]"); if (!b || !(PF.el?.contains(b) || PF.ed?.contains(b))) return;
+  const a = b.dataset.pf;
+  if (a === "zu") return pfZu();
+  if (a === "neu-laden") return pfLaden();
+  if (a === "cf") { PF.cf = b.dataset.art; return pfDiagramme(); }
+  if (a === "wahl" && !e.target.closest("button:not([data-pf='wahl'])")) { PF.wahl = b.dataset.id; pfZeigen(PF.d); PF.el.querySelector(".pf-matrix")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); return; }
+  if (a === "objekt") { pfZu(); return imLaden(b.dataset.id); }
+  if (a === "editor") return pfEditor(b.dataset.id);
+});
+
+// ---------- Editor: Wohneinheiten und Profi-Annahmen eines Objekts ----------
+function pfWeZeile(e = {}) {
+  const m = e.mieter || {}, mi = e.miete || {}, st = e.status || "vermietet";
+  const f = (k, wert, ph = "", typ = "text", br = "") => `<label class="pf-f ${br}"><span>${ph}</span><input type="${typ}" data-wf="${k}" value="${esc(wert ?? "")}" ${typ === "number" ? 'step="any"' : ""}></label>`;
+  return `<div class="pf-ed-we" data-we-id="${esc(e.virtuell ? "" : e.id || "")}">
+    ${f("name", e.name, "Bezeichnung")}${f("etage", e.etage, "Etage")}${f("flaeche", e.flaeche, "m²", "number", "s")}${f("zimmer", e.zimmer, "Zimmer", "number", "s")}
+    <label class="pf-f"><span>Status</span><select data-wf="status">${Object.entries(PF_STATUS).map(([k, [l]]) => `<option value="${k}" ${k === st ? "selected" : ""}>${l.toLowerCase()}</option>`).join("")}</select></label>
+    ${f("mieter.name", m.name, "Mieter")}${f("mieter.seit", m.seit, "Einzug", "date")}
+    <label class="pf-f"><span>Mietart</span><select data-wf="mieter.mietart">${Object.entries(PF_ART).map(([k, l]) => `<option value="${k}" ${k === (m.mietart || "vergleichsmiete") ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    ${f("miete.kalt", mi.kalt, "Kalt €", "number", "s")}${f("miete.nk", mi.nk, "NK €", "number", "s")}${f("miete.letzte_erhoehung", mi.letzte_erhoehung, "Letzte Erhöhung", "date")}
+    ${f("marktmiete_qm", e.marktmiete_qm, "Marktmiete €/m²", "number", "s")}${f("frei_seit", e.frei_seit, "Frei seit", "date")}
+    ${f("staffeln", (e.staffeln || []).map((s) => `${imDatum(s.datum)}: ${s.kalt}`).join("; "), "Staffeln (TT.MM.JJJJ: Kalt; …)", "text", "b")}
+    <button type="button" class="pf-ed-weg" data-pfe="weg" title="Einheit entfernen">✕</button></div>`;
+}
+function pfEditor(oid) {
+  const o = PF.d.objekte.find((x) => x.id === oid); if (!o) return;
+  PF.ed?.remove();
+  const p = o.profi || {}, wk = p.wirksam || {};
+  const pf = (k, l) => `<label class="pf-f"><span>${l}</span><input type="number" step="any" data-pp="${k}" value="${esc(p[k] ?? "")}" placeholder="${esc(wk[k] ?? "")}"></label>`;
+  const ed = PF.ed = document.createElement("div"); ed.className = "pf-ed";
+  ed.innerHTML = `<div class="pf-ed-rahmen" role="dialog" aria-label="Wohneinheiten bearbeiten"><header><b>${esc(o.name)}</b><span>WOHNEINHEITEN &amp; ANNAHMEN</span><button type="button" data-pfe="zu">✕</button></header>
+    <div class="pf-ed-liste">${o.einheiten.map(pfWeZeile).join("")}</div>
+    <div class="vb-reihe"><button type="button" data-pfe="neu">＋ EINHEIT</button></div>
+    <h6>ANNAHMEN FÜR DIESES OBJEKT <small>leer = Standard aus den Einstellungen</small></h6>
+    <div class="pf-ed-profi">${pf("investitionen", "Anfängl. Investitionen € (aktiviert)")}${pf("afa_satz", "AfA %")}${pf("gebaeudeanteil", "Gebäudeanteil %")}
+      ${pf("instandhaltung_qm", "Rücklage €/m² p. a.")}${pf("mietausfall", "Mietausfall %")}${pf("marktfaktor", "Marktfaktor (Wert = Faktor × Jahresmiete)")}</div>
+    <p class="ts-hinweis">Verwaltung und sonstige nicht umlagefähige Kosten, Kaufpreis, Darlehen: im Objekt unter „Bearbeiten“. Mieternamen bleiben auf dem Mac und gehen nie an das Sprachmodell.</p>
+    <div class="vb-reihe"><button type="button" class="primary" data-pfe="speichern">SPEICHERN</button><span class="pf-ed-status"></span></div></div>`;
+  document.body.appendChild(ed); requestAnimationFrame(() => ed.classList.add("an"));
+  ed.addEventListener("click", async (ev) => {
+    const b = ev.target.closest("[data-pfe]"); if (!b) return;
+    if (b.dataset.pfe === "zu" ) { ed.remove(); PF.ed = null; return; }
+    if (b.dataset.pfe === "neu") { ed.querySelector(".pf-ed-liste").insertAdjacentHTML("beforeend", pfWeZeile({ name: `WE ${ed.querySelectorAll(".pf-ed-we").length + 1}`, status: "vakant" })); return; }
+    if (b.dataset.pfe === "weg") { b.closest(".pf-ed-we").remove(); return; }
+    if (b.dataset.pfe === "speichern") {
+      const datumIso = (s) => { const m = String(s).trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : String(s).trim(); };
+      const einheiten = [...ed.querySelectorAll(".pf-ed-we")].map((z) => {
+        const e = { id: z.dataset.weId || "", mieter: {}, miete: {} };
+        z.querySelectorAll("[data-wf]").forEach((i) => { const [a1, a2] = i.dataset.wf.split("."); if (a2) e[a1][a2] = i.value; else e[a1] = i.value; });
+        e.staffeln = String(e.staffeln || "").split(";").map((t) => t.split(":")).filter((x) => x.length === 2).map(([d, k]) => ({ datum: datumIso(d), kalt: k.trim() }));
+        return e;
+      });
+      const profi = Object.fromEntries([...ed.querySelectorAll("[data-pp]")].map((i) => [i.dataset.pp, i.value]));
+      const st = ed.querySelector(".pf-ed-status");
+      try { const r = await vbPost(`/immobilien/${oid}/einheiten`, { einheiten, profi }); st.textContent = r.text; st.className = "pf-ed-status ok"; sfx?.("ok");
+        setTimeout(() => { ed.remove(); PF.ed = null; pfLaden(oid); }, 700); }
+      catch (err) { st.textContent = "✕ " + err.message; st.className = "pf-ed-status fehler"; }
+    }
+  });
+}
+
+// ---------- Einstellungen → Immobilien: Profi-Dashboard; Knopf im Immobilienfenster ----------
+async function pfEinstAufbauen() {
+  const s = document.querySelector('#einst section[data-reiter="immobilien"]'); if (!s) return;
+  let p; try { p = (await fdGet("/immobilien")).profi || {}; } catch (e) { return; }
+  s.querySelector(".pf-einst")?.remove();
+  const f = (k, l) => `<label class="im-f"><span>${l}</span><input type="number" step="any" data-pfg="${k}" value="${esc(p[k] ?? "")}"></label>`;
+  const h4 = s.querySelector("h4");
+  (h4 || s).insertAdjacentHTML(h4 ? "afterend" : "afterbegin", `<details class="vb-zeile pf-einst" ${p.aktiv ? "" : "open"}><summary><span>Profi-Dashboard (Portfolio vieler Objekte)</span><em class="${p.aktiv ? "ok" : ""}">${p.aktiv ? "eingeschaltet" : "aus"}</em></summary>
+    <div class="vb-inhalt"><p class="vb-hilfe">Erweitert das Immobilienfenster um ein Portfolio: alle Objekte und Wohneinheiten (vermietet/vakant), Soll-/Ist-Miete,
+      Cashflow operativ und nach Steuern je Objekt und Einheit, Faktor, Brutto-/Nettorendite, Beleihung, nächste mögliche Mieterhöhung je Einheit,
+      Hochrechnung von Wert und Restschuld – gerechnet wie im Kalkulationstool. Wohneinheiten legst du im Portfolio unter „✎ Einheiten &amp; Annahmen“ an.</p>
+      <label class="pf-schalt"><input type="checkbox" role="switch" data-pfg-aktiv ${p.aktiv ? "checked" : ""}><span>Profi-Dashboard ${p.aktiv ? "eingeschaltet" : "einschalten"}</span>
+        <small>gilt auch für eine einzelne Immobilie · links in der Schnellleiste wird „Immobilien“ dann zu „Portfolio“</small></label>
+      <div class="im-grenzen">${f("grenzsteuersatz", "Persönlicher Grenzsteuersatz %")}${f("horizont", "Hochrechnung (Jahre)")}${f("mietsteigerung", "Mietsteigerung % p. a.")}
+        ${f("kostensteigerung", "Kostensteigerung % p. a.")}${f("wertsteigerung", "Wertsteigerung % p. a.")}${f("instandhaltung_qm", "Instandhaltungsrücklage €/m² p. a.")}
+        ${f("mietausfall", "Kalkulatorischer Mietausfall % (der Warmmiete)")}${f("afa_satz", "AfA-Satz % (2 % ab Bj. 1925, 3 % ab 2023)")}${f("gebaeudeanteil", "Gebäudeanteil am Kaufpreis %")}
+        <div class="vb-reihe"><button type="button" class="primary" data-pfg-speichern>SPEICHERN</button>${p.aktiv ? `<button type="button" data-ime="portfolio">◆ PORTFOLIO ÖFFNEN</button>` : ""}</div><div class="vb-status"></div></div></div></details>`);
+}
+async function pfEinstSpeichern(box) {
+  const st = box.querySelector(".vb-status");
+  const daten = Object.fromEntries([...box.querySelectorAll("[data-pfg]")].map((i) => [i.dataset.pfg, i.value]));
+  daten.aktiv = box.querySelector("[data-pfg-aktiv]").checked;
+  try { const r = await vbPost("/immobilien/profi", daten); st.textContent = r.text; st.className = "vb-status ok"; sfx?.("ok");
+    pfSchnell(!!r.profi?.aktiv); setTimeout(pfEinstAufbauen, 900); if (IM.el) imLaden(IM.aktiv); }
+  catch (err) { st.textContent = "✕ " + err.message; st.className = "vb-status fehler"; }
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-pfg-speichern]"); if (b) pfEinstSpeichern(b.closest(".pf-einst")); });
+document.addEventListener("change", (e) => { const c = e.target.closest("[data-pfg-aktiv]"); if (c) pfEinstSpeichern(c.closest(".pf-einst")); });
+// Schnellleiste links: Immobilien ↔ Portfolio
+const PF_ICON_HAUS = `<path d="M5 15 16 6l11 9"/><path d="M8 13v12.5h16V13"/><path d="M13.5 25.5v-6.5h5v6.5"/><path d="M21 9V6.5h2.5v4.6"/>`;
+const PF_ICON_PORTFOLIO = `<path d="M2.5 17 10 10.5l7.5 6.5"/><path d="M5 15.2v10.3h10V15.2"/><path d="M14 11.5 21.5 5 30 12.2"/><path d="M17.5 8.6V5.8"/><path d="M27 10v15.5h-12"/><path d="M8.5 25.5v-4.5h3v4.5"/><path d="M19.5 15h4M19.5 19h4"/>`;
+function pfSchnell(aktiv) {
+  window.PF_PROFI_AKTIV = !!aktiv;
+  const b = document.querySelector('#schnell [data-sl="immo"]'); if (!b) return;
+  b.title = aktiv ? "Immobilien-Portfolio (Profi-Dashboard)" : "Immobilien";
+  b.querySelector("svg").innerHTML = aktiv ? PF_ICON_PORTFOLIO : PF_ICON_HAUS;
+  b.querySelector("span").textContent = aktiv ? "PORTFOLIO" : "IMMOBILIEN";
+}
+setTimeout(() => fdGet("/immobilien").then((d) => pfSchnell(!!d.profi?.aktiv)).catch(() => {}), 2500);
+const _imEinstPf = imEinstAufbauen;
+imEinstAufbauen = async function () { await _imEinstPf(); await pfEinstAufbauen(); };
+const _imZeigenPf = imZeigen;
+imZeigen = function (d, aktiv) {
+  _imZeigenPf(d, aktiv);
+  const kopf = IM.el?.querySelector(".vt-kopf"); if (!kopf) return;
+  let k = kopf.querySelector('[data-im="portfolio"]');
+  if (d.profi?.aktiv && !k) kopf.querySelector(".ts-neu")?.insertAdjacentHTML("beforebegin", `<button type="button" class="ts-neu pf-knopf" data-im="portfolio">◆ PORTFOLIO</button>`);
+  if (!d.profi?.aktiv && k) k.remove();
+};
+const _handlePf = handle;
+handle = function (ev) { if (ev.type === "immo_portfolio") { pfLaden(); return; } _handlePf(ev); };
+
+// =====================================================================
+//  ORDNER-BROWSER: durch das DATENARCHIV klicken, Ordner wählen (auch neu anlegen) und für einen Absender
+//  einmalig festlegen – dann legt JARVIS dessen Briefe künftig selbst dort ab.
+// =====================================================================
+function ordnerWahl({ start = "", absender = "", titel = "" } = {}) {
+  return new Promise((fertig) => {
+    document.querySelector(".ow")?.remove();
+    const el = document.createElement("div"); el.className = "ow";
+    el.innerHTML = `<div class="ow-rahmen" role="dialog" aria-label="Ordner im DATENARCHIV wählen">
+      <header><b>ORDNER WÄHLEN</b><span>${esc(titel || "")}</span><button type="button" data-ow="zu" title="Abbrechen (Esc)">✕</button></header>
+      <nav class="ow-pfad"></nav>
+      <div class="ow-suche"><input type="search" placeholder="Ordner suchen …" data-ow-suche></div>
+      <ul class="ow-liste"></ul>
+      <div class="ow-neu"><input type="text" placeholder="Neuer Unterordner hier" data-ow-name><button type="button" data-ow="neu">＋ ORDNER</button></div>
+      <label class="ow-merken"><input type="checkbox" data-ow-merken ${absender ? "checked" : "disabled"}>
+        <span>${absender ? `Briefe von <b>${esc(absender)}</b> künftig immer hier ablegen – ohne Rückfrage, ich melde es dir` : "Absender nicht erkannt – keine feste Regel möglich"}</span></label>
+      <footer><span class="ow-ziel"></span><button type="button" data-ow="nur">NUR AUSWÄHLEN</button><button type="button" class="primary" data-ow="hier">HIER ABLEGEN</button></footer>
+      <div class="ow-status"></div></div>`;
+    document.body.appendChild(el); requestAnimationFrame(() => el.classList.add("an"));
+    let aktuell = "", alle = null;
+    const st = (t, art = "") => { const x = el.querySelector(".ow-status"); x.textContent = t; x.className = "ow-status " + art; };
+    const zu = (wert) => { el.remove(); document.removeEventListener("keydown", taste, true); fertig(wert); };
+    const taste = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); zu(null); } };
+    document.addEventListener("keydown", taste, true);
+    async function zeige(pfad) {
+      try {
+        const d = await fdGet(`/archiv/baum?pfad=${encodeURIComponent(pfad || "")}`); aktuell = d.pfad;
+        el.querySelector(".ow-pfad").innerHTML = `<button type="button" data-ow-geh="">${esc(d.archiv || "DATENARCHIV")}</button>` +
+          d.pfadteile.map((t) => `<i>›</i><button type="button" data-ow-geh="${esc(t.pfad)}">${esc(t.name)}</button>`).join("");
+        el.querySelector(".ow-liste").innerHTML = (d.eltern !== null ? `<li><button type="button" data-ow-geh="${esc(d.eltern)}" class="ow-hoch">↰ eine Ebene höher</button></li>` : "") +
+          (d.ordner.map((o) => `<li><button type="button" data-ow-geh="${esc(o.pfad)}"><span>▱ ${esc(o.name)}</span>${o.unterordner ? "<i>›</i>" : ""}</button></li>`).join("")
+            || `<li class="ow-leer">Keine Unterordner – hier ablegen oder neuen Ordner anlegen.</li>`);
+        el.querySelector(".ow-ziel").textContent = d.pfad ? "→ " + d.pfad : "Bitte einen Ordner wählen";
+        el.querySelector('[data-ow="hier"]').disabled = el.querySelector('[data-ow="nur"]').disabled = !d.pfad;
+        st("");
+      } catch (e) { st(e.message, "fehler"); if (pfad) zeige(""); }
+    }
+    el.addEventListener("click", async (e) => {
+      const g = e.target.closest("[data-ow-geh]"); if (g) { el.querySelector("[data-ow-suche]").value = ""; return zeige(g.dataset.owGeh); }
+      const b = e.target.closest("[data-ow]"); if (!b) return;
+      if (b.dataset.ow === "zu") return zu(null);
+      if (b.dataset.ow === "nur") return zu({ pfad: aktuell, ablegen: false, merken: false });
+      if (b.dataset.ow === "hier") return zu({ pfad: aktuell, ablegen: true, merken: !!el.querySelector("[data-ow-merken]")?.checked && !!absender });
+      if (b.dataset.ow === "neu") {
+        const name = el.querySelector("[data-ow-name]").value.trim(); if (!name) return st("Bitte einen Namen eingeben", "fehler");
+        try { const r = await vbPost("/archiv/baum/neu", { pfad: aktuell, name }); el.querySelector("[data-ow-name]").value = ""; alle = null; ordnerGeladen = false; document.getElementById("ordnerliste")?.remove(); zeige(r.pfad); }
+        catch (err) { st(err.message, "fehler"); }
+      }
+    });
+    el.querySelector("[data-ow-suche]").addEventListener("input", async (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      if (!q) return zeige(aktuell);
+      if (!alle) { try { alle = (await fdGet("/ordner")).ordner || []; } catch (x) { alle = []; } }
+      const t = alle.filter((o) => o.toLowerCase().includes(q)).slice(0, 60);
+      el.querySelector(".ow-liste").innerHTML = t.map((o) => `<li><button type="button" data-ow-geh="${esc(o)}"><span>▱ ${esc(o)}</span></button></li>`).join("") || `<li class="ow-leer">Nichts gefunden.</li>`;
+    });
+    zeige((start || "").replace(/\/\d{4}$/, "")).then(() => {}).catch(() => {});
+  });
+}
+
+// Einstellungen → Verbindungen: feste Ablageregeln (ansehen, entfernen)
+async function postRegelnAufbauen(box) {
+  const ziel = box.querySelector("[data-postregeln]"); if (!ziel) return;
+  const d = await fdGet("/post-regeln"), r = d.regeln || [];
+  const em = ziel.closest(".vb-zeile").querySelector("summary em");
+  const fest = r.filter((x) => x.fest).length;
+  em.textContent = r.length ? `${r.length} Absender${fest ? ` · ${fest} fest` : ""}` : "– noch keine"; em.className = r.length ? "ok" : "";
+  ziel.className = "";
+  ziel.innerHTML = `<p class="vb-hilfe">Gelernt aus deinen Ablagen. <b>Fest</b> (über „Durchsuchen“ → „künftig immer hier“): JARVIS legt Briefe dieses Absenders sofort selbst ab und meldet es.
+      Sonst ab der 3. gleichen Bestätigung und frühestens nach 30 Tagen.</p>
+    ${r.length ? `<ul class="pr-liste">${r.map((x) => `<li><span><b>${esc(x.absender || "?")}</b> → ${esc(x.ordner)}<small>${x.fest ? "fest · legt selbst ab" : `${x.n || 1}× bestätigt`}</small></span>
+      <button type="button" data-pr-weg="${esc(x.schluessel)}" title="Regel entfernen">✕</button></li>`).join("")}</ul>` : ""}
+    <div class="vb-status" data-pr-st></div>`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-pr-weg]"); if (!b) return;
+  e.stopPropagation();
+  try { await vbPost("/post-regeln/loeschen", { schluessel: b.dataset.prWeg }); postRegelnAufbauen($("einst-vb")); } catch (err) { toast(err.message); }
+}, true);
+EINST_ZEILEN["postregeln"] = "daten";
+EINST_ZEILEN["mail"] = "daten";
+
+// =====================================================================
+//  SETUP-GUIDE: neue Benutzer Schritt für Schritt durch Schlüssel und Zugänge – was ist Pflicht, was optional,
+//  wo bekommt man es, was kostet es; Eingabe direkt im Guide (Prüfung vor dem Speichern, Ablage im Schlüsselbund).
+// =====================================================================
+const SG = { el: null, i: 0, d: null, ki: null, mk: null, danachTour: false };
+const SG_SCHRITTE = [
+  { id: "start", titel: "Willkommen" },
+  { id: "ki", titel: "KI-Modell", pflicht: true, ok: () => SG.d.schluessel.anthropic.gesetzt || Object.entries(SG.ki?.anbieter || {}).some(([k, a]) => k !== "claude" && a.gesetzt) },
+  { id: "lokal", titel: "Lokales Modell", empfohlen: true, ok: () => SG.d.lokal.bereit },
+  { id: "archiv", titel: "Dokumenten-Archiv", empfohlen: true, ok: () => !!SG.d.archiv },
+  { id: "mail", titel: "Kalender & Mail", empfohlen: true, ok: () => SG.d.icloud.gesetzt || (SG.mk && SG.mk.anbieter !== "icloud" && SG.mk.gesetzt) },
+  { id: "stimme", titel: "Stimme", ok: () => SG.d.schluessel.elevenlabs.gesetzt },
+  { id: "unterwegs", titel: "Unterwegs", ok: () => SG.d.schluessel.telegram.gesetzt },
+  { id: "extras", titel: "Extras", ok: () => ["serper", "youtube", "nuki"].some((a) => SG.d.schluessel[a]?.gesetzt) },
+  { id: "profil", titel: "Über dich", ok: () => !!(SG.d.profil.name && SG.d.profil.ort) },
+  { id: "fertig", titel: "Fertig" },
+];
+function sgSchluessel(art, extra = "") {
+  const inf = VB_INFO[art], k = SG.d.schluessel[art] || {};
+  return `<div class="sg-key" data-sg-art="${art}">
+    <div class="sg-key-kopf"><b>${esc(inf.titel)}</b><em class="${k.gesetzt ? "ok" : ""}">${k.gesetzt ? "✓ eingerichtet " + esc(k.maske || "") : "noch nicht eingerichtet"}</em></div>
+    <ol class="sg-weg">${inf.schritte ? inf.schritte.map((x) => `<li>${x}</li>`).join("") : `<li>${esc(inf.hilfe)}</li>`}</ol>
+    <p class="sg-link"><a data-link="${esc(inf.link)}">${esc(inf.link.replace(/^https:\/\//, "").split("/")[0])} öffnen ↗</a></p>
+    <div class="sg-reihe"><input type="password" autocomplete="off" data-sg-wert placeholder="${esc(k.gesetzt ? "neuen Schlüssel einfügen (optional)" : inf.ph)}">
+      <button type="button" class="primary" data-sg="key">PRÜFEN &amp; SPEICHERN</button></div>${extra}<div class="sg-st"></div></div>`;
+}
+const SG_TEXT = {
+  start: () => `<h3>Willkommen bei JARVIS</h3>
+    <p>Dieser Guide richtet in etwa zehn Minuten alles ein, was JARVIS braucht. Jeder Schritt sagt dir, <b>wofür</b> der Zugang da ist,
+      <b>wo</b> du ihn bekommst und <b>was er kostet</b>. Du kannst jederzeit überspringen und später unter ⚙ Einstellungen → Verbindungen weitermachen.</p>
+    <ul class="sg-liste"><li><b>Pflicht:</b> ein KI-Modell (Claude oder ein anderer Anbieter) – ohne kann JARVIS nicht antworten.</li>
+      <li><b>Empfohlen:</b> lokales Modell (Privates bleibt auf dem Mac), Dokumenten-Archiv, Kalender &amp; Mail.</li>
+      <li><b>Optional:</b> Stimme, Telegram für unterwegs, Bildersuche, YouTube, NUKI-Schloss.</li></ul>
+    <p class="sg-schutz">◈ Alle Schlüssel werden vor dem Speichern geprüft und liegen nur im Schlüsselbund dieses Macs. JARVIS zeigt sie nie wieder an – nur die letzten vier Zeichen.</p>`,
+  ki: () => {
+    const andere = Object.entries(SG.ki?.anbieter || {}).filter(([k]) => k !== "claude");
+    return `<h3>KI-Modell <span class="sg-pflicht">PFLICHT</span></h3>
+    <p>Das Sprachmodell versteht deine Fragen und plant die Schritte. Empfohlen ist <b>Claude</b> (Anthropic) – nur damit gibt es Websuche
+      und direktes PDF-Lesen. Kosten: nach Verbrauch, typisch wenige Euro im Monat; vorher Guthaben aufladen.
+      Namen, Adressen, IBAN usw. verdeckt der Datenschutz-Schleier, bevor etwas das Modell erreicht.</p>
+    ${sgSchluessel("anthropic")}
+    <details class="sg-alt" ${andere.some(([, a]) => a.gesetzt) ? "open" : ""}><summary>Lieber einen anderen Anbieter (OpenAI, Gemini, Mistral, eigener Dienst)?</summary>
+      <div class="sg-reihe"><select data-sg-ki-art>${andere.map(([k, a]) => `<option value="${k}">${esc(a.name)}${a.gesetzt ? " ✓" : ""}</option>`).join("")}</select>
+        <input type="text" data-sg-ki-url placeholder="Adresse (nur eigener Dienst), z. B. https://openrouter.ai/api/v1"></div>
+      <div class="sg-reihe"><input type="password" autocomplete="off" data-sg-ki-wert placeholder="API-Schlüssel"><button type="button" class="primary" data-sg="ki-fremd">PRÜFEN &amp; ALS HAUPTMODELL</button></div>
+      <p class="vb-hilfe">Schlüssel: OpenAI → platform.openai.com/api-keys · Gemini → aistudio.google.com/apikey (für JARVIS nur mit bezahltem Konto) · Mistral → console.mistral.ai.
+        Ein Ausweichmodell legst du später unter ⚙ Verbindungen → KI-Modelle fest.</p><div class="sg-st" data-sg-ki-st></div></details>`;
+  },
+  lokal: () => `<h3>Lokales Modell <span class="sg-empf">EMPFOHLEN</span></h3>
+    <p>Ein kleines Sprachmodell läuft direkt auf deinem Mac. Gesundheit, Finanzen, Mietverträge und Steckbriefe deiner Dokumente bleiben
+      damit auf dem Rechner. Kostenlos, Download ca. 7 GB, braucht etwa 16 GB Arbeitsspeicher.</p>
+    <div class="sg-box"><b>${SG.d.lokal.bereit ? "✓ Bereit: " + esc((SG.d.lokal.modelle || []).join(", ")) : SG.d.lokal.laedt ? "Lädt gerade … " + esc(SG.d.lokal.fortschritt || "") : "Noch nicht eingerichtet"}</b>
+      ${SG.d.lokal.bereit || SG.d.lokal.laedt || MOBIL ? "" : `<button type="button" class="primary" data-sg="lokal">JETZT EINRICHTEN</button>`}<div class="sg-st"></div></div>
+    <p class="vb-hilfe">Der Download läuft im Hintergrund weiter – du kannst den Guide fortsetzen.</p>`,
+  archiv: () => {
+    const q = SG.d.archiv_quellen || [], aq = SG.d.archiv_quelle || {};
+    return `<h3>Dokumenten-Archiv <span class="sg-empf">EMPFOHLEN</span></h3>
+    <p>Der Ordner mit deinen Dokumenten (DATENARCHIV). JARVIS durchsucht ihn – auch inhaltlich –, legt gescannte Post ab und zeigt Dokumente an.
+      Er darf in <b>iCloud Drive</b>, <b>OneDrive</b>, <b>Google Drive</b>, <b>Dropbox</b> oder in einem <b>lokalen Ordner</b> liegen.
+      Alles wird auf dem Mac gelesen; ohne deine Zustimmung sieht die Cloud-KI kein Dokument.</p>
+    <div class="sg-box">${SG.d.archiv ? `<b>✓ ${esc(aq.name || "")}</b> · ${esc(SG.d.archiv)}` : "<b>Noch kein Archiv gewählt</b>"}</div>
+    <div class="sg-quellen">${MOBIL ? "<p class='vb-hilfe'>Nur am Mac änderbar.</p>" : q.map((x) => `<button type="button" data-sg="archiv" data-start="${esc(x.pfad)}">${x.art === "lokal" ? "▤" : "☁"} ${esc(x.name)} …</button>`).join("")}</div>
+    <p class="vb-hilfe">OneDrive, Google Drive oder Dropbox fehlen? Deren App installieren und anmelden – dann erscheinen sie hier. Mit mehreren Macs: ein Cloud-Speicher, damit alle dasselbe Archiv sehen.
+      Nach der Auswahl startet JARVIS kurz neu und baut die Suche auf (läuft im Hintergrund).</p><div class="sg-st"></div>`;
+  },
+  mail: () => `<h3>Kalender &amp; Mail <span class="sg-empf">EMPFOHLEN</span></h3>
+    <p>Für Termine, Erinnerungen, Posteingang, Entwürfe und das Morgenbriefing. Gesendet wird nur auf deinen ausdrücklichen Wunsch.</p>
+    <div class="sg-key"><div class="sg-key-kopf"><b>iCloud (Kalender und Mail)</b><em class="${SG.d.icloud.gesetzt ? "ok" : ""}">${SG.d.icloud.gesetzt ? "✓ " + esc(SG.d.icloud.apple_id) : "noch nicht eingerichtet"}</em></div>
+      <ol class="sg-weg"><li>account.apple.com öffnen und anmelden.</li><li>„Anmeldung und Sicherheit“ → „App-spezifische Passwörter“ → „+“ → Name „JARVIS“.</li>
+        <li>Das angezeigte Passwort (xxxx-xxxx-xxxx-xxxx) hier eintragen – <b>nicht</b> dein normales Apple-Passwort.</li></ol>
+      <p class="sg-link"><a data-link="https://account.apple.com/account/manage">account.apple.com öffnen ↗</a></p>
+      <div class="sg-reihe"><input type="text" data-sg-f="apple_id" placeholder="Apple-ID (name@icloud.com)" value="${esc(SG.d.icloud.apple_id || "")}">
+        <input type="text" data-sg-f="mail" placeholder="iCloud-Mailadresse, falls anders"></div>
+      <div class="sg-reihe"><input type="password" data-sg-f="pw" autocomplete="off" placeholder="App-spezifisches Passwort"><button type="button" class="primary" data-sg="icloud">PRÜFEN &amp; SPEICHERN</button></div><div class="sg-st"></div></div>
+    <div class="sg-box">Mail lieber über <b>Gmail, Outlook/Microsoft 365, GMX, WEB.DE, T-Online</b> oder einen eigenen Server?${SG.mk && SG.mk.anbieter !== "icloud" ? ` <b>✓ ${esc(SG.mk.vorlagen?.[SG.mk.anbieter]?.name || SG.mk.anbieter)} · ${esc(SG.mk.adresse || "")}</b>` : ""}
+      <button type="button" data-sg="mail-andere">MAIL-KONTO WÄHLEN ›</button></div>`,
+  stimme: () => `<h3>Stimme <span class="sg-opt">OPTIONAL</span></h3>
+    <p>Mit ElevenLabs spricht JARVIS mit einer natürlichen Stimme. Ohne Schlüssel spricht die Stimme des Macs. Kostenloser Einstieg möglich,
+      danach Abo ab ca. 5 $ im Monat. Sensible Antworten spricht immer die Mac-Stimme; Zahlen wie IBAN liest JARVIS nie vor.</p>
+    ${sgSchluessel("elevenlabs")}`,
+  unterwegs: () => `<h3>Unterwegs <span class="sg-opt">OPTIONAL</span></h3>
+    <p>Mit einem eigenen Telegram-Bot erreichst du JARVIS von überall – auch per Sprachnachricht. Kostenlos.</p>
+    ${sgSchluessel("telegram", `<p class="vb-hilfe">Nach dem Speichern dem eigenen Bot in Telegram „Start“ schicken – dann ist er verbunden.</p>`)}
+    <div class="sg-box">iPhone als App: ⚙ Einstellungen → iPhone – QR-Code scannen, „Zum Home-Bildschirm“. <button type="button" data-sg="reiter" data-reiter="iphone">ZUM IPHONE-REITER ›</button></div>`,
+  extras: () => `<h3>Extras <span class="sg-opt">OPTIONAL</span></h3>
+    <p>Kleine Zusatzdienste – alles kostenlos oder mit großem Freikontingent. Überspring sie ruhig und richte sie ein, wenn du sie brauchst.</p>
+    ${sgSchluessel("serper")}${sgSchluessel("youtube")}${sgSchluessel("nuki")}
+    <p class="vb-hilfe">Fahrzeuge (Tesla, Ford), Zuhause (HomeKit) und Immobilien richtest du in ihren Reitern unter ⚙ Einstellungen ein.</p>`,
+  profil: () => `<h3>Über dich</h3>
+    <p>Damit JARVIS dich richtig anspricht und das Wetter für deinen Ort kennt.</p>
+    <div class="sg-reihe sg-spalte"><label>Name<input type="text" data-sg-p="name" value="${esc(SG.d.profil.name || "")}"></label>
+      <label>Begrüßung („Guten Morgen, …“)<input type="text" data-sg-p="anrede" value="${esc(SG.d.profil.anrede || "")}" placeholder="z. B. Sir oder Vorname"></label>
+      <label>Heimatort<input type="text" data-sg-p="ort" value="${esc(SG.d.profil.ort || "")}" placeholder="z. B. Leipzig"></label></div>
+    <div class="sg-reihe"><button type="button" class="primary" data-sg="profil">SPEICHERN</button></div><div class="sg-st"></div>
+    <p class="vb-hilfe">Nach dem Speichern startet JARVIS kurz neu.</p>`,
+  fertig: () => {
+    const zeilen = SG_SCHRITTE.filter((s) => s.ok).map((s) => { const ok = s.ok(); return `<li class="${ok ? "ok" : s.pflicht ? "fehlt" : ""}"><i>${ok ? "✓" : s.pflicht ? "!" : "–"}</i>${esc(s.titel)}${!ok ? `<button type="button" data-sg="geh" data-i="${SG_SCHRITTE.indexOf(s)}">EINRICHTEN ›</button>` : ""}</li>`; }).join("");
+    const pflichtFehlt = SG_SCHRITTE.some((s) => s.pflicht && !s.ok());
+    return `<h3>${pflichtFehlt ? "Fast geschafft" : "Alles bereit"}</h3>
+      <p>${pflichtFehlt ? "Ohne KI-Modell kann JARVIS noch nicht antworten – bitte den Pflichtschritt nachholen." : "JARVIS ist eingerichtet. Alles Weitere lernst du in der kurzen Einführung."}</p>
+      <ul class="sg-check">${zeilen}</ul>
+      <div class="sg-reihe"><button type="button" class="primary" data-sg="tour" ${pflichtFehlt ? "disabled" : ""}>EINFÜHRUNG STARTEN</button><button type="button" data-sg="zu">SCHLIESSEN</button></div>
+      <p class="vb-hilfe">Den Guide findest du jederzeit wieder unter ⚙ Einstellungen → Allgemein → „Setup-Guide“ – oder sag „Starte den Setup-Guide“.</p>`;
+  },
+};
+// Schritt-für-Schritt-Anleitungen zu den Schlüsseln (ergänzt VB_INFO)
+Object.assign(VB_INFO.anthropic, { schritte: ["console.anthropic.com öffnen und ein Konto anlegen (E-Mail genügt).", "Unter „Billing“ Guthaben aufladen, z. B. 10 €.",
+  "„API Keys“ → „Create Key“ → Name „JARVIS“ → Schlüssel kopieren (beginnt mit sk-ant-).", "Hier einfügen und prüfen lassen."] });
+Object.assign(VB_INFO.elevenlabs, { schritte: ["elevenlabs.io öffnen und anmelden.", "Profil → „API Keys“ → „Create API Key“ (Rechte: Text to Speech; für den Datenschutz auch „History“ schreiben).", "Schlüssel hier einfügen. Die Stimme wählst du danach unter ⚙ Verbindungen."] });
+Object.assign(VB_INFO.telegram, { schritte: ["In Telegram @BotFather öffnen.", "/newbot senden, einen Namen und einen Benutzernamen (endet auf „bot“) vergeben.", "Den Token (123456789:ABC…) kopieren und hier einfügen."] });
+Object.assign(VB_INFO.serper, { schritte: ["serper.dev öffnen und anmelden (2.500 Suchen kostenlos).", "„API Key“ kopieren und hier einfügen. Ohne Schlüssel kommen Bilder von Wikimedia."] });
+Object.assign(VB_INFO.youtube, { schritte: ["Google Cloud Console öffnen, ein Projekt anlegen.", "„YouTube Data API v3“ aktivieren.", "Anmeldedaten → „API-Schlüssel erstellen“ → hier einfügen."] });
+Object.assign(VB_INFO.nuki, { schritte: ["web.nuki.io öffnen und anmelden.", "Menü → API → „API-Token erstellen“ mit den Rechten „Smart Locks lesen“ und „Aktionen“.", "Token hier einfügen. JARVIS kann damit nur den Status lesen und abschließen."] });
+
+async function sgLaden(versuch = 0) {
+  try {
+    [SG.d, SG.ki, SG.mk] = await Promise.all([api("/verbindungen"), api("/verbindungen/ki").catch(() => null), api("/verbindungen/mail").catch(() => null)]);
+  } catch (e) {
+    if (versuch < 15) { sgStatus("JARVIS startet neu …"); return setTimeout(() => sgLaden(versuch + 1), 2500); }
+    sgStatus("Verbindung zu JARVIS fehlt", "fehler"); return;
+  }
+  sgZeige(SG.i);
+}
+function sgStatus(t, art = "") { const s = SG.el?.querySelector(".sg-inhalt .sg-st"); if (s) { s.textContent = t; s.className = "sg-st " + art; } }
+function sgZeige(i) {
+  SG.i = Math.max(0, Math.min(SG_SCHRITTE.length - 1, i));
+  try { localStorage.setItem("jarvis-setup-schritt", String(SG.i)); } catch (e) {}
+  if (!SG.d) return;
+  const s = SG_SCHRITTE[SG.i];
+  SG.el.querySelector(".sg-nav").innerHTML = SG_SCHRITTE.map((x, n) => {
+    const ok = x.ok ? x.ok() : null;
+    return `<button type="button" data-sg="geh" data-i="${n}" class="${n === SG.i ? "an" : ""} ${ok ? "ok" : x.pflicht ? "pflicht" : ""}"><i>${ok ? "✓" : n + 1}</i><span>${esc(x.titel)}</span>${x.pflicht ? "<small>PFLICHT</small>" : x.empfohlen ? "<small>EMPFOHLEN</small>" : ""}</button>`;
+  }).join("");
+  SG.el.querySelector(".sg-inhalt").innerHTML = SG_TEXT[s.id]();
+  SG.el.querySelector('[data-sg="zurueck"]').disabled = SG.i === 0;
+  const w = SG.el.querySelector('[data-sg="weiter"]');
+  w.hidden = s.id === "fertig";
+  w.textContent = s.id === "start" ? "LOS GEHT'S" : s.ok && !s.ok() && !s.pflicht ? "ÜBERSPRINGEN ›" : "WEITER ›";
+  SG.el.querySelector(".sg-fort").style.setProperty("--fort", `${Math.round((SG.i / (SG_SCHRITTE.length - 1)) * 100)}%`);
+}
+window.setupGuide = function ({ danachTour = false, schritt = null } = {}) {
+  SG.danachTour = danachTour;
+  einstZu?.();
+  if (!SG.el) {
+    SG.el = document.createElement("div"); SG.el.className = "sg";
+    SG.el.innerHTML = `<div class="sg-rahmen" role="dialog" aria-label="Setup-Guide">
+      <header><span class="sg-marke">◆ SETUP-GUIDE</span><span class="sg-fort"></span><button type="button" data-sg="zu" title="Schließen – später weitermachen">✕</button></header>
+      <div class="sg-koerper"><nav class="sg-nav"></nav><section class="sg-inhalt"><p class="vb-hilfe">Lädt …</p></section></div>
+      <footer><button type="button" data-sg="zurueck">‹ ZURÜCK</button><button type="button" class="primary" data-sg="weiter">WEITER ›</button></footer></div>`;
+    document.body.appendChild(SG.el);
+    requestAnimationFrame(() => SG.el.classList.add("an"));
+  }
+  let gemerkt = 0; try { gemerkt = +localStorage.getItem("jarvis-setup-schritt") || 0; } catch (e) {}
+  SG.i = schritt ?? gemerkt;
+  sgLaden();
+};
+function sgZu(fertig = false) {
+  if (!SG.el) return; const el = SG.el; SG.el = null; el.classList.remove("an"); setTimeout(() => el.remove(), 350);
+  if (fertig) { try { localStorage.removeItem("jarvis-setup-schritt"); } catch (e) {} }
+}
+document.addEventListener("click", async (e) => {
+  if (!SG.el) return;
+  const b = e.target.closest("[data-sg]"); if (!b || !SG.el.contains(b)) return;
+  const a = b.dataset.sg, box = b.closest(".sg-key, .sg-box, .sg-alt, .sg-inhalt");
+  const st = (t, art = "") => { const x = box?.querySelector("[data-sg-ki-st]") && a === "ki-fremd" ? box.querySelector("[data-sg-ki-st]") : box?.querySelector(".sg-st") || SG.el.querySelector(".sg-inhalt .sg-st"); if (x) { x.textContent = t; x.className = "sg-st " + art; } };
+  if (a === "zu") { const fertig = SG_SCHRITTE[SG.i].id === "fertig"; sgZu(fertig); if (fertig && SG.danachTour) setTimeout(() => window.einfuehrung(true), 400); return; }
+  if (a === "weiter") return sgZeige(SG.i + 1);
+  if (a === "zurueck") return sgZeige(SG.i - 1);
+  if (a === "geh") return sgZeige(+b.dataset.i);
+  if (a === "tour") { sgZu(true); setTimeout(() => window.einfuehrung(true), 400); return; }
+  if (a === "reiter") { sgZu(); window.einstReiter?.(b.dataset.reiter); return; }
+  if (a === "mail-andere") {
+    sgZu(); window.einstReiter?.("daten");
+    setTimeout(() => { const z = document.querySelector('#einst-vb details[data-id="mail"]'); if (z) { z.open = true; z.scrollIntoView({ block: "start" }); } }, 900); return;
+  }
+  b.disabled = true; st("Einen Moment …");
+  try {
+    let r;
+    if (a === "key") {
+      const art = box.dataset.sgArt, wert = box.querySelector("[data-sg-wert]").value.trim();
+      if (!wert) throw new Error("Bitte den Schlüssel einfügen");
+      r = await vbPost(`/verbindungen/schluessel/${art}`, { wert });
+    } else if (a === "ki-fremd") {
+      const art = box.querySelector("[data-sg-ki-art]").value, wert = box.querySelector("[data-sg-ki-wert]").value.trim();
+      if (!wert) throw new Error("Bitte den Schlüssel einfügen");
+      r = await vbPost(`/verbindungen/ki/schluessel/${art}`, { wert, url: box.querySelector("[data-sg-ki-url]").value.trim() });
+      const w = await vbPost("/verbindungen/ki", { haupt: art, ausweich: SG.d.schluessel.anthropic.gesetzt ? "claude" : "" });
+      r = { text: `${r.text} · ${w.text}` };
+    } else if (a === "lokal") r = await vbPost("/verbindungen/lokal");
+    else if (a === "archiv") { st("Bitte im Fenster „Ordner wählen“ den Archiv-Ordner auswählen …"); r = await vbPost("/verbindungen/archiv/waehlen", { start: b.dataset.start }); }
+    else if (a === "icloud") {
+      const f = (n) => box.querySelector(`[data-sg-f="${n}"]`).value;
+      r = await vbPost("/verbindungen/icloud", { apple_id: f("apple_id"), mail: f("mail"), pw: f("pw") });
+    } else if (a === "profil") {
+      const f = (n) => SG.el.querySelector(`[data-sg-p="${n}"]`).value;
+      r = await vbPost("/verbindungen/profil", { name: f("name"), anrede: f("anrede"), ort: f("ort") });
+    }
+    st(r?.text || "✓ gespeichert", r?.ok === false ? "" : "ok"); sfx?.("ok");
+    setTimeout(() => sgLaden(), a === "archiv" || a === "icloud" || a === "profil" ? 3500 : 600);
+  } catch (err) { st("✕ " + err.message, "fehler"); sfx?.("warn"); b.disabled = false; }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && SG.el) { e.preventDefault(); sgZu(); } });
+// Einstellungen: Knopf neben der Einführung
+(function () {
+  const z = $("einst-tour")?.closest(".einst-zeile"); if (!z) return;
+  z.insertAdjacentHTML("beforebegin", `<div class="einst-zeile"><span>Setup-Guide: Schlüssel und Zugänge Schritt für Schritt (KI-Modell, Archiv, Mail, Stimme …)</span><button type="button" id="einst-setup" class="primary">SETUP-GUIDE</button></div>`);
+  $("einst-setup").addEventListener("click", () => window.setupGuide({ schritt: 0 }));
+})();
+const _handleSetup = handle;
+handle = function (ev) { if (ev.type === "setup_guide") { window.setupGuide({ schritt: 0 }); return; } _handleSetup(ev); };
+
+// =====================================================================
+//  VORGÄNGE: erledigen oder löschen (Papierkorb) – im Dashboard rechts und im Projektfenster
+// =====================================================================
+function vgKnoepfe(titel) {
+  return `<span class="vg-knoepfe"><button type="button" data-vg="erledigt" data-titel="${esc(titel)}" title="Als erledigt abschließen">✓</button>` +
+    `<button type="button" data-vg="loeschen" data-titel="${esc(titel)}" title="Vorgang löschen (Papierkorb)">✕</button></span>`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-vg]"); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const titel = b.dataset.titel, loeschen = b.dataset.vg === "loeschen";
+  const ok = await frage({ titel: loeschen ? "VORGANG LÖSCHEN" : "VORGANG ABSCHLIESSEN",
+    text: loeschen ? `„${titel}“ löschen? Er verschwindet aus Dashboard, Projekten und Erinnerungen (die Datei liegt danach im Papierkorb).`
+                   : `„${titel}“ als erledigt abschließen? Er bleibt im Gedächtnis, wird aber nicht mehr angezeigt oder angemahnt.`,
+    ok: loeschen ? "LÖSCHEN" : "ABSCHLIESSEN", gefahr: loeschen });
+  if (!ok) return;
+  try {
+    await vbPost(`/vorgang/${b.dataset.vg}`, { titel });
+    b.closest("li")?.remove(); sfx?.("ok"); toast(loeschen ? `Gelöscht: ${titel}` : `Abgeschlossen: ${titel}`);
+    loadLage(true);
+    if (typeof PJ !== "undefined" && PJ.el && document.body.contains(PJ.el)) projekteOeffnen();
+  } catch (err) { toast("Vorgang: " + err.message); }
+}, true);

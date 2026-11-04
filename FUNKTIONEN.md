@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 03.11.2026 · Version 0.27.0
+Stand: 04.11.2026 · Version 0.33.0
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -30,6 +30,7 @@ Bedeutung der Zeichen:
 | Stilwelt MOSAIK: abstraktes, frontales Gesicht mit dunklen Augenhöhlen, flacher Nase und flachem Mund, eingebettet in einen feinen Kachelteppich in Plexus-Farben, der kräftig wie eine zähe Masse wabert (treibende Wölbungen ohne Vorzugsrichtung, echte Tiefe, im Gesicht gedämpft); das Gesicht folgt ganz leicht der Maus; bei Bildern, Videos und Dokumenten bleibt MOSAIK erhalten (Gesicht gedämpft dahinter, kein Wechsel zum Kern) | ✅ | STIL-Knopf oder „Zeig dich als MOSAIK“; am Mac ca. 40.000 Kacheln |
 | MOSAIK lebt: dezente Mimik, Mund passend zu Stimme und Lauten – auch bei reinen Textantworten liest er stumm mit; Zuhören färbt das Gesicht Plexus-Grün; Nachdenken zeigt gedämpfte Datenströme wie bei Plexus, die seitlich um den Kopf schwingen und oben hinter der Stirn – im Gehirn – verlöschen (nie über dem Gesicht) – je Quelle in eigener, zurückhaltender Farbe | ✅ | Mimik aus neun Posen (ChatGPT), neu aufbereiten: werkzeuge/mosaik/aufbereiten.py |
 | Startsequenz je nach zuletzt gewähltem Stil: bei MOSAIK liegt der Teppich dunkel hinter der Sequenz, wächst beim Aufladen von der Mitte her und entfaltet sich beim Zünden nahtlos zum Gesicht | ✅ | bei Plexus wie bisher mit Globus |
+| 3D-Fundament: Kern und MOSAIK zeichnen in Ruhe nur 30 Bilder/s, im Hintergrund (Fenster ohne Fokus) 20, bei offenem Grundriss/Fahrzeug-3D 24; ist MOSAIK aktiv, ruht der Kern ganz; ruckelt es, sinkt die Pixeldichte von selbst | ✅ | Einstellungen → Verbindungen → „3D-Grafik“: automatisch / immer hoch / sparsam (Akku) – mit Anzeige der aktuellen Bildrate |
 | Avatare AURA, NOVA, MILO und eigene 3D-Modelle (.glb) | ❌ | entfernt, ersetzt durch MOSAIK; hochgeladene Modelle wandern beim ersten Start in den Papierkorb |
 | Schnellleiste links: Fahrzeuge und Immobilien mit einem Klick – dezent, auch in der reduzierten Ansicht | ✅ | Name erscheint beim Darüberfahren |
 | Dokumente per Drag & Drop in den Chat | ✅ | Vor dem Lesen durch Claude wird immer gefragt |
@@ -41,8 +42,10 @@ Bedeutung der Zeichen:
 | Telefonnotiz per ⌥⌘N | ✅ | Aufnahme → Zusammenfassung → Aufgaben |
 | Not-Aus: nur noch Lesen | ✅ | `/notaus` |
 | Geführte Einführung (ca. 3 Minuten, mit Übungen) | ✅ | startet nach der Installation; wiederholen: ⚙ Einstellungen, Menü Hilfe oder „Starte die Einführung“ |
+| Setup-Guide für neue Benutzer: zehn Schritte mit Erklärung (wofür, wo bekommt man es, was kostet es), Pflicht/empfohlen/optional, Eingabe direkt im Guide mit Prüfung – KI-Modell (Claude oder OpenAI/Gemini/Mistral/eigener Dienst), lokales Modell, Dokumenten-Archiv, Kalender & Mail, Stimme, Telegram/iPhone, Extras (Bilder, YouTube, NUKI), Über dich; am Ende Checkliste und Start der Einführung | ✅ | startet bei der Erstinstallation vor der Einführung, solange kein KI-Schlüssel da ist; sonst ⚙ Einstellungen → Allgemein → „Setup-Guide“ oder „Starte den Setup-Guide“; merkt sich den letzten Schritt |
 | Einstellungen an einem Ort | ✅ | ⚙ EINSTELLUNGEN oder ⌘, |
 | Schlüssel und Zugänge nachträglich einrichten – ohne Terminal (Claude, ElevenLabs mit Stimmenauswahl, iCloud, Telegram, Bilder, YouTube, Name/Wohnort, Dokumenten-Ordner, lokales Modell, iPhone) | ✅ | ⚙ Einstellungen → Verbindungen; Schlüssel werden vorher geprüft |
+| Dokumenten-Archiv wahlweise in iCloud Drive, OneDrive, Google Drive, Dropbox (bzw. jedem Cloud-Speicher unter „Orte“ im Finder) oder einem lokalen Ordner; Ordnerwahl startet direkt im gewählten Speicher; Dateien, die nur in der Cloud liegen, lädt JARVIS beim Lesen selbst | ✅ | ⚙ Einstellungen → Verbindungen → „Dokumenten-Ordner“; ohne iCloud findet JARVIS einen Ordner „DATENARCHIV“ ganz oben in OneDrive & Co. auch selbst; das private Gedächtnis bleibt in iCloud (ohne iCloud lokal) |
 | Funktionsliste in JARVIS anzeigen; „Was kannst du?“ | ✅ | ⚙ Einstellungen → FUNKTIONSLISTE |
 
 ## 2. Kalender und Termine
@@ -74,7 +77,8 @@ Bedeutung der Zeichen:
 
 | Funktion | Stand | Hinweis |
 |---|---|---|
-| Posteingang, Suche, Mail lesen (iCloud-Mail) | ⚙️ | |
+| Posteingang, Suche, Mail lesen (iCloud-Mail oder anderes Mail-Konto) | ⚙️ | |
+| Mail-Konto wählbar: iCloud (Standard), Gmail (App-Passwort), Outlook/Microsoft 365 (Anmeldung bei Microsoft per Code, kein Passwort), GMX, WEB.DE, T-Online oder beliebiger IMAP-Server; gilt für alles – Posteingang, Entwürfe, Senden, Mailwache, PKV-Code, Schreibstil, Wissensindex; Entwürfe-/Gesendet-Ordner erkennt JARVIS selbst | ✅ | Einstellungen → Verbindungen → „Mail-Konto“; Lesen und Senden werden vor dem Speichern geprüft; Passwort/Token nur im Schlüsselbund; Kalender bleibt iCloud; Outlook braucht einmalig eine eigene App-Registrierung (Client-ID) im Microsoft-Entra-Portal |
 | Entwurf schreiben – im eigenen Schreibstil (lokal gelernt) | ✅ | wird nur gespeichert, nicht gesendet |
 | Mail senden, auch mit Dokument als Anhang | 🔒 | nur auf ausdrücklichen Wunsch |
 | Mail-Wache: Posteingang dauerhaft im Hintergrund überwachen und sofort melden, wenn eine erwartete Mail eintrifft (Absender und/oder Betreff, einmalig oder dauerhaft, optional bis Datum; auch „jede neue Mail“) | ✅ | „Sag mir Bescheid, wenn die Mail von … kommt“; Ansage mit „Soll ich sie vorlesen?“, Mitteilung, Telegram; Chip oben links; Einstellungen → Daten & Postfächer; erwartete Mails sortiert der Werbefilter nie aus |
@@ -121,9 +125,12 @@ Bedeutung der Zeichen:
 | Funktion | Stand | Hinweis |
 |---|---|---|
 | Posteingang: gescannte Briefe erkennen (Absender, Betreff, Fristen) | ⚙️ | Genius-Scan-Ordner in iCloud; Auswertung lokal |
+| Scan-Ordner robust: Dateien, die noch nur in iCloud liegen, lädt JARVIS erst herunter; leere/halbfertige Exporte wartet er ab; ein echter Lesefehler wird je Datei nur einmal gemeldet (auch nach Neustarts), bis sich die Datei ändert | ✅ | |
+| Briefkarte „▤ Durchsuchen“: durch das DATENARCHIV klicken (Pfadleiste, Suche, neuen Unterordner anlegen) und direkt ablegen; Haken „Briefe von … künftig immer hier ablegen“ macht daraus eine feste Regel – ab dem nächsten Brief legt JARVIS selbst ab und meldet es | ✅ | Regeln ansehen/entfernen: ⚙ Einstellungen → Daten → „Ablageregeln“; das ganze DATENARCHIV ist sichtbar – ausgenommen nur JARVIS' eigener Datenordner (Suchindex, Systemdateien); ohne festen Haken weiter: selbst ab der 3. Bestätigung nach 30 Tagen |
 | Ablage vorschlagen | 🔒 | Ablegen nach Bestätigung |
 | Bekannte Absender selbst ablegen | ✅ | erst nach 3 Bestätigungen und 30 Tagen |
 | Fristenradar: Ausweis, TÜV, Vertragsende, Antwort ans Amt | ✅ | mit Vorlauf im Briefing und in Erinnerungen |
+| Vorgänge erledigen oder löschen: im Dashboard rechts (Maus über den Vorgang → ✓ abschließen, ✕ löschen) und im Projektfenster; gelöschte Vorgänge liegen im Papierkorb, die Mahnung „seit … Tagen überschritten“ hört damit auf | ✅ | mit Rückfrage |
 | Steuer-Sammelmappe: Belege vormerken | ✅ | |
 | Steuer-Sammelmappe: Excel-Liste für den Steuerberater | ✅ | |
 | Haushaltsbuch: Verträge, Abos, Versicherungen; Beitragsänderungen melden | ✅ | |
@@ -203,6 +210,8 @@ Bedeutung der Zeichen:
 | Immobiliendashboard: Karte mit 3D-Gebäuden, Hauptbild und Galerie (bis 5 Bilder, auch HEIC), Mieter, Miete kalt/NK/warm, Darlehen mit Restschuld und Zinsbindung, Objektdaten | ✅ | „Zeig mir meine Immobilie“ oder ⚙ Einstellungen → Immobilien |
 | Unter den Bildern: Karte mit der Lage und daneben das 3D-Modell des Grundrisses zum Drehen und Zoomen | ✅ | ⤢ öffnet den Grundriss-Editor; ohne Grundriss: „＋ Grundriss hinzufügen“ |
 | Kennzahlen mit Ampel: Brutto-/Nettomietrendite, Cashflow, Beleihung, Kapitaldienstdeckung, Kaltmiete je m², EK-Rendite, Tilgung | ✅ | Ampel-Grenzen und Kappungsgrenze unter ⚙ Einstellungen → Immobilien |
+| Profi-Dashboard (Portfolio vieler Objekte): Kennzahlenleiste (Objekte/Einheiten, Ist-/Soll-Kaltmiete, Leerstand, Cashflow operativ und nach Steuern, Ø Faktor/Bruttorendite, Wert − Restschuld, Beleihung/DSCR, Vermögenszuwachs p. a.), Handlungsbedarf (Leerstand, Erhöhung jetzt möglich, Zinsbindung ≤ 24 Monate, negativer Cashflow), Objektkarten mit Belegungsband der Wohneinheiten, Cashflow je Objekt, Einheiten-Matrix nach Etage (Status, Miete, €/m², Cashflow je Einheit, nächste Erhöhung), Mieterhöhungs-Zeitplan der nächsten 24 Monate, Hochrechnung Wert/Restschuld mit Tabelle | ✅ | ⚙ Einstellungen → Immobilien → Schalter „Profi-Dashboard“ (wirkt sofort, auch bei nur einer Immobilie); dann führt links in der Schnellleiste „Portfolio“ (statt „Immobilien“) direkt ins Profi-Dashboard, außerdem „◆ PORTFOLIO“ im Immobilienfenster oder „Wie steht mein Portfolio?“; Rechenweg wie das Kalkulationstool (Rücklage, Mietausfall, AfA auf Gebäudeanteil + aktivierte Investitionen, Grenzsteuersatz); Annahmen global und je Objekt änderbar; keine Steuer-/Rechtsberatung |
+| Wohneinheiten je Objekt: Bezeichnung, Etage, m², Zimmer, Status (vermietet/vakant/Renovierung/Eigennutzung), Mieter, Einzug, Mietart (Vergleichs-, Staffel-, Indexmiete), Kalt/NK, letzte Erhöhung, Marktmiete €/m², Staffeln | ✅ | im Portfolio „✎ Einheiten & Annahmen“; Objekte ohne Einheiten zählen als eine Wohnung; nächste Erhöhung: Vergleichsmiete 15 Monate + Kappungsgrenze (bis Marktmiete), Index 12 Monate, Staffel nächste Stufe; Mieternamen gehen nie an das Sprachmodell |
 | Mieterhöhung planen: prüft 15-Monats-Frist und Kappungsgrenze, legt Frist zum Ankündigen an | ✅ | im Fenster „＋ PLANEN“ oder per Sprache |
 | Fristen: Zinsbindungsende und „Anschlussfinanzierung prüfen“ (12 Monate vorher) | ✅ | automatisch beim Speichern |
 | Neue Immobilie per Assistent (Objekt, Kauf, Darlehen, Mieter & Miete) | ✅ | Knopf „＋ IMMOBILIE“ |
@@ -302,7 +311,7 @@ Bedeutung der Zeichen:
 |---|---|---|
 | Lichter, Lautsprecher und Szenen (Apple HomeKit) per Sprache steuern | ⚙️ | über Kurzbefehle, deren Name mit „JARVIS“ beginnt (z. B. „JARVIS Licht Wohnzimmer an“) |
 | Kurzbefehle zu Türen, Schlössern, Garage oder Alarm | ❌ | bewusst gesperrt |
-| NUKI: Status (abgeschlossen? Tür offen? Batterie) und abschließen | ⚙️ | NUKI-Token unter ⚙ Einstellungen → Zuhause |
+| NUKI: Status (abgeschlossen? Tür offen? Batterie in %, lädt, Keypad-/Türsensor-Batterie, Verbindung, Alter des Stands) und abschließen – JARVIS prüft danach bis 30 s, ob das Schloss es bestätigt, und sagt es ehrlich, wenn nicht | ⚙️ | NUKI-Token unter ⚙ Einstellungen → Zuhause; Token braucht die Berechtigung für Aktionen; Opener und Box werden nicht mehr als Schloss gelesen; offline → kein Befehl |
 | NUKI aufschließen oder öffnen | ❌ | bewusst nicht – wie beim Tesla |
 | Abendkontrolle 21:45: Tür nicht abgeschlossen oder Batterie fast leer → Meldung | ✅ | |
 
@@ -372,6 +381,7 @@ Bedeutung der Zeichen:
 
 | Funktion | Stand | Hinweis |
 |---|---|---|
+| KI-Modelle wählbar: Hauptmodell und Ausweichmodell aus Claude, OpenAI (GPT), Google Gemini, Mistral (EU) oder einem eigenen OpenAI-kompatiblen Dienst (OpenRouter, Groq, DeepSeek, LM Studio …); fällt das Hauptmodell aus (Störung, Schlüssel, Limit), antwortet das Ausweichmodell nahtlos weiter; je Anbieter drei Stufen (schnell/Standard/stark) mit Modellliste vom Anbieter | ✅ | Einstellungen → Verbindungen → „KI-Modelle“; Schlüssel nur im Schlüsselbund; Datenschutz-Schleier gilt für jeden Anbieter; Websuche, Prompt-Cache und direktes PDF-Lesen nur mit Claude (sonst liest JARVIS PDFs lokal aus); Gemini nur mit bezahltem Konto (kostenlose Stufe darf Eingaben nutzen); Wechsel ohne Neustart |
 | Einstellungen in Reitern (Allgemein, Stimme & Gespräch, Stab, Konten & Schlüssel, Daten & Postfächer, Fahrzeuge, Immobilien, iPhone, Autopilot, Zuhause, Notfall, Projekte, Sicherheit) mit Suche über alle Reiter | ✅ | merkt sich den letzten Reiter; auf dem iPhone wischbare Leiste |
 | Rückfragen (Beheben, Hinnehmen, Notbremse, Notfall beenden, Wächtermodus, Projekt anlegen …) als eigener JARVIS-Dialog – funktioniert in der Mac-App, im Browser und auf dem iPhone | ✅ | Enter bestätigt, Esc bricht ab |
 | Läuft als Hintergrunddienst mit Autostart | ✅ | |
@@ -379,11 +389,16 @@ Bedeutung der Zeichen:
 | Automatische Updates; startet eine neue Version nicht, kommt die vorige zurück | ✅ | |
 | Schnelle Antworten | ✅ | Werkzeuge nach Bedarf, 1-h-Prompt-Cache, Vorwärmen |
 | Lokales Sprachmodell (Ollama) für Privates und offline | ⚙️ | ca. 7 GB |
-| Weitergabe: Installations-DMG mit grafischem Assistenten | ✅ | `jarvis paket` / `jarvis veroeffentlichen` |
+| Weitergabe: Installations-DMG mit grafischem Assistenten (Mac) und Windows-Installationspaket | ✅ | `jarvis paket` / `jarvis veroeffentlichen` |
 | Veröffentlichen übersteht GitHub-Aussetzer: prüft vorab die Verbindung, wiederholt Hochladen und Release bei Netzfehlern und holt einen früher fehlgeschlagenen Upload beim nächsten Aufruf nach | ✅ | einfach erneut `jarvis veroeffentlichen` |
 | Weitergegebene Installationen nutzen nur die eigenen Schlüssel des Empfängers | ✅ | Datenschutz-Scan blockiert jeden Schlüssel im Paket |
 | Weitergegebene Installation aus der Ferne deaktivieren (einzeln, alle, zu alte Versionen) | ✅ | `jarvis sperren <Kennung>`; Kennung steht beim Empfänger unter ⚙ Einstellungen |
 | Übersicht, wer JARVIS wo nutzt | ❌ | bewusst nicht – es werden keine Nutzungsdaten gesendet |
-| Intel-Macs, Windows, eigene App im App Store | ❌ | iPhone über Web-App, Siri und Telegram |
+| Windows-Version (Windows 10/11): Installation per Setup.exe oder ZIP („JARVIS installieren.cmd“), Kern startet unsichtbar mit Windows, JARVIS-Fenster über Startmenü/Desktop (Edge-App-Fenster), Spracherkennung mit faster-whisper, Archiv in OneDrive, iCloud für Windows, Dropbox, Google Drive oder lokalem Ordner | ⚙️ | vorbereitet, noch nicht auf einem echten Windows-PC getestet; Setup.exe ist unsigniert (SmartScreen: „Weitere Informationen → Trotzdem ausführen“); Schlüssel in der Windows-Anmeldeinformationsverwaltung |
+| Auf Windows nicht verfügbar: Erinnerungen/Notizen/Kontakte (Apple), iMessage, HomeKit-Kurzbefehle, Apple Music/Podcasts, Timer/Wecker, Apple-Texterkennung, Excel-Steuerung per AppleScript | ❌ | Werkzeuge werden auf Windows automatisch ausgeblendet |
+| Automatische Updates auch unter Windows: neue Version wird im Hintergrund geladen und beim nächsten Neustart des Kerns eingesetzt; startet sie nicht (4 Abstürze in 3 Minuten), kommt die vorige zurück | ✅ | dieselbe GitHub-Veröffentlichung wie für den Mac |
+| `jarvis app`, `jarvis paket` und `jarvis veroeffentlichen` bauen immer beide Versionen: Mac (App/DMG) und Windows (ZIP auf dem Schreibtisch); bei der Veröffentlichung baut GitHub zusätzlich automatisch die `JARVIS-Setup.exe` und hängt sie ans Release | ✅ | Workflow `.github/workflows/windows-setup.yml` |
+| Bestimmte Versionsnummer aus der Ferne deaktivieren – auch nur für Mac oder nur für Windows, auch ganze Reihen (`0.30.*`) – und wieder freigeben; Versionen unter einer Mindestversion dauerhaft deaktivieren | ✅ | `jarvis version-sperren 0.30.1 "Grund" [--mac\|--windows]`, `jarvis version-entsperren 0.30.1`, `jarvis mindestversion 0.31.0`; `jarvis sperrliste` zeigt alles |
+| Intel-Macs, eigene App im App Store | ❌ | iPhone über Web-App, Siri und Telegram |
 | Live-Verkehr in der eigenen Karte | ❌ | |
 | Kartenbibliothek MapLibre 6.16 (Sicherheitsupdate gegen CVE-2026-85061: Schadcode über Karten-Quellenangaben), lokal mitgeliefert als ES-Modul | ✅ | gefunden von AEGIS, behoben per Claude-Auftrag |
