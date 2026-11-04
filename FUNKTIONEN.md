@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 04.11.2026 · Version 0.34.0
+Stand: 04.11.2026 · Version 0.34.1
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -47,6 +47,7 @@ Bedeutung der Zeichen:
 | Schlüssel und Zugänge nachträglich einrichten – ohne Terminal (Claude, ElevenLabs mit Stimmenauswahl, iCloud, Telegram, Bilder, YouTube, Name/Wohnort, Dokumenten-Ordner, lokales Modell, iPhone) | ✅ | ⚙ Einstellungen → Verbindungen; Schlüssel werden vorher geprüft |
 | Dokumenten-Archiv wahlweise in iCloud Drive, OneDrive, Google Drive, Dropbox (bzw. jedem Cloud-Speicher unter „Orte“ im Finder) oder einem lokalen Ordner; Ordnerwahl startet direkt im gewählten Speicher; Dateien, die nur in der Cloud liegen, lädt JARVIS beim Lesen selbst | ✅ | ⚙ Einstellungen → Verbindungen → „Dokumenten-Ordner“; ohne iCloud findet JARVIS einen Ordner „DATENARCHIV“ ganz oben in OneDrive & Co. auch selbst; das private Gedächtnis bleibt in iCloud (ohne iCloud lokal) |
 | Funktionsliste in JARVIS anzeigen; „Was kannst du?“ | ✅ | ⚙ Einstellungen → FUNKTIONSLISTE |
+| Funktionsliste und alle Sicherheitseinrichtungen als PDF (Titelblatt, Inhaltsverzeichnis, Überblick je Bereich, Teil A Funktionen, Teil B Sicherheit) – wird bei jeder neuen Version automatisch neu erzeugt, liegt im Repository unter docs/ und hängt an jedem GitHub-Release | ✅ | entsteht bei `jarvis speichern` aus FUNKTIONEN.md und SICHERHEIT.md; von Hand: `python -m atlas.funktionsliste_pdf` |
 
 ## 2. Kalender und Termine
 

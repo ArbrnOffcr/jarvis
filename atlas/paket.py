@@ -25,7 +25,7 @@ from atlas.paths import LOCAL_DIR, REPO_DIR
 
 console = Console()
 EXPORT = ["atlas", "app", "installer", "windows", ".github", "tools", "install.sh", "pyproject.toml", ".gitignore",
-          "FUNKTIONEN.md"]
+          "FUNKTIONEN.md", "SICHERHEIT.md", "docs"]
 TEXT = {".py", ".js", ".html", ".css", ".swift", ".sh", ".toml", ".md", ".txt", ".json", ".yaml", ".yml"}
 
 README = """# JARVIS – persönlicher Assistent für Mac und Windows
@@ -374,6 +374,21 @@ def _mac_dmg(tmp: Path, code: Path, sha: str, repo: str, version: str) -> Path |
 
 
 # ------------------------------------------------------------------ Veröffentlichen
+def funktionsliste_pdf_bereit() -> Path | None:
+    """PDF neu erzeugen und als JARVIS-Funktionsliste-<Version>.pdf neben die Pakete legen (für das Release)."""
+    from atlas.cli import funktionsliste_pdf_erzeugen
+    pdf = funktionsliste_pdf_erzeugen()
+    if not pdf:
+        return None
+    ziel = Path.home() / "Desktop" / f"JARVIS-Funktionsliste-{__version__}.pdf"
+    try:
+        ziel.parent.mkdir(exist_ok=True)
+        shutil.copy2(pdf, ziel)
+        return ziel
+    except OSError:
+        return pdf
+
+
 def veroeffentlichen() -> None:
     if not shutil.which("gh"):
         console.print("[red]GitHub-CLI (gh) fehlt[/] – 'brew install gh' und 'gh auth login'.")
@@ -434,6 +449,9 @@ def veroeffentlichen() -> None:
     dateien = paket(sha, repo)
     if not dateien:
         return
+    pdf = funktionsliste_pdf_bereit()                 # Funktionsliste & Sicherheitseinrichtungen ans Release
+    if pdf:
+        dateien = [*dateien, pdf]
     tag = f"v{__version__}-{sha[:7]}"
     vorhanden = _netz(["gh", "release", "view", tag, "--repo", repo], timeout=120)
     if vorhanden.returncode and NETZFEHLER.search(vorhanden.stderr or ""):

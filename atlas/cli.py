@@ -498,9 +498,30 @@ def tests_ausfuehren() -> bool:
     return True
 
 
+def funktionsliste_pdf_erzeugen():
+    """docs/JARVIS_Funktionsliste.pdf aus FUNKTIONEN.md und SICHERHEIT.md neu bauen (vor jedem Hochladen).
+    Fehlt reportlab, wird es einmalig in die JARVIS-Umgebung installiert. Ein Fehler hält das Speichern nicht auf."""
+    import sys
+    from pathlib import Path as _P
+    befehl = [sys.executable, "-m", "atlas.funktionsliste_pdf"]
+    r = subprocess.run(befehl, cwd=str(REPO_DIR), capture_output=True, text=True)
+    if r.returncode and "reportlab" in (r.stderr or ""):
+        from atlas.plattform import uv
+        console.print("  Installiere reportlab für die PDF-Funktionsliste …")
+        subprocess.run([uv(), "pip", "install", "--python", sys.executable, "reportlab>=4.0"], capture_output=True)
+        r = subprocess.run(befehl, cwd=str(REPO_DIR), capture_output=True, text=True)
+    if r.returncode:
+        console.print(f"[yellow]⚠ PDF-Funktionsliste nicht erzeugt:[/] {(r.stderr or r.stdout).strip()[-300:]}")
+        return None
+    pdf = _P(r.stdout.strip().splitlines()[-1])
+    console.print(f"[green]✓ PDF-Funktionsliste aktualisiert[/] (docs/{pdf.name})")
+    return pdf
+
+
 def speichern(msg: str) -> None:
     if not tests_ausfuehren():
         return
+    funktionsliste_pdf_erzeugen()
     g = ["git", "-C", str(REPO_DIR)]
     subprocess.run([*g, "add", "-A"])
     if subprocess.run([*g, "diff", "--cached", "--quiet"]).returncode != 0:
