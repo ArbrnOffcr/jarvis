@@ -291,6 +291,7 @@ function connect() {
   ws.onopen = () => {
     retry = 1000; setState("idle");
     if (document.hidden) try { ws.send(JSON.stringify({ type: "sichtbar", an: false })); } catch (e) {}
+    try { versionZeigen(); } catch (e) {}
     api("/status").then((st) => {                 // neue Version eingespielt? Dann Oberfläche neu laden
       const c = st.update?.commit;
       if (window.JARVIS_COMMIT && c && c !== window.JARVIS_COMMIT && !window.REC?.aktiv) location.reload();
@@ -7513,3 +7514,16 @@ document.addEventListener("click", async (e) => {
   catch (err) { toast(err.message); }
   b.disabled = false; speicherAufbauen($("einst-vb")).catch(() => {});
 }, true);
+
+
+// Versionsanzeige klein am Rand des Dashboards (unten links)
+function versionZeigen() {
+  api("/status").then((s) => {
+    let el = document.getElementById("jv-version");
+    if (!el) { el = document.createElement("div"); el.id = "jv-version"; document.body.appendChild(el); }
+    el.textContent = `JARVIS v${s.version || "?"}${s.update?.commit ? " · " + s.update.commit : ""}`;
+    el.title = s.update?.hinweis || "Installierte Version";
+  }).catch(() => {});
+}
+setTimeout(versionZeigen, 1500);
+setInterval(versionZeigen, 10 * 60000);

@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 04.11.2026 · Version 0.35.2
+Stand: 04.11.2026 · Version 0.35.3
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -43,7 +43,8 @@ Bedeutung der Zeichen:
 | Not-Aus: nur noch Lesen | ✅ | `/notaus` |
 | Geführte Einführung (ca. 3 Minuten, mit Übungen) | ✅ | startet nach der Installation; wiederholen: ⚙ Einstellungen, Menü Hilfe oder „Starte die Einführung“ |
 | Setup-Guide für neue Benutzer: zehn Schritte mit Erklärung (wofür, wo bekommt man es, was kostet es), Pflicht/empfohlen/optional, Eingabe direkt im Guide mit Prüfung – KI-Modell (Claude oder OpenAI/Gemini/Mistral/eigener Dienst), lokales Modell, Dokumenten-Archiv, Kalender & Mail, Stimme, Telegram/iPhone, Extras (Bilder, YouTube, NUKI), Über dich; am Ende Checkliste und Start der Einführung | ✅ | startet bei der Erstinstallation vor der Einführung, solange kein KI-Schlüssel da ist; sonst ⚙ Einstellungen → Allgemein → „Setup-Guide“ oder „Starte den Setup-Guide“; merkt sich den letzten Schritt |
-| Einstellungen an einem Ort | ✅ | ⚙ EINSTELLUNGEN oder ⌘, |
+| Einstellungen an einem Ort | ✅ | ⚙ EINSTELLUNGEN, ⌘, oder Menü JARVIS → „Einstellungen …“; ist die Oberfläche nicht geladen (Kern antwortet nicht), meldet die Mac-App das mit Knopf „Neu laden“ statt stumm zu bleiben (nach `jarvis app`) |
+| Versionsanzeige klein unten links im Dashboard (Version und Stand), aktualisiert sich nach Updates von selbst | ✅ | |
 | Schlüssel und Zugänge nachträglich einrichten – ohne Terminal (Claude, ElevenLabs mit Stimmenauswahl, iCloud, Telegram, Bilder, YouTube, Name/Wohnort, Dokumenten-Ordner, lokales Modell, iPhone) | ✅ | ⚙ Einstellungen → Verbindungen; Schlüssel werden vorher geprüft |
 | Dokumenten-Archiv wahlweise in iCloud Drive, OneDrive, Google Drive, Dropbox (bzw. jedem Cloud-Speicher unter „Orte“ im Finder) oder einem lokalen Ordner; Ordnerwahl startet direkt im gewählten Speicher; Dateien, die nur in der Cloud liegen, lädt JARVIS beim Lesen selbst | ✅ | ⚙ Einstellungen → Verbindungen → „Dokumenten-Ordner“; ohne iCloud findet JARVIS einen Ordner „DATENARCHIV“ ganz oben in OneDrive & Co. auch selbst; das private Gedächtnis bleibt in iCloud (ohne iCloud lokal) |
 | Funktionsliste in JARVIS anzeigen; „Was kannst du?“ | ✅ | ⚙ Einstellungen → FUNKTIONSLISTE |

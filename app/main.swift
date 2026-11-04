@@ -268,7 +268,23 @@ final class JarvisApp: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigati
     }
 
     @objc func einstellungen(_ sender: Any?) {
-        web.evaluateJavaScript("window.einstellungenOeffnen && window.einstellungenOeffnen()", completionHandler: nil)
+        // Ist die Oberfläche (noch) nicht geladen – z. B. weil der Kern nicht antwortet –, nicht stumm bleiben
+        let code = "typeof window.einstellungenOeffnen === 'function' ? (window.einstellungenOeffnen(), 'ok') : 'fehlt'"
+        web.evaluateJavaScript(code) { [weak self] erg, _ in
+            if (erg as? String) != "ok" { self?.kernHinweis() }
+        }
+    }
+
+    func kernHinweis() {
+        let a = NSAlert()
+        a.messageText = "JARVIS-Oberfläche ist nicht geladen"
+        a.informativeText = "Der JARVIS-Kern antwortet gerade nicht (Port \(port)). Die Einstellungen sind erst erreichbar, " +
+            "wenn die Oberfläche geladen ist.\n\nIm Terminal: jarvis dienst neustart – Details: jarvis dienst log"
+        a.addButton(withTitle: "Neu laden")
+        a.addButton(withTitle: "OK")
+        if a.runModal() == .alertFirstButtonReturn {
+            web.load(URLRequest(url: startURL, cachePolicy: .reloadIgnoringLocalCacheData))
+        }
     }
 
     @objc func einfuehrung(_ sender: Any?) {
