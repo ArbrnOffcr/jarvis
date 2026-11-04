@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 04.11.2026 · Version 0.35.1
+Stand: 04.11.2026 · Version 0.35.2
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -391,6 +391,7 @@ Bedeutung der Zeichen:
 | Läuft als Hintergrunddienst mit Autostart – auch bei geschlossenem Fenster arbeiten Telegram, Siri, Scan-Ordner, Briefing, Fristen, Mail-Wache, NUKI-Abendkontrolle und Updates weiter | ✅ | |
 | Sparmodus: Ist das JARVIS-Fenster zu oder verborgen, gibt JARVIS Arbeitsspeicher frei – lokales Sprachmodell und Suchmodell werden gut eine Minute nach Gebrauch entladen (bei offenem Fenster 30 Minuten), nach dem Schließen nach 2 Minuten sofort; die Spracherkennung (ca. 1,5–2 GB) lädt erst beim Öffnen und wird beim Schließen freigegeben. Im Ruhezustand bleibt nur der Kern (wenige hundert MB) | ✅ | ⚙ Einstellungen → Verbindungen → „Arbeitsspeicher (Sparmodus)“: zeigt, was geladen ist, Knopf „Speicher jetzt freigeben“; abschalten in config.yaml (sparmodus → aktiv: false) |
 | Steckbriefe fürs Archiv entstehen nur nachts (22–7 Uhr) oder wenn der Mac 10 Minuten unbenutzt ist – sobald du wieder am Mac sitzt, hört JARVIS nach dem laufenden Dokument auf; neue Scans und Briefe wertet er weiterhin sofort aus | ✅ | Stand (fertig/offen, läuft/pausiert) unter ⚙ Einstellungen → Verbindungen → „Arbeitsspeicher“; config.yaml: wissen → steckbriefe_zeit: immer, nacht_von, nacht_bis, leerlauf_min |
+| Nachts wach halten: Sind noch Steckbriefe offen und hängt der Mac am Netzteil, verhindert JARVIS zwischen 22 und 7 Uhr den Ruhezustand (Bildschirm darf ausgehen) – bis die Arbeit getan ist; im Akkubetrieb, tagsüber oder zugeklappt nie | ✅ | MacBook nachts aufgeklappt am Netzteil lassen; abschalten in config.yaml: wissen → wach_halten: false |
 | Lokales Sprachmodell in der sparsamen 4-Bit-Fassung (qwen3.5:9b-q4_K_M, ca. 6–7 GB statt 16 GB); fehlt sie, lädt JARVIS sie einmalig im Hintergrund und nutzt bis dahin die vorhandene Fassung | ✅ | danach Hinweis, wie die alte Fassung (16 GB) entfernt wird: `ollama rm qwen3.5:9b` |
 | Mehrere Macs und Benutzer, Wache-Übergabe | ✅ | |
 | Automatische Updates; startet eine neue Version nicht, kommt die vorige zurück | ✅ | |

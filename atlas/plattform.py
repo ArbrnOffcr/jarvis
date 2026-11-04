@@ -220,3 +220,51 @@ def leerlauf_sekunden() -> float | None:
     except Exception:
         return None
     return None
+
+
+def am_netzteil() -> bool:
+    """Hängt der Rechner am Netzteil? (Ohne Akku – z. B. Mac mini – immer ja.)"""
+    try:
+        if WINDOWS:
+            import ctypes
+
+            class _SPS(ctypes.Structure):
+                _fields_ = [("ACLineStatus", ctypes.c_ubyte), ("BatteryFlag", ctypes.c_ubyte),
+                            ("BatteryLifePercent", ctypes.c_ubyte), ("SystemStatusFlag", ctypes.c_ubyte),
+                            ("BatteryLifeTime", ctypes.c_ulong), ("BatteryFullLifeTime", ctypes.c_ulong)]
+            s = _SPS()
+            return bool(ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(s))) and s.ACLineStatus == 1
+        if MAC:
+            out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True, timeout=5).stdout
+            return "AC Power" in out or "Netzstrom" in out
+    except Exception:
+        return False
+    return False
+
+
+_WACH = {"proc": None, "an": False}
+
+
+def wach_halten(an: bool) -> bool:
+    """Ruhezustand verhindern (Bildschirm darf ausgehen) – nur solange JARVIS nachts arbeitet.
+    Mac: caffeinate -i (endet automatisch, wenn der Kern endet). Windows: SetThreadExecutionState."""
+    if an == _WACH["an"]:
+        return False
+    try:
+        if WINDOWS:
+            import ctypes
+            ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+            ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if an else 0))
+        elif MAC:
+            if an:
+                _WACH["proc"] = subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())],
+                                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif _WACH["proc"]:
+                _WACH["proc"].terminate()
+                _WACH["proc"] = None
+        else:
+            return False
+    except Exception:
+        return False
+    _WACH["an"] = an
+    return True

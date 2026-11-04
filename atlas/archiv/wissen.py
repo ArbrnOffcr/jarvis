@@ -344,9 +344,34 @@ class Wissen:
                 self.c.audit.log("fehler", bereich="wissen_quellen", text=f"{type(e).__name__}: {e}"[:300])
             stop.wait(int(self.cfg.get("quellen_min", 30)) * 60)
 
+    def wach_pruefen(self) -> bool:
+        """Nachts mit offenen Steckbriefen am Netzteil: Mac wach halten, bis die Arbeit getan ist.
+        Im Akkubetrieb, tagsüber oder wenn nichts mehr offen ist, darf er wieder schlafen."""
+        from atlas import plattform
+        soll = False
+        if self.cfg.get("wach_halten", True) and self.cfg.get("aktiv", True) and self.cfg.get("steckbriefe", True):
+            erlaubt, grund = self.steckbriefe_erlaubt()
+            if erlaubt and grund == "nachts" and plattform.am_netzteil() and self.search \
+                    and self.search.steckbrief_offen(1) and self._bin_wache():
+                soll = True
+        if plattform.wach_halten(soll):
+            self.c.audit.log("wissen", wach_halten=soll)
+        return soll
+
     def schleife_steckbriefe(self, stop: threading.Event) -> None:
         letzte_meldung = 0
+        try:
+            self._schleife_steckbriefe(stop, letzte_meldung)
+        finally:
+            from atlas import plattform
+            plattform.wach_halten(False)
+
+    def _schleife_steckbriefe(self, stop: threading.Event, letzte_meldung: int) -> None:
         while not stop.wait(15):
+            try:
+                self.wach_pruefen()
+            except Exception as e:
+                self.c.audit.log("fehler", bereich="wissen_wach", text=str(e)[:200])
             try:
                 if (self.search and self.cfg.get("aktiv", True) and self.cfg.get("steckbriefe", True)
                         and self._bin_wache() and not self._beschaeftigt() and self.steckbriefe_erlaubt()[0]):
