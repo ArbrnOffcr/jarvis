@@ -290,6 +290,7 @@ function connect() {
   ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws${TOKEN ? "?token=" + encodeURIComponent(TOKEN) : ""}`);
   ws.onopen = () => {
     retry = 1000; setState("idle");
+    if (document.hidden) try { ws.send(JSON.stringify({ type: "sichtbar", an: false })); } catch (e) {}
     api("/status").then((st) => {                 // neue Version eingespielt? Dann Oberfläche neu laden
       const c = st.update?.commit;
       if (window.JARVIS_COMMIT && c && c !== window.JARVIS_COMMIT && !window.REC?.aktiv) location.reload();
@@ -3290,7 +3291,9 @@ async function vbAufbauen(versuch = 0) {
       Ist ein anderes 3D-Fenster (Grundriss, Fahrzeug) offen, läuft der Hintergrund gedrosselt.</p>
      <div class="vb-reihe">${["auto", "hoch", "sparsam"].map((x) => `<button type="button" data-a="grafik" data-stufe="${x}" class="${J3D.stufe === x ? "primary" : ""}">${{ auto: "AUTOMATISCH", hoch: "IMMER HOCH", sparsam: "SPARSAM" }[x]}</button>`).join("")}</div>
      <p class="vb-hilfe" data-grafik-info></p>`));
+  html.push(vbZeile("speicher", "Arbeitsspeicher (Sparmodus)", { text: "…" }, `<div data-speicher class="vb-hilfe">Lädt …</div>`));
   box.innerHTML = html.join("");
+  speicherAufbauen(box).catch(() => {});
   j3dInfoZeigen?.(box);
   kiAufbauen(box).catch(() => {}); mailkAufbauen(box).catch(() => {}); postRegelnAufbauen(box).catch(() => {});
   offen.forEach((id) => { const x = box.querySelector(`details[data-id="${id}"]`); if (x) x.open = true; });
@@ -3615,6 +3618,7 @@ function frischStart() {
 }
 window.jarvisFrischStart = frischStart;
 document.addEventListener("visibilitychange", () => {
+  try { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "sichtbar", an: !document.hidden })); } catch (e) {}
   if (document.hidden) { verborgenSeit = Date.now(); return; }
   if (verborgenSeit && Date.now() - verborgenSeit > FRISCH_NACH_MIN * 60000 && !window.REC?.aktiv) frischStart();
   verborgenSeit = 0;
@@ -7480,3 +7484,28 @@ document.addEventListener("click", (e) => {
 }, true);
 const _handleAl = handle;
 handle = function (ev) { if (ev.type === "post_aufraeumen") return; _handleAl(ev); };
+
+
+// Einstellungen: Arbeitsspeicher – was ist gerade geladen, sofort freigeben
+async function speicherAufbauen(box) {
+  const ziel = box.querySelector("[data-speicher]"); if (!ziel) return;
+  const d = await fdGet("/sparmodus");
+  const em = ziel.closest(".vb-zeile").querySelector("summary em");
+  const gb = (d.modelle || []).reduce((s, m) => s + (m.gb || 0), 0);
+  em.textContent = d.aktiv ? `an · ${gb ? gb.toFixed(1) + " GB Modelle geladen" : "keine Modelle geladen"}` : "aus"; em.className = d.aktiv ? "ok" : "warn";
+  ziel.className = "";
+  ziel.innerHTML = `<p class="vb-hilfe">Ist das JARVIS-Fenster zu oder verborgen, läuft der Kern sparsam weiter (Telegram, Scan-Ordner, Briefing, Fristen, NUKI, Updates):
+      das lokale Sprachmodell wird gut eine Minute nach Gebrauch entladen, die Spracherkennung nach dem Schließen freigegeben.
+      Bei offenem Fenster bleibt alles 30 Minuten geladen – für schnelle Antworten.</p>
+    <ul class="pr-liste">${(d.modelle || []).map((m) => `<li><span><b>${esc(m.name)}</b><small>${m.gb} GB</small></span></li>`).join("")}
+      <li><span><b>Spracherkennung</b><small>${d.spracherkennung ? "geladen (ca. 1,5–2 GB)" : "nicht geladen"}</small></span></li></ul>
+    <div class="vb-reihe"><button type="button" data-a="speicher-frei">SPEICHER JETZT FREIGEBEN</button></div>
+    <p class="vb-hilfe">Abschalten: in config.yaml <code>sparmodus: {aktiv: false}</code>.</p>`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest('[data-a="speicher-frei"]'); if (!b) return;
+  e.stopPropagation(); b.disabled = true;
+  try { const r = await vbPost("/sparmodus/entladen", {}); toast(r.entladen?.length ? "Freigegeben: " + r.entladen.join(", ") : "Es war nichts geladen"); }
+  catch (err) { toast(err.message); }
+  b.disabled = false; speicherAufbauen($("einst-vb")).catch(() => {});
+}, true);

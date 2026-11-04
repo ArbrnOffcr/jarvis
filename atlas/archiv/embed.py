@@ -2,6 +2,8 @@
 import httpx
 import numpy as np
 
+from atlas.sparmodus import keep_alive
+
 
 class Embedder:
     def __init__(self, url: str, model: str):
@@ -18,7 +20,7 @@ class Embedder:
         vecs = []
         for i in range(0, len(texts), batch):
             r = httpx.post(f"{self.url}/api/embed",
-                           json={"model": self.model, "input": texts[i:i + batch]},
+                           json={"model": self.model, "input": texts[i:i + batch], "keep_alive": keep_alive("5m")},
                            timeout=httpx.Timeout(10, read=600))
             r.raise_for_status()
             vecs += r.json()["embeddings"]

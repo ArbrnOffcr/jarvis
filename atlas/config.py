@@ -20,8 +20,8 @@ DEFAULTS: dict = {
     "budget_monat": 50,          # Kostenbremse: danach Rückfrage vor Claude
     "local": {
         "url": "http://127.0.0.1:11434",
-        "model": "qwen3.5:9b",
-        "fallback_models": ["qwen3:8b", "llama3.1:8b"],
+        "model": "qwen3.5:9b-q4_K_M",   # 4-Bit: ca. 6–7 GB statt 16 GB Arbeitsspeicher
+        "fallback_models": ["qwen3.5:9b", "qwen3:8b", "llama3.1:8b"],
         "max_tokens": 2048,
         "think": False,
         "num_ctx": 8192,          # genug Platz für Werkzeuge + Verlauf (Standard wäre 4096)

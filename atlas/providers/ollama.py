@@ -6,6 +6,7 @@ import uuid
 import httpx
 
 from atlas.persona import CACHE_MARKE
+from atlas.sparmodus import keep_alive
 from atlas.providers.base import Provider, ProviderError, StepResult, ToolCall
 
 
@@ -51,7 +52,7 @@ class OllamaProvider(Provider):
     def step(self, model, system, messages, tools, max_tokens):
         body = {"model": model, "stream": True,
                 "messages": [{"role": "system", "content": system.replace(CACHE_MARKE, "")}, *messages],
-                "keep_alive": self.keep_alive,
+                "keep_alive": keep_alive(self.keep_alive),
                 "options": {"num_predict": max_tokens, "num_ctx": self.num_ctx}}
         if tools:
             body["tools"] = [{"type": "function", "function": {
@@ -110,7 +111,7 @@ class OllamaProvider(Provider):
         """Modell vorab in den Speicher laden (leere Anfrage)."""
         try:
             model = self.resolve_model()
-            httpx.post(f"{self.url}/api/generate", json={"model": model, "keep_alive": self.keep_alive,
+            httpx.post(f"{self.url}/api/generate", json={"model": model, "keep_alive": keep_alive(self.keep_alive),
                        "options": {"num_ctx": self.num_ctx}}, timeout=120)
         except (httpx.HTTPError, ProviderError):
             pass

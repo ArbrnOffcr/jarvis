@@ -1,4 +1,4 @@
-# =====================================================================
+﻿# =====================================================================
 #  JARVIS – Installation unter Windows 10/11 (ohne Administratorrechte)
 #  Aufruf: „JARVIS installieren.cmd“ im entpackten Paket (oder durch JARVIS-Setup.exe).
 #  Kann gefahrlos erneut laufen – Erledigtes wird übersprungen bzw. aktualisiert.
@@ -103,7 +103,7 @@ if ($Lokal) {
           Start-Process $setup -ArgumentList "/VERYSILENT", "/NORESTART" -Wait } catch { Warn "Ollama konnte nicht geladen werden – JARVIS nutzt dann nur das Cloud-Modell." }
   }
   if (Test-Path $ollama) {
-    Start-Process -WindowStyle Hidden $ollama -ArgumentList "pull qwen3.5:9b"
+    Start-Process -WindowStyle Hidden $ollama -ArgumentList "pull qwen3.5:9b-q4_K_M"
     Start-Process -WindowStyle Hidden $ollama -ArgumentList "pull bge-m3"
     Info "Sprachmodell lädt im Hintergrund – bis dahin antwortet JARVIS über das Cloud-Modell."
   }

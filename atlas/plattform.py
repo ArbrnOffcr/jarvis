@@ -102,14 +102,54 @@ def benutzer_nummer() -> int:
 
 # ------------------------------------------------------------------ Sprache (Erkennung und Ersatzstimme)
 _WHISPER = {}
+_WHISPER_ZEIT = [0.0]
+
+
+def whisper_zuletzt() -> float:
+    return _WHISPER_ZEIT[0]
+
+
+def whisper_geladen() -> bool:
+    if WINDOWS:
+        return bool(_WHISPER)
+    try:
+        from mlx_whisper.transcribe import ModelHolder
+        return ModelHolder.model is not None
+    except Exception:
+        return False
+
+
+def whisper_entladen() -> bool:
+    """Spracherkennung aus dem Speicher nehmen (Sparmodus); beim nächsten Gebrauch wird sie neu geladen."""
+    import gc
+    if not whisper_geladen():
+        return False
+    if WINDOWS:
+        _WHISPER.clear()
+    else:
+        from mlx_whisper.transcribe import ModelHolder
+        ModelHolder.model, ModelHolder.model_path = None, None
+        gc.collect()
+        try:
+            import mlx.core as mx
+            (getattr(mx, "clear_cache", None) or mx.metal.clear_cache)()
+        except Exception:
+            pass
+    gc.collect()
+    return True
 
 
 def whisper(audio, modell: str, **optionen) -> dict:
     """Spracherkennung. Mac: mlx-whisper (Apple-Chip). Windows: faster-whisper (CPU, int8).
     Rückgabe wie mlx_whisper: {"text", "language", "segments": [{"start", "end", "text"}]}."""
+    import time
+    _WHISPER_ZEIT[0] = time.time()
     if not WINDOWS:
         import mlx_whisper
-        return mlx_whisper.transcribe(audio, path_or_hf_repo=modell, **optionen)
+        try:
+            return mlx_whisper.transcribe(audio, path_or_hf_repo=modell, **optionen)
+        finally:
+            _WHISPER_ZEIT[0] = time.time()
     from faster_whisper import WhisperModel
     name = str(modell).rsplit("/", 1)[-1].replace("whisper-", "") or "large-v3-turbo"
     if name not in _WHISPER:
@@ -120,6 +160,7 @@ def whisper(audio, modell: str, **optionen) -> dict:
                                            condition_on_previous_text=bool(optionen.get("condition_on_previous_text", False)),
                                            vad_filter=True)
     liste = [{"start": s.start, "end": s.end, "text": s.text} for s in segs]
+    _WHISPER_ZEIT[0] = time.time()
     return {"text": "".join(s["text"] for s in liste), "language": info.language, "segments": liste}
 
 

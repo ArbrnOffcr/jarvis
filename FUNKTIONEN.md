@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 04.11.2026 · Version 0.34.1
+Stand: 04.11.2026 · Version 0.35.0
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -388,11 +388,13 @@ Bedeutung der Zeichen:
 | KI-Modelle wählbar: Hauptmodell und Ausweichmodell aus Claude, OpenAI (GPT), Google Gemini, Mistral (EU) oder einem eigenen OpenAI-kompatiblen Dienst (OpenRouter, Groq, DeepSeek, LM Studio …); fällt das Hauptmodell aus (Störung, Schlüssel, Limit), antwortet das Ausweichmodell nahtlos weiter; je Anbieter drei Stufen (schnell/Standard/stark) mit Modellliste vom Anbieter | ✅ | Einstellungen → Verbindungen → „KI-Modelle“; Schlüssel nur im Schlüsselbund; Datenschutz-Schleier gilt für jeden Anbieter; Websuche, Prompt-Cache und direktes PDF-Lesen nur mit Claude (sonst liest JARVIS PDFs lokal aus); Gemini nur mit bezahltem Konto (kostenlose Stufe darf Eingaben nutzen); Wechsel ohne Neustart |
 | Einstellungen in Reitern (Allgemein, Stimme & Gespräch, Stab, Konten & Schlüssel, Daten & Postfächer, Fahrzeuge, Immobilien, iPhone, Autopilot, Zuhause, Notfall, Projekte, Sicherheit) mit Suche über alle Reiter | ✅ | merkt sich den letzten Reiter; auf dem iPhone wischbare Leiste |
 | Rückfragen (Beheben, Hinnehmen, Notbremse, Notfall beenden, Wächtermodus, Projekt anlegen …) als eigener JARVIS-Dialog – funktioniert in der Mac-App, im Browser und auf dem iPhone | ✅ | Enter bestätigt, Esc bricht ab |
-| Läuft als Hintergrunddienst mit Autostart | ✅ | |
+| Läuft als Hintergrunddienst mit Autostart – auch bei geschlossenem Fenster arbeiten Telegram, Siri, Scan-Ordner, Briefing, Fristen, Mail-Wache, NUKI-Abendkontrolle und Updates weiter | ✅ | |
+| Sparmodus: Ist das JARVIS-Fenster zu oder verborgen, gibt JARVIS Arbeitsspeicher frei – lokales Sprachmodell und Suchmodell werden gut eine Minute nach Gebrauch entladen (bei offenem Fenster 30 Minuten), nach dem Schließen nach 2 Minuten sofort; die Spracherkennung (ca. 1,5–2 GB) lädt erst beim Öffnen und wird beim Schließen freigegeben. Im Ruhezustand bleibt nur der Kern (wenige hundert MB) | ✅ | ⚙ Einstellungen → Verbindungen → „Arbeitsspeicher (Sparmodus)“: zeigt, was geladen ist, Knopf „Speicher jetzt freigeben“; abschalten in config.yaml (sparmodus → aktiv: false) |
+| Lokales Sprachmodell in der sparsamen 4-Bit-Fassung (qwen3.5:9b-q4_K_M, ca. 6–7 GB statt 16 GB); fehlt sie, lädt JARVIS sie einmalig im Hintergrund und nutzt bis dahin die vorhandene Fassung | ✅ | danach Hinweis, wie die alte Fassung (16 GB) entfernt wird: `ollama rm qwen3.5:9b` |
 | Mehrere Macs und Benutzer, Wache-Übergabe | ✅ | |
 | Automatische Updates; startet eine neue Version nicht, kommt die vorige zurück | ✅ | |
 | Schnelle Antworten | ✅ | Werkzeuge nach Bedarf, 1-h-Prompt-Cache, Vorwärmen |
-| Lokales Sprachmodell (Ollama) für Privates und offline | ⚙️ | ca. 7 GB |
+| Lokales Sprachmodell (Ollama) für Privates und offline | ⚙️ | ca. 6–7 GB Download und Arbeitsspeicher (nur bei Gebrauch geladen) |
 | Weitergabe: Installations-DMG mit grafischem Assistenten (Mac) und Windows-Installationspaket | ✅ | `jarvis paket` / `jarvis veroeffentlichen` |
 | Veröffentlichen übersteht GitHub-Aussetzer: prüft vorab die Verbindung, wiederholt Hochladen und Release bei Netzfehlern und holt einen früher fehlgeschlagenen Upload beim nächsten Aufruf nach | ✅ | einfach erneut `jarvis veroeffentlichen` |
 | Weitergegebene Installationen nutzen nur die eigenen Schlüssel des Empfängers | ✅ | Datenschutz-Scan blockiert jeden Schlüssel im Paket |

@@ -94,6 +94,8 @@ class Core:
         self.transcriber = Transcriber()
         self.ws_clients: set = set()
         self.loop = None
+        from atlas.sparmodus import Sparmodus
+        self.sparmodus = Sparmodus(self)
         self.proaktiv = Proaktiv(self)
         from atlas.workflows import beihilfe as wf_beihilfe
         self.beihilfe = wf_beihilfe.Beihilfe(self)
@@ -1841,6 +1843,17 @@ def post_aufraeumen_stand(_: None = Depends(auth)):
     return get_core().post.aufraeumen_stand()
 
 
+@app.get("/sparmodus")
+def sparmodus_stand(_: None = Depends(auth)):
+    return get_core().sparmodus.stand()
+
+
+@app.post("/sparmodus/entladen")
+async def sparmodus_entladen(_: None = Depends(auth)):
+    """Knopf „Speicher jetzt freigeben“: lokale Modelle und Spracherkennung sofort entladen."""
+    return {"entladen": await asyncio.to_thread(get_core().sparmodus.entladen)}
+
+
 @app.get("/post-regeln")
 def post_regeln(_: None = Depends(auth)):
     return {"regeln": get_core().post.regeln()}
@@ -2434,6 +2447,7 @@ async def ws_endpoint(ws: WebSocket, token: str = ""):
     c.audit.log("sitzung_start")
     c.loop = asyncio.get_running_loop()
     c.ws_clients.add(ws)
+    c.sparmodus.verbunden(ws)
 
     async def begruessen(neu: bool = False):
         """Frische Begrüßung nach der Tageszeit („Guten Morgen, Sir.“) – gesprochen und als erste Zeile im Dashboard.
@@ -2481,6 +2495,8 @@ async def ws_endpoint(ws: WebSocket, token: str = ""):
                 f = s.antworten.get(msg.get("id"))
                 if f and not f.done():
                     f.set_result(bool(msg.get("answer")))
+            elif kind == "sichtbar":               # Fenster sichtbar/verborgen (Sparmodus)
+                c.sparmodus.melden(ws, bool(msg.get("an", True)))
             elif kind == "player":                 # Zustand des Podcast-Players im Dashboard
                 c.musik.player_meldung(msg)
             elif kind == "neue_sitzung":           # App nach einer Pause wieder geöffnet: frisch anfangen
@@ -2522,6 +2538,7 @@ async def ws_endpoint(ws: WebSocket, token: str = ""):
         if s.task and not s.task.done():
             s.task.cancel()
         c.ws_clients.discard(ws)
+        c.sparmodus.getrennt(ws)
         c.audit.log("sitzung_ende")
         asyncio.create_task(_summarize(list(s.messages)))
 
@@ -2559,7 +2576,9 @@ def run():
         ("Wache", c.proaktiv.start),
         ("Aktualisierung", c.update.start),
         ("iMessage", lambda: c.nachrichten.start(c.proaktiv.stop)),
-        ("Spracherkennung vorwärmen", lambda: threading.Thread(target=_whisper_vorwaermen, daemon=True).start()),
+        ("Sparmodus", lambda: c.sparmodus.start(c.proaktiv.stop)),
+        ("Spracherkennung vorwärmen", lambda: not c.sparmodus.aktiv and
+            threading.Thread(target=_whisper_vorwaermen, daemon=True).start()),
         ("Werbefilter", lambda: c.werbung.start(c.proaktiv.stop)),
         ("HESTIA Nebenkosten", lambda: c.nebenkosten.start(c.proaktiv.stop)),
         ("Mail-Wache", lambda: c.mailwache.start(c.proaktiv.stop)),

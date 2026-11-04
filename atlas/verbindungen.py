@@ -22,7 +22,7 @@ from atlas.tools import ToolError
 
 from atlas.voice import STANDARD_STIMME        # ElevenLabs „Daniel“ – ruhig, britisch, spricht auch Deutsch
 ART = ("anthropic", "elevenlabs", "telegram", "serper", "youtube", "nuki")
-LOKAL_MODELL = "qwen3.5:9b"
+LOKAL_MODELL = "qwen3.5:9b-q4_K_M"
 OLLAMA = ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama", str(LOCAL_DIR / "ollama" / "ollama"),
           "/Applications/Ollama.app/Contents/Resources/ollama"]
 _laden: dict = {}                                 # laufender Modell-Download

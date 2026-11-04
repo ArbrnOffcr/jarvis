@@ -161,7 +161,7 @@ PLIST
       for i in {1..20}; do curl -s --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
     fi
     # Modelle laden im Hintergrund weiter – JARVIS ist schon vorher benutzbar (über Claude)
-    nohup zsh -c "\"$OBIN\" pull qwen3.5:9b || \"$OBIN\" pull qwen3:8b; \"$OBIN\" pull bge-m3" >"$LOGS/modelle.log" 2>&1 &
+    nohup zsh -c "\"$OBIN\" pull qwen3.5:9b-q4_K_M || \"$OBIN\" pull qwen3.5:9b || \"$OBIN\" pull qwen3:8b; \"$OBIN\" pull bge-m3" >"$LOGS/modelle.log" 2>&1 &
     info "Sprachmodell lädt im Hintergrund (ca. 7 GB) – bis dahin antwortet JARVIS über Claude."
   fi
 else
