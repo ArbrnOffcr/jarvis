@@ -330,14 +330,15 @@ class LocalSearch:
         return geaendert
 
     # ---------- Steckbriefe ----------
-    def steckbrief_offen(self, grenze: int = 20) -> list[tuple[str, str, float]]:
-        """Archiv-Dokumente mit lesbarem Inhalt, aber ohne (aktuellen) Steckbrief – neueste zuerst."""
+    def steckbrief_offen(self, grenze: int = 20, aelteste: bool = False) -> list[tuple[str, str, float]]:
+        """Archiv-Dokumente mit lesbarem Inhalt, aber ohne (aktuellen) Steckbrief – neueste zuerst
+        (aelteste=True: von hinten – so arbeitet ein zweiter Mac mit, ohne dem ersten in die Quere zu kommen)."""
         return self.db.execute("""
             SELECT d.id, d.pfad, d.mtime FROM docs d LEFT JOIN steckbriefe s ON s.doc=d.id
             WHERE d.quelle='archiv' AND (s.doc IS NULL OR s.mtime != d.mtime)
               AND (SELECT COALESCE(SUM(LENGTH(c.text)), 0) FROM chunks c
                    WHERE c.doc=d.id AND c.lebt=1 AND c.text NOT LIKE 'Datei:%') >= 200
-            ORDER BY d.mtime DESC LIMIT ?""", (grenze,)).fetchall()
+            ORDER BY d.mtime """ + ("ASC" if aelteste else "DESC") + " LIMIT ?", (grenze,)).fetchall()
 
     def inhalt(self, did: str, zeichen: int = 4000) -> str:
         t, out = 0, []

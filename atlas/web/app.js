@@ -7501,9 +7501,16 @@ async function speicherAufbauen(box) {
     <ul class="pr-liste">${(d.modelle || []).map((m) => `<li><span><b>${esc(m.name)}</b><small>${m.gb} GB</small></span></li>`).join("")}
       <li><span><b>Spracherkennung</b><small>${d.spracherkennung ? "geladen (ca. 1,5–2 GB)" : "nicht geladen"}</small></span></li></ul>
     ${d.steckbriefe?.offen != null ? `<p class="vb-hilfe"><b>Steckbriefe fürs Archiv:</b> ${d.steckbriefe.fertig} fertig, ${d.steckbriefe.offen} offen.
-      Sie brauchen das große Modell und entstehen nur nachts (22–7 Uhr) oder wenn der Mac 10 Minuten unbenutzt ist – gerade:
+      Sie brauchen das lokale Sprachmodell und entstehen von selbst nur nachts (22–7 Uhr) oder wenn der Mac 10 Minuten unbenutzt ist – gerade:
       <b>${d.steckbriefe.jetzt ? "läuft (" + esc(d.steckbriefe.grund) + ")" : "pausiert (" + esc(d.steckbriefe.grund) + ")"}</b>.
-      Neue Scans und Briefe wertet JARVIS weiterhin sofort aus.</p>` : ""}
+      Neue Scans und Briefe wertet JARVIS weiterhin sofort aus.</p>
+      <div class="vb-reihe">${d.steckbriefe.manuell
+        ? `<span class="vb-hilfe">▶ Läuft manuell bis ${esc((d.steckbriefe.bis || "").slice(11, 16))} Uhr${d.steckbriefe.ich_wache ? "" : ` – dieser Mac hilft ${esc(d.steckbriefe.wache || "dem anderen Mac")} (älteste zuerst)`}</span>
+           <button type="button" data-a="steck" data-std="0">STOPPEN</button>`
+        : `<button type="button" class="primary" data-a="steck" data-std="">JETZT ERZEUGEN – BIS FERTIG</button>
+           <button type="button" data-a="steck" data-std="2">2 STD</button><button type="button" data-a="steck" data-std="8">8 STD</button>`}</div>
+      <p class="vb-hilfe">„Jetzt erzeugen“ arbeitet auch tagsüber – dann ist das lokale Modell (ca. 6–7 GB) dauerhaft geladen; Gespräche haben Vorrang.
+        Am Netzteil hält JARVIS den Mac dabei wach. Startest du es auf dem zweiten Mac, arbeiten beide gleichzeitig (von beiden Enden).</p>` : ""}
     <div class="vb-reihe"><button type="button" data-a="speicher-frei">SPEICHER JETZT FREIGEBEN</button></div>
     <p class="vb-hilfe">Abschalten: in config.yaml <code>sparmodus: {aktiv: false}</code>.</p>`;
 }
@@ -7527,3 +7534,14 @@ function versionZeigen() {
 }
 setTimeout(versionZeigen, 1500);
 setInterval(versionZeigen, 10 * 60000);
+
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest('[data-a="steck"]'); if (!b) return;
+  e.stopPropagation(); b.disabled = true;
+  const std = b.dataset.std === "" ? null : Number(b.dataset.std);
+  try {
+    const r = await vbPost("/steckbriefe", { stunden: std });
+    toast(r.manuell ? `Steckbriefe laufen bis ${String(r.bis).slice(11, 16)} Uhr` : "Steckbriefe gestoppt – weiter nachts und im Leerlauf");
+  } catch (err) { toast(err.message); }
+  speicherAufbauen($("einst-vb")).catch(() => {});
+}, true);

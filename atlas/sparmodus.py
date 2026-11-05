@@ -130,7 +130,8 @@ class Sparmodus:
             if w is not None and w.search:
                 ws = w.status()
                 steck = {"offen": ws.get("steckbriefe_offen", 0), "fertig": ws.get("steckbriefe", 0),
-                         "jetzt": ws.get("steckbriefe_jetzt"), "grund": ws.get("steckbriefe_grund")}
+                         "jetzt": ws.get("steckbriefe_jetzt"), "grund": ws.get("steckbriefe_grund"),
+                         **(ws.get("steckbriefe_manuell") or {})}
         except Exception:
             pass
         return {"aktiv": self.aktiv, "fenster_offen": self.fenster_offen(), "modelle": geladen,

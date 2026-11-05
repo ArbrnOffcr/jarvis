@@ -1843,6 +1843,17 @@ def post_aufraeumen_stand(_: None = Depends(auth)):
     return get_core().post.aufraeumen_stand()
 
 
+@app.post("/steckbriefe")
+async def steckbriefe_manuell(data: dict, _: None = Depends(auth)):
+    """Knopf „Steckbriefe jetzt erzeugen“ (stunden: 2/8/null = bis fertig) bzw. „Stoppen“ (stunden: 0)."""
+    w = get_core().wissen
+    st = data.get("stunden", None)
+    try:
+        return await asyncio.to_thread(w.steckbriefe_starten, None if st is None else float(st))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.get("/sparmodus")
 def sparmodus_stand(_: None = Depends(auth)):
     return get_core().sparmodus.stand()

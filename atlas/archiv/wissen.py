@@ -99,6 +99,7 @@ class Wissen:
         self.c = core
         self.cfg = core.cfg.get("wissen") or {}
         self.stand = {"steckbriefe_neu": 0, "steckbriefe_fehler": 0, "quellen": {}, "zuletzt": ""}
+        self.manuell_bis = 0.0                   # „Jetzt erzeugen“: bis dahin auch tagsüber, ohne auf Leerlauf zu warten
 
     @property
     def search(self):
@@ -122,6 +123,8 @@ class Wissen:
         """Steckbriefe brauchen das große lokale Modell. Standard: nur nachts (22–7 Uhr) oder wenn der Rechner
         mindestens 10 Minuten unbenutzt ist – tagsüber bleibt der Arbeitsspeicher frei.
         config.yaml: wissen → steckbriefe_zeit: nachts_oder_leerlauf | immer, nacht_von, nacht_bis, leerlauf_min."""
+        if self.manuell_aktiv():
+            return True, "manuell gestartet"
         if str(self.cfg.get("steckbriefe_zeit", "nachts_oder_leerlauf")) == "immer":
             return True, "immer"
         von, bis = int(self.cfg.get("nacht_von", 22)), int(self.cfg.get("nacht_bis", 7))
@@ -133,6 +136,33 @@ class Wissen:
         if ruhe is not None and ruhe >= float(self.cfg.get("leerlauf_min", 10)) * 60:
             return True, "Leerlauf"
         return False, "tagsüber in Benutzung"
+
+    def manuell_aktiv(self) -> bool:
+        return time.time() < getattr(self, "manuell_bis", 0.0)
+
+    def steckbriefe_starten(self, stunden: float | None = None) -> dict:
+        """Steckbriefe jetzt erzeugen – auch tagsüber und während du am Mac arbeitest (Gespräche haben Vorrang).
+        stunden: 2, 8 … oder None = bis alle fertig sind (höchstens 3 Tage). 0 = stoppen."""
+        if stunden == 0:
+            self.manuell_bis = 0.0
+            self.c.audit.log("wissen", steckbriefe_manuell="gestoppt")
+            return self.manuell_stand()
+        if not self.search:
+            raise ValueError("Kein Dokumenten-Archiv eingerichtet")
+        self.manuell_bis = time.time() + (float(stunden) if stunden else 72) * 3600
+        self.c.audit.log("wissen", steckbriefe_manuell=f"gestartet ({stunden or 'bis fertig'} h)",
+                         rolle="Wache" if self._bin_wache() else "Helfer")
+        return self.manuell_stand()
+
+    def manuell_stand(self) -> dict:
+        wache = ""
+        try:
+            wache = str(self.c.archiv.shared_status().get("wache") or "") if self.c.archiv else ""
+        except Exception:
+            pass
+        return {"manuell": self.manuell_aktiv(), "bis": datetime.fromtimestamp(self.manuell_bis).isoformat(timespec="minutes")
+                if self.manuell_aktiv() else "", "wache": wache.split("/")[0], "ich_wache": self._bin_wache(),
+                "neu": self.stand["steckbriefe_neu"]}
 
     def _bin_wache(self) -> bool:
         from atlas.lease import ME
@@ -175,7 +205,8 @@ class Wissen:
         if not s or not lokal or not lokal.available():
             return 0
         n = 0
-        for did, pfad, mtime in s.steckbrief_offen(grenze):
+        helfer = not self._bin_wache()            # zweiter Mac (manuell gestartet): von hinten anfangen
+        for did, pfad, mtime in s.steckbrief_offen(grenze, aelteste=helfer):
             if (stop and stop.is_set()) or self._beschaeftigt() or not self.steckbriefe_erlaubt()[0]:
                 break                                     # z. B. du sitzt wieder am Mac → sofort aufhören
             text = s.inhalt(did)
@@ -351,8 +382,8 @@ class Wissen:
         soll = False
         if self.cfg.get("wach_halten", True) and self.cfg.get("aktiv", True) and self.cfg.get("steckbriefe", True):
             erlaubt, grund = self.steckbriefe_erlaubt()
-            if erlaubt and grund == "nachts" and plattform.am_netzteil() and self.search \
-                    and self.search.steckbrief_offen(1) and self._bin_wache():
+            if erlaubt and grund in ("nachts", "manuell gestartet") and plattform.am_netzteil() and self.search \
+                    and self.search.steckbrief_offen(1) and (self._bin_wache() or self.manuell_aktiv()):
                 soll = True
         if plattform.wach_halten(soll):
             self.c.audit.log("wissen", wach_halten=soll)
@@ -374,8 +405,15 @@ class Wissen:
                 self.c.audit.log("fehler", bereich="wissen_wach", text=str(e)[:200])
             try:
                 if (self.search and self.cfg.get("aktiv", True) and self.cfg.get("steckbriefe", True)
-                        and self._bin_wache() and not self._beschaeftigt() and self.steckbriefe_erlaubt()[0]):
-                    self.steckbriefe_erstellen(int(self.cfg.get("steckbriefe_je_runde", 10)), stop)
+                        and (self._bin_wache() or self.manuell_aktiv()) and not self._beschaeftigt()
+                        and self.steckbriefe_erlaubt()[0]):
+                    if not self.steckbriefe_erstellen(int(self.cfg.get("steckbriefe_je_runde", 10)), stop) \
+                            and self.manuell_aktiv() and not self.search.steckbrief_offen(1):
+                        self.manuell_bis = 0.0                    # alles fertig
+                        try:
+                            self.c.proaktiv.hint("Alle Steckbriefe sind fertig – die Suche nach Bedeutung kennt jetzt dein ganzes Archiv.")
+                        except Exception:
+                            pass
                     n = self.stand["steckbriefe_neu"]
                     if n // 100 > letzte_meldung:                  # alle 100 Steckbriefe ein Protokolleintrag
                         letzte_meldung = n // 100
@@ -392,7 +430,7 @@ class Wissen:
         offen = len(self.search.steckbrief_offen(100000)) if self.search else 0
         erlaubt, grund = self.steckbriefe_erlaubt()
         return {**self.stand, "steckbriefe": st.get("steckbriefe", 0), "steckbriefe_offen": offen,
-                "steckbriefe_jetzt": erlaubt, "steckbriefe_grund": grund,
+                "steckbriefe_jetzt": erlaubt, "steckbriefe_grund": grund, "steckbriefe_manuell": self.manuell_stand(),
                 "quellen_im_index": st.get("quellen", {})}
 
 

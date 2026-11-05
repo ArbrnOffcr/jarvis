@@ -7,6 +7,7 @@
   jarvis berechtigungen   Zugriff auf Kalender, Erinnerungen, Notizen, Kontakte, Mail prüfen
   jarvis index [pause|weiter|neu]   Stand des Archiv-Index (inkl. Steckbriefe und weiterer Quellen)
   jarvis suchtest     Goldfragen: findet die Suche die erwarteten Dokumente?
+  jarvis steckbriefe [2|8|fertig|stop]   Steckbriefe jetzt erzeugen (auch tagsüber) oder stoppen
   jarvis datenschutz [JJJJ-MM-TT]   Was ging an Claude und ElevenLabs? (nur Zähler)
   jarvis dashboard [fenster|autostart an|autostart aus]   HUD-Oberfläche öffnen (Safari)
   jarvis token        Zugangsschlüssel in die Zwischenablage (für die Safari-Web-App)
@@ -439,6 +440,25 @@ def datenschutz(tag: str = "") -> None:
     t.add_row("  stattdessen Mac-Stimme", str(e["mac_stimme_sensibel"]))
     t.add_row("  Verlauf gelöscht", str(e["geloescht"]))
     console.print(t)
+
+
+def steckbriefe(args: list[str]) -> None:
+    """jarvis steckbriefe [2|8|fertig|stop] – Steckbriefe jetzt erzeugen (Standard: bis fertig) oder stoppen."""
+    a = (args[:1] or ["fertig"])[0].lower()
+    stunden = 0 if a in ("stop", "stopp", "aus") else (None if a in ("fertig", "an", "start") else float(a.replace(",", ".")))
+    try:
+        r = httpx.post(f"{BASE}/steckbriefe", headers={"x-atlas-token": core_token()}, json={"stunden": stunden},
+                       timeout=30).json()
+    except httpx.HTTPError:
+        console.print("[red]JARVIS-Core läuft nicht.[/] → jarvis dienst start")
+        return
+    if not r.get("manuell"):
+        console.print("Steckbriefe: manueller Lauf gestoppt – weiter nur nachts und im Leerlauf.")
+        return
+    rolle = "dieser Mac hat die Wache (neueste zuerst)" if r.get("ich_wache") else \
+        f"dieser Mac hilft mit (älteste zuerst), Wache: {r.get('wache') or '?'}"
+    console.print(f"[green]✓ Steckbriefe laufen jetzt[/] bis {r['bis'].replace('T', ' ')} – {rolle}. "
+                  "Gespräche haben Vorrang; stoppen: jarvis steckbriefe stop")
 
 
 def suchtest() -> None:
@@ -905,6 +925,8 @@ def main() -> None:
         weckwort(args[1:])
     elif cmd == "app":
         app_bauen()
+    elif cmd == "steckbriefe":
+        steckbriefe(args[1:])
     elif cmd in ("sperren", "entsperren", "sperrliste", "mindestversion", "version-sperren", "version-entsperren"):
         from atlas import lizenz
         lizenz.verwalten([cmd, *args[1:]])
