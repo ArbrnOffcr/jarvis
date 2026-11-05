@@ -77,6 +77,7 @@ class Archiv:
         self.status_file = shared / "system" / "index_status.json"
         self.stop = threading.Event()
         self.pause = threading.Event()
+        self.darf = lambda: True                 # Sparmodus: nur rechnen, solange die JARVIS-App läuft
         self.state = {"phase": "wartet", "offen": 0, "erledigt": 0, "fehler": 0}
 
     # ---------- Hilfen ----------
@@ -157,8 +158,12 @@ class Archiv:
         for n, (rel, mtime, size) in enumerate(todo, 1):
             if self.stop.is_set():
                 return
-            while self.pause.is_set() and not self.stop.is_set():
+            while (self.pause.is_set() or not self.darf()) and not self.stop.is_set():
                 time.sleep(2)
+                if time.time() - last_renew > 60:              # Wache halten, auch während der Pause
+                    if not self.lease.acquire():
+                        return
+                    last_renew = time.time()
             if time.time() - last_renew > 60:                  # Wache erneuern
                 if not self.lease.acquire():
                     return

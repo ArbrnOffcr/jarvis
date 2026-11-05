@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 04.11.2026 · Version 0.36.0
+Stand: 04.11.2026 · Version 0.36.1
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -390,6 +390,7 @@ Bedeutung der Zeichen:
 | Einstellungen in Reitern (Allgemein, Stimme & Gespräch, Stab, Konten & Schlüssel, Daten & Postfächer, Fahrzeuge, Immobilien, iPhone, Autopilot, Zuhause, Notfall, Projekte, Sicherheit) mit Suche über alle Reiter | ✅ | merkt sich den letzten Reiter; auf dem iPhone wischbare Leiste |
 | Rückfragen (Beheben, Hinnehmen, Notbremse, Notfall beenden, Wächtermodus, Projekt anlegen …) als eigener JARVIS-Dialog – funktioniert in der Mac-App, im Browser und auf dem iPhone | ✅ | Enter bestätigt, Esc bricht ab |
 | Läuft als Hintergrunddienst mit Autostart – auch bei geschlossenem Fenster arbeiten Telegram, Siri, Scan-Ordner, Briefing, Fristen, Mail-Wache, NUKI-Abendkontrolle und Updates weiter | ✅ | |
+| JARVIS-App beendet = Mac frei: keine Steckbriefe (auch kein manueller Lauf – er pausiert und geht beim nächsten Öffnen weiter), kein Archivindex, keine Mail-/Terminsuche; geladene Modelle sind nach etwa 30 Sekunden entladen, GPU und Arbeitsspeicher gehören deinen anderen Programmen. Weiter läuft nur Leichtes (Telegram, Scan-Ordner, Briefing, Fristen, NUKI, Updates); braucht ein Scan kurz das lokale Modell, ist es 20 Sekunden danach wieder entladen | ✅ | Hintergrundarbeit läuft, solange die App offen oder minimiert ist – für die Steckbriefe-Aufholphase die App nachts einfach minimiert laufen lassen |
 | Sparmodus: Ist das JARVIS-Fenster zu oder verborgen, gibt JARVIS Arbeitsspeicher frei – lokales Sprachmodell und Suchmodell werden gut eine Minute nach Gebrauch entladen (bei offenem Fenster 30 Minuten), nach dem Schließen nach 2 Minuten sofort; die Spracherkennung (ca. 1,5–2 GB) lädt erst beim Öffnen und wird beim Schließen freigegeben. Im Ruhezustand bleibt nur der Kern (wenige hundert MB) | ✅ | ⚙ Einstellungen → Verbindungen → „Arbeitsspeicher (Sparmodus)“: zeigt, was geladen ist, Knopf „Speicher jetzt freigeben“; abschalten in config.yaml (sparmodus → aktiv: false) |
 | Steckbriefe fürs Archiv entstehen nur nachts (22–7 Uhr) oder wenn der Mac 10 Minuten unbenutzt ist – sobald du wieder am Mac sitzt, hört JARVIS nach dem laufenden Dokument auf; neue Scans und Briefe wertet er weiterhin sofort aus | ✅ | Stand (fertig/offen, läuft/pausiert) unter ⚙ Einstellungen → Verbindungen → „Arbeitsspeicher“; config.yaml: wissen → steckbriefe_zeit: immer, nacht_von, nacht_bis, leerlauf_min |
 | Steckbriefe manuell starten: „Jetzt erzeugen“ – bis fertig, 2 oder 8 Stunden – arbeitet auch tagsüber (Gespräche haben Vorrang, am Netzteil bleibt der Mac wach); auf dem zweiten Mac gestartet, hilft er gleichzeitig mit und arbeitet von den ältesten Dokumenten her; Stoppen jederzeit; Meldung, wenn alle fertig sind | ✅ | ⚙ Einstellungen → Verbindungen → „Arbeitsspeicher“ oder `jarvis steckbriefe [2\|8\|fertig\|stop]`; währenddessen ist das lokale Modell (ca. 6–7 GB) dauerhaft geladen |

@@ -96,6 +96,8 @@ class Core:
         self.loop = None
         from atlas.sparmodus import Sparmodus
         self.sparmodus = Sparmodus(self)
+        if self.archiv:
+            self.archiv.darf = self.sparmodus.schwere_arbeit_erlaubt
         self.proaktiv = Proaktiv(self)
         from atlas.workflows import beihilfe as wf_beihilfe
         self.beihilfe = wf_beihilfe.Beihilfe(self)

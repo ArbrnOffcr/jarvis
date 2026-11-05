@@ -7495,13 +7495,14 @@ async function speicherAufbauen(box) {
   const gb = (d.modelle || []).reduce((s, m) => s + (m.gb || 0), 0);
   em.textContent = d.aktiv ? `an · ${gb ? gb.toFixed(1) + " GB Modelle geladen" : "keine Modelle geladen"}` : "aus"; em.className = d.aktiv ? "ok" : "warn";
   ziel.className = "";
-  ziel.innerHTML = `<p class="vb-hilfe">Ist das JARVIS-Fenster zu oder verborgen, läuft der Kern sparsam weiter (Telegram, Scan-Ordner, Briefing, Fristen, NUKI, Updates):
-      das lokale Sprachmodell wird gut eine Minute nach Gebrauch entladen, die Spracherkennung nach dem Schließen freigegeben.
-      Bei offenem Fenster bleibt alles 30 Minuten geladen – für schnelle Antworten.</p>
+  ziel.innerHTML = `<p class="vb-hilfe"><b>JARVIS-App beendet:</b> GPU und Speicher gehören dir. Keine Steckbriefe, kein Archivindex, keine Mail-/Terminsuche;
+      geladene Modelle werden nach etwa 30 Sekunden entladen. Weiter laufen nur Leichtes (Telegram, Scan-Ordner, Briefing, Fristen, NUKI, Updates) –
+      braucht ein Scan kurz das lokale Modell, wird es 20 Sekunden danach wieder entladen.
+      <b>App offen:</b> alles bleibt 30 Minuten geladen – für schnelle Antworten. <b>App minimiert:</b> Hintergrundarbeit läuft, Modelle werden nach Gebrauch entladen.</p>
     <ul class="pr-liste">${(d.modelle || []).map((m) => `<li><span><b>${esc(m.name)}</b><small>${m.gb} GB</small></span></li>`).join("")}
       <li><span><b>Spracherkennung</b><small>${d.spracherkennung ? "geladen (ca. 1,5–2 GB)" : "nicht geladen"}</small></span></li></ul>
     ${d.steckbriefe?.offen != null ? `<p class="vb-hilfe"><b>Steckbriefe fürs Archiv:</b> ${d.steckbriefe.fertig} fertig, ${d.steckbriefe.offen} offen.
-      Sie brauchen das lokale Sprachmodell und entstehen von selbst nur nachts (22–7 Uhr) oder wenn der Mac 10 Minuten unbenutzt ist – gerade:
+      Sie brauchen das lokale Sprachmodell und entstehen nur, solange die JARVIS-App läuft (auch minimiert) – von selbst nachts (22–7 Uhr) oder wenn der Mac 10 Minuten unbenutzt ist – gerade:
       <b>${d.steckbriefe.jetzt ? "läuft (" + esc(d.steckbriefe.grund) + ")" : "pausiert (" + esc(d.steckbriefe.grund) + ")"}</b>.
       Neue Scans und Briefe wertet JARVIS weiterhin sofort aus.</p>
       <div class="vb-reihe">${d.steckbriefe.manuell
@@ -7509,7 +7510,7 @@ async function speicherAufbauen(box) {
            <button type="button" data-a="steck" data-std="0">STOPPEN</button>`
         : `<button type="button" class="primary" data-a="steck" data-std="">JETZT ERZEUGEN – BIS FERTIG</button>
            <button type="button" data-a="steck" data-std="2">2 STD</button><button type="button" data-a="steck" data-std="8">8 STD</button>`}</div>
-      <p class="vb-hilfe">„Jetzt erzeugen“ arbeitet auch tagsüber – dann ist das lokale Modell (ca. 6–7 GB) dauerhaft geladen; Gespräche haben Vorrang.
+      <p class="vb-hilfe">„Jetzt erzeugen“ arbeitet auch tagsüber – dann ist das lokale Modell (ca. 6–7 GB) dauerhaft geladen; Gespräche haben Vorrang. Beendest du die App, pausiert es und geht beim nächsten Öffnen weiter.
         Am Netzteil hält JARVIS den Mac dabei wach. Startest du es auf dem zweiten Mac, arbeiten beide gleichzeitig (von beiden Enden).</p>` : ""}
     <div class="vb-reihe"><button type="button" data-a="speicher-frei">SPEICHER JETZT FREIGEBEN</button></div>
     <p class="vb-hilfe">Abschalten: in config.yaml <code>sparmodus: {aktiv: false}</code>.</p>`;

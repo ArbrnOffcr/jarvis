@@ -31,8 +31,8 @@ class Sparmodus:
         self.c = core
         cfg = core.cfg.get("sparmodus") or {}
         self.aktiv = bool(cfg.get("aktiv", True))
-        self.nachlauf = float(cfg.get("nachlauf_min", 2)) * 60
-        self.ka_zu = str(cfg.get("keep_alive_zu", "1m"))
+        self.nachlauf = float(cfg.get("nachlauf_min", 0.5)) * 60
+        self.ka_zu = str(cfg.get("keep_alive_zu", "20s"))
         self.sichtbar: dict = {}                  # WebSocket → Fenster sichtbar?
         self._zu_seit: float | None = time.time()
         self._entladen = False
@@ -42,6 +42,15 @@ class Sparmodus:
     # ------------------------------------------------------------ Fensterzustand
     def fenster_offen(self) -> bool:
         return any(self.sichtbar.get(ws, True) for ws in list(self.c.ws_clients))
+
+    def app_laeuft(self) -> bool:
+        """Läuft die JARVIS-App (oder die Web-App) – auch minimiert? Ohne App ist JARVIS für dich „aus“."""
+        return bool(self.c.ws_clients)
+
+    def schwere_arbeit_erlaubt(self) -> bool:
+        """Rechenintensives im Hintergrund (Steckbriefe, Archivindex, Mail-/Terminsuche mit dem lokalen Modell bzw.
+        Suchmodell) nur, solange die JARVIS-App läuft. Ist sie beendet, gehören GPU und Speicher dir."""
+        return not self.aktiv or self.app_laeuft()
 
     def melden(self, ws, sichtbar: bool) -> None:
         vorher = self.fenster_offen()
@@ -55,6 +64,8 @@ class Sparmodus:
 
     def getrennt(self, ws) -> None:
         self.sichtbar.pop(ws, None)
+        if not self.fenster_offen() and self._zu_seit is None:
+            self._zu_seit = time.time()
 
     def _geoeffnet(self) -> None:
         self._zu_seit, self._entladen = None, False
@@ -77,7 +88,7 @@ class Sparmodus:
                 self.pruefen()
             except Exception as e:
                 self.c.audit.log("fehler", bereich="sparmodus", text=str(e)[:200])
-            time.sleep(20)
+            time.sleep(10)
 
     def pruefen(self) -> None:
         if not self.aktiv or self.fenster_offen():

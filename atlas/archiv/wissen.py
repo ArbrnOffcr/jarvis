@@ -123,6 +123,9 @@ class Wissen:
         """Steckbriefe brauchen das große lokale Modell. Standard: nur nachts (22–7 Uhr) oder wenn der Rechner
         mindestens 10 Minuten unbenutzt ist – tagsüber bleibt der Arbeitsspeicher frei.
         config.yaml: wissen → steckbriefe_zeit: nachts_oder_leerlauf | immer, nacht_von, nacht_bis, leerlauf_min."""
+        sp = getattr(getattr(self, "c", None), "sparmodus", None)
+        if sp is not None and not sp.schwere_arbeit_erlaubt():
+            return False, "JARVIS-App beendet"           # dann gehören GPU und Speicher dir
         if self.manuell_aktiv():
             return True, "manuell gestartet"
         if str(self.cfg.get("steckbriefe_zeit", "nachts_oder_leerlauf")) == "immer":
@@ -368,7 +371,8 @@ class Wissen:
     def schleife_quellen(self, stop: threading.Event) -> None:
         while not stop.wait(30):
             try:
-                if self.search and self.cfg.get("aktiv", True):
+                sp = getattr(self.c, "sparmodus", None)
+                if self.search and self.cfg.get("aktiv", True) and (sp is None or sp.schwere_arbeit_erlaubt()):
                     self.quellen_aktualisieren()
                     self.steckbriefe_uebernehmen()
             except Exception as e:
