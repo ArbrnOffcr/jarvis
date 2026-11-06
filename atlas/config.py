@@ -67,6 +67,11 @@ DEFAULTS: dict = {
         # PKV im uniVersa-Kundenportal einreichen (eingelernter Ablauf, Zugang im Schlüsselbund)
         "pkv_portal": {"aktiv": True, "start_url": "https://www.universa.de/kundenportal", "uhrzeit": "19:00",
                        "sichtbar": True, "code_warten_s": 180,
+                       "sofort": False,      # True: neue Rechnung erkannt → PKV-Antrag ohne Rückfrage (nach 3 min Sammelzeit)
+                       "postfach": False,    # True: Mail „neue Nachricht“ von uniVersa → Nachricht als PDF in den Scan-Ordner
+                       "postfach_absender": "noreply@universa.de",
+                       "postfach_betreff": "Sie haben eine neue Nachricht",
+                       "postfach_ordner": "Versicherungsvorgänge",   # Benachrichtigung nach der Verarbeitung dorthin
                        "browser": "webkit"},   # webkit = Safari-Technik; alternativ "chromium" oder "chrome"
     },  # neue Versionen automatisch von GitHub holen      # Ordner im DATENARCHIV für neue Dokumente
     # Posteingang: jeder Scan ohne Rechnung/Bescheid ist ein Brief; Ablage nach Bestätigung,

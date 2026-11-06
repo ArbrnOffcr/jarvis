@@ -55,7 +55,8 @@ Format: je Schutzbereich eine Überschrift `##`, darunter je Einrichtung `- **Na
 ## 6. Finanzen, Gesundheit und Behördenportale
 
 - **Beihilfe/PKV lokal:** Arztrechnungen und Bescheide werden lokal ausgelesen und ausgewertet; Excel-Einträge ohne Cloud.
-- **PKV-Portal (uniVersa):** Zugang nur im Schlüsselbund und nie mitgeschrieben; Captchas werden nie umgangen (JARVIS hört auf); nie doppelt einreichen; der Anmeldecode aus der Mail wird lokal herausgelesen und nie an ein Modell gegeben; bei verändertem Portal oder fehlendem Code Abbruch.
+- **PKV-Portal (uniVersa):** Zugang nur im Schlüsselbund und nie mitgeschrieben; Captchas werden nie umgangen (JARVIS hört auf); nie doppelt einreichen; der Anmeldecode aus der Mail wird lokal herausgelesen und nie an ein Modell gegeben; bei verändertem Portal oder fehlendem Code Abbruch. Selbstständiges Einreichen nur mit Befugnis oder Richards ausdrücklicher Einstellung „sofort“ (config.yaml), mit Meldung und Bestätigung im PKV-Archiv.
+- **PKV-Postfach-Abruf:** Nur lesen und herunterladen – im Portal wird nichts gesendet oder bestätigt. Von der Benachrichtigungs-Mail liest JARVIS nur Absender, Betreff, Datum und Message-ID (lokal, nie an ein Modell); dasselbe PDF wird nie zweimal abgelegt; das Rezept enthält kein Passwort. Die Benachrichtigung wird erst nach „Versicherungsvorgänge“ verschoben, wenn alle abgerufenen PDFs verarbeitet sind; die Mail mit dem Anmeldecode kommt nach Gebrauch in den Papierkorb (wiederherstellbar), der Code selbst wird nie gespeichert.
 - **Scan-Ordner und Posteingang:** Gescannte Briefe werden lokal ausgewertet (lokales Modell); Ansehen eines Scans bleibt lokal; Fristen ins Radar, Ablage nur nach Bestätigung oder fester Regel.
 
 ## 7. Fahrzeuge und Zuhause

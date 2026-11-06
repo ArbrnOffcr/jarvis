@@ -1,5 +1,5 @@
 """JARVIS – persönlicher AI-Assistent (Paketname: atlas)."""
-__version__ = "0.36.1"
+__version__ = "0.37.4"
 
 import mimetypes as _mimetypes
 

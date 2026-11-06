@@ -116,10 +116,19 @@ def dienst(cmd: str) -> None:
 
 def _core_up() -> bool:
     try:
-        httpx.get(f"{BASE}/status", headers={"x-atlas-token": core_token()}, timeout=2)
+        httpx.get(f"{BASE}/ping", headers={"x-atlas-token": core_token()}, timeout=5)
         return True
     except httpx.HTTPError:
         return False
+
+
+def _kern_fehler(e: Exception) -> None:
+    """Unterscheiden: Kern läuft nicht – oder läuft, ist aber gerade beschäftigt (z. B. Steckbriefe)."""
+    if isinstance(e, httpx.TimeoutException) or _core_up():
+        console.print("[yellow]JARVIS-Core läuft, antwortet aber gerade langsam[/] (z. B. während Steckbriefe entstehen). "
+                      "Bitte gleich noch einmal versuchen.")
+    else:
+        console.print("[red]JARVIS-Core läuft nicht.[/] → jarvis dienst start")
 
 
 # ---------------------------------------------------------------- Befehle
@@ -337,10 +346,10 @@ def mail_test() -> None:
 
 def status() -> None:
     try:
-        r = httpx.get(f"{BASE}/status", headers={"x-atlas-token": core_token()}, timeout=5)
+        r = httpx.get(f"{BASE}/status", headers={"x-atlas-token": core_token()}, timeout=60)
         info = r.json()
-    except httpx.HTTPError:
-        console.print("[red]JARVIS-Core läuft nicht.[/] → jarvis dienst start")
+    except httpx.HTTPError as e:
+        _kern_fehler(e)
         return
     t = Table(title="◢ JARVIS STATUS ◣", border_style="cyan", show_header=False)
     for k in ["version", "name", "host", "lokal", "claude", "icloud", "icloud_nachladen", "werkzeuge",
@@ -389,8 +398,8 @@ def berechtigungen() -> None:
     try:
         r = httpx.post(f"{BASE}/berechtigungen", headers={"x-atlas-token": core_token()},
                        timeout=300)
-    except httpx.HTTPError:
-        console.print("[red]JARVIS-Core läuft nicht.[/] → jarvis dienst start")
+    except httpx.HTTPError as e:
+        _kern_fehler(e)
         return
     for quelle, ergebnis in r.json().items():
         mark = "[green]✓[/]" if ergebnis == "ok" else "[red]✗[/]"
@@ -403,9 +412,9 @@ def index(aktion: str = "") -> None:
         if aktion in ("pause", "weiter", "neu"):
             r = httpx.post(f"{BASE}/index/{aktion}", headers=h, timeout=600)
         else:
-            r = httpx.get(f"{BASE}/index", headers=h, timeout=10)
-    except httpx.HTTPError:
-        console.print("[red]JARVIS-Core läuft nicht.[/] → jarvis dienst start")
+            r = httpx.get(f"{BASE}/index", headers=h, timeout=60)
+    except httpx.HTTPError as e:
+        _kern_fehler(e)
         return
     st = r.json()
     t = Table(title="◢ ARCHIV-INDEX ◣", border_style="cyan", show_header=False)
@@ -428,8 +437,8 @@ def datenschutz(tag: str = "") -> None:
     """Was ging heute an Claude und ElevenLabs? (nur Zähler, nie Inhalte)"""
     try:
         r = httpx.get(f"{BASE}/datenschutz", params={"tag": tag}, headers={"x-atlas-token": core_token()}, timeout=30).json()
-    except httpx.HTTPError:
-        console.print("[red]JARVIS-Core läuft nicht.[/] → jarvis dienst start")
+    except httpx.HTTPError as e:
+        _kern_fehler(e)
         return
     c, e = r["claude"], r["elevenlabs"]
     t = Table(title=f"◢ DATENSCHUTZ {r['tag']} ◣", border_style="cyan", show_header=False)
@@ -449,8 +458,8 @@ def steckbriefe(args: list[str]) -> None:
     try:
         r = httpx.post(f"{BASE}/steckbriefe", headers={"x-atlas-token": core_token()}, json={"stunden": stunden},
                        timeout=30).json()
-    except httpx.HTTPError:
-        console.print("[red]JARVIS-Core läuft nicht.[/] → jarvis dienst start")
+    except httpx.HTTPError as e:
+        _kern_fehler(e)
         return
     if not r.get("manuell"):
         console.print("Steckbriefe: manueller Lauf gestoppt – weiter nur nachts und im Leerlauf.")
@@ -465,8 +474,8 @@ def suchtest() -> None:
     """Goldfragen: findet JARVIS die erwarteten Dokumente? Fragen in ATLAS-Privat/goldfragen.json ergänzen."""
     try:
         r = httpx.get(f"{BASE}/index/suchtest", headers={"x-atlas-token": core_token()}, timeout=600).json()
-    except httpx.HTTPError:
-        console.print("[red]JARVIS-Core läuft nicht.[/] → jarvis dienst start")
+    except httpx.HTTPError as e:
+        _kern_fehler(e)
         return
     t = Table(title="◢ SUCHTEST ◣", border_style="cyan")
     t.add_column("Frage"); t.add_column("Platz", justify="right"); t.add_column("ms", justify="right")

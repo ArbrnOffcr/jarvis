@@ -350,6 +350,12 @@ def auth(x_atlas_token: str | None = Header(default=None),
         raise HTTPException(status_code=401, detail="Zugang verweigert")
 
 
+@app.get("/ping")
+def ping(_: None = Depends(auth)):
+    """Lebenszeichen für `jarvis …` im Terminal – antwortet sofort, auch wenn der Kern gerade viel rechnet."""
+    return {"ok": True, "version": __version__}
+
+
 @app.get("/status")
 def status(_: None = Depends(auth)):
     return get_core().status()

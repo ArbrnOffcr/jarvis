@@ -430,12 +430,19 @@ class Wissen:
         threading.Thread(target=self.schleife_steckbriefe, args=(stop,), name="wissen-steckbriefe", daemon=True).start()
 
     def status(self) -> dict:
+        """Für Dashboard und `jarvis index` – 30 s zwischengespeichert: während Steckbriefe entstehen, ist die
+        Suchdatenbank stark beschäftigt, und jede Abfrage müsste sonst auf sie warten."""
+        hit = getattr(self, "_status_cache", None)
+        if hit and time.monotonic() - hit[0] < 30:
+            return {**hit[1], "steckbriefe_manuell": self.manuell_stand()}
         st = self.search.stats() if self.search else {}
-        offen = len(self.search.steckbrief_offen(100000)) if self.search else 0
+        offen = self.search.steckbrief_offen_anzahl() if self.search else 0
         erlaubt, grund = self.steckbriefe_erlaubt()
-        return {**self.stand, "steckbriefe": st.get("steckbriefe", 0), "steckbriefe_offen": offen,
-                "steckbriefe_jetzt": erlaubt, "steckbriefe_grund": grund, "steckbriefe_manuell": self.manuell_stand(),
-                "quellen_im_index": st.get("quellen", {})}
+        erg = {**self.stand, "steckbriefe": st.get("steckbriefe", 0), "steckbriefe_offen": offen,
+               "steckbriefe_jetzt": erlaubt, "steckbriefe_grund": grund, "steckbriefe_manuell": self.manuell_stand(),
+               "quellen_im_index": st.get("quellen", {})}
+        self._status_cache = (time.monotonic(), erg)
+        return erg
 
 
 # ------------------------------------------------------------------ Goldfragen: misst, ob die Suche besser wird

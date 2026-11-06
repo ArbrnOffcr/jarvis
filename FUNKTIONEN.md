@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 04.11.2026 · Version 0.36.1
+Stand: 04.11.2026 · Version 0.37.4
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -141,6 +141,11 @@ Bedeutung der Zeichen:
 | Haushaltsbuch: Verträge, Abos, Versicherungen; Beitragsänderungen melden | ✅ | |
 | Beihilfe/PKV: Arztrechnungen erfassen, Anträge und Zahlungen erinnern, Bescheide zuordnen | ⚙️ | Excel-Übersicht im passenden Format nötig |
 | PKV-Antrag selbst im uniVersa-Kundenportal einreichen: einmal einlernen (du reichst im JARVIS-Browserfenster ein, er schreibt mit – ohne Passwort; bei „Durchsuchen“ legt er die Belege selbst ein), danach meldet er sich an, holt den Anmeldecode aus deiner Mail, lädt alle offenen Rechnungen (beider Kinder) in einem Antrag hoch, sendet ab und legt die Bestätigung ins PKV-Archiv; Browser: Safari-Technik (WebKit), kein Chrome nötig | 🔒 | `jarvis setup universa` (Zugang nur im Schlüsselbund), dann „Lerne die PKV-Einreichung“ / „Reiche die PKV ein“; mit Befugnis „pkv_einreichen“ täglich 19 Uhr selbstständig; bei Captcha, verändertem Portal oder fehlendem Code hört er auf; Beihilfe Bund nur per App – dort weiter du |
+| PKV sofort einreichen: Erkennt JARVIS eine neue Arztrechnung, stellt er den PKV-Antrag selbst – nach 3 Minuten Sammelzeit, damit mehrere Scans einer Runde in einen Antrag kommen; Meldung und Bestätigung im PKV-Archiv wie gewohnt | ✅ | eingeschaltet (config.yaml: beihilfe → pkv_portal → sofort: true); braucht die eingelernte Einreichung; bei Captcha oder verändertem Portal hört er auf |
+| PKV-Postfach automatisch: Kommt eine Mail von noreply@universa.de „uniVersa Kundenportal – Sie haben eine neue Nachricht“, meldet sich JARVIS im Kundenportal an und lädt **alle ungelesenen** Nachrichten (fett) nacheinander als PDF – benannt nach dem Datum der Nachricht „JJJJ_MM_TT - PKV Bescheid.pdf“, mehrere am selben Tag mit laufender Nummer („… PKV Bescheid 1.pdf“, „… 2.pdf“) – in den Genius-Scan-Ordner. Von dort wertet er sie als PKV-Bescheid aus (Excel Lebensfinanzplanung, Ablage im PKV-Archiv). Sind alle verarbeitet, kommt die Benachrichtigungs-Mail in den Mail-Ordner „Versicherungsvorgänge“ | ⚙️ | einmal einlernen: „Lerne den PKV-Postfach-Abruf“ (oberste Nachricht anklicken, als PDF laden); von Hand: „Hol die neuen Nachrichten aus dem uniVersa-Portal“; holt das PDF, egal ob das Portal es herunterlädt, im Tab anzeigt oder verlinkt; prüft alle 5 Minuten; nur lesen, nie senden; dasselbe PDF nie doppelt; bleibt eine Nachricht unverarbeitet im Scan-Ordner (z. B. kein Bescheid), bleibt auch die Mail im Posteingang |
+| Bescheide mit Cent-Abweichung: Weicht der Rechnungsbetrag im Bescheid um wenige Cent von der erfassten Rechnung ab (z. B. 178,05 statt 178,04 €), ordnet JARVIS trotzdem zu und nennt die Abweichung; Belege, die die PKV als schon eingereicht (Duplikat) meldet, werden ausdrücklich erwähnt | ✅ | Toleranz 0,10 € |
+| Abgelegten Bescheid neu auswerten und Excel nachtragen – die Datei bleibt im Archiv, schon Eingetragenes wird erkannt | 🔒 | „Werte den Bescheid 2026_11_06 - Erstattung PKV 2 neu aus“; Auswertung nur lokal |
+| Mail mit dem Anmeldecode (uniVersa) wird nach Gebrauch gelöscht – beim Einreichen, beim Postfach-Abruf und nach dem Einlernen; sie landet im Papierkorb des Postfachs | ✅ | Codes gelten nur einmal |
 | Überweisungen, Online-Banking, Käufe | ❌ | bewusst nicht |
 | Passwörter, PINs, Kontonummern merken | ❌ | bewusst nicht; Kontonummern werden für die Cloud unkenntlich gemacht |
 

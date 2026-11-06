@@ -58,6 +58,8 @@ def stationen(r: dict) -> list[str]:
         namen.append(re.sub(r"\s+", " ", str(n)).strip()[:22] or "Schritt")
     return namen + ["Bestätigung ablegen"]
 REZEPT = ORDNER / "rezept.json"
+REZEPT_POSTFACH = ORDNER / "rezept_postfach.json"   # eingelernt: Anmelden → Postfach → neueste Nachricht → PDF
+DATUM_IM_TEXT = re.compile(r"\b\d{1,2}\.\d{1,2}\.(?:\d{4}|\d{2})(?!\d)|\b\d{4}-\d{2}-\d{2}\b")   # vierstellig zuerst
 PROFIL = ORDNER / "browser"
 SCHLUESSEL_BENUTZER, SCHLUESSEL_PASSWORT = "universa_benutzer", "universa_passwort"
 START_URL = "https://www.universa.de/kundenportal"
@@ -144,10 +146,21 @@ AUFZEICHNER_JS = r"""
   const leiste = () => {
     if (document.getElementById('jv-leiste') || !document.body) return;
     const d = document.createElement('div'); d.id = 'jv-leiste';
-    d.style.cssText = 'position:fixed;z-index:2147483647;right:14px;bottom:14px;background:#03111c;color:#cfefff;font:13px -apple-system,sans-serif;padding:10px 12px;border:1px solid #2fa8ff;box-shadow:0 4px 18px rgba(0,0,0,.4);max-width:330px';
-    d.innerHTML = '<b style="color:#2fa8ff;letter-spacing:.12em">JARVIS LERNT MIT</b><div id="jv-text" style="margin:6px 0 8px">Reiche den Antrag ganz normal ein. Bei „Durchsuchen“ lege ich die Belege selbst ein. Passwörter zeichne ich nicht auf.</div>' +
+    d.style.cssText = 'position:fixed;z-index:2147483647;right:14px;bottom:14px;box-sizing:border-box;width:min(330px,calc(100vw - 28px));background:#03111c;color:#cfefff;font:13px -apple-system,sans-serif;padding:10px 12px;border:1px solid #2fa8ff;box-shadow:0 4px 18px rgba(0,0,0,.4);max-width:330px';
+    const pf = window.__jvModus === 'postfach';
+    d.innerHTML = pf
+      ? '<b style="color:#2fa8ff;letter-spacing:.12em">JARVIS LERNT MIT</b><div id="jv-text" style="margin:6px 0 8px">Melde dich an, öffne das Postfach, klicke die oberste (neueste) Nachricht an und lade sie als PDF herunter. Passwörter zeichne ich nicht auf.</div>' +
+        '<button id="jv-nachricht" style="margin:0 6px 6px 0">Nächster Klick = neueste Nachricht</button><button id="jv-fertig">Fertig</button>'
+      : '<b style="color:#2fa8ff;letter-spacing:.12em">JARVIS LERNT MIT</b><div id="jv-text" style="margin:6px 0 8px">Reiche den Antrag ganz normal ein. Bei „Durchsuchen“ lege ich die Belege selbst ein. Passwörter zeichne ich nicht auf.</div>' +
       '<button id="jv-belege" style="margin:0 6px 6px 0">Belege einlegen</button><button id="jv-absenden" style="margin-right:6px">Nächster Klick = Absenden</button><button id="jv-fertig">Fertig</button>';
     document.body.appendChild(d);
+    d.querySelectorAll('div').forEach((x) => { x.style.whiteSpace = 'normal'; x.style.overflowWrap = 'anywhere'; });
+    d.querySelectorAll('button').forEach((b) => { b.style.cssText = 'display:inline-block;margin:4px 6px 0 0;padding:5px 9px;' +
+      'border:1px solid #2fa8ff;border-radius:3px;background:#0a2233;color:#cfefff;font:12px -apple-system,sans-serif;cursor:pointer'; });
+    if (pf) { d.querySelector('#jv-nachricht').onclick = (e) => { e.stopPropagation(); melde({ art: 'markierung', was: 'nachricht' });
+      d.querySelector('#jv-nachricht').textContent = '✓ markiert'; };
+      d.querySelector('#jv-fertig').onclick = (e) => { e.stopPropagation(); melde({ art: 'markierung', was: 'fertig' }); };
+      return; }
     d.querySelector('#jv-belege').onclick = (e) => { e.stopPropagation(); melde({ art: 'markierung', was: 'belege' }); };
     d.querySelector('#jv-absenden').onclick = (e) => { e.stopPropagation(); melde({ art: 'markierung', was: 'absenden' });
       d.querySelector('#jv-absenden').textContent = '✓ markiert'; };
@@ -252,7 +265,8 @@ def rezept_bauen(ereignisse: list[dict], kontext: dict, erfolg: dict | None = No
             if e.get("was") == "absenden":
                 absenden_folgt = True
             continue
-        s = {k: e[k] for k in ("art", "kandidaten", "tag", "typ", "text", "label", "mehrfach", "ankreuzen") if k in e}
+        s = {k: e[k] for k in ("art", "kandidaten", "tag", "typ", "text", "label", "mehrfach", "ankreuzen",
+                               "neueste", "pdf") if k in e}
         if e.get("art") in ("fuellen", "waehlen"):
             s["wert"] = ersetzen(e.get("wert", ""), werte)
             if e.get("typ") == "password":
@@ -312,6 +326,59 @@ def rezept_bauen(ereignisse: list[dict], kontext: dict, erfolg: dict | None = No
             "absenden_geraten": geraten}
 
 
+def datum_aus_text(text: str) -> date | None:
+    """Datum eines Listeneintrags: „06.11.2026“, „6.11.26“ oder „2026-11-06“ (vierstellige Jahre haben Vorrang)."""
+    m = DATUM_IM_TEXT.search(text or "")
+    if not m:
+        return None
+    teile = re.split(r"\D", m.group(0))
+    try:
+        if len(teile[0]) == 4:
+            return date(int(teile[0]), int(teile[1]), int(teile[2]))
+        jahr = int(teile[2]) + (2000 if len(teile[2]) == 2 else 0)
+        return date(jahr, int(teile[1]), int(teile[0]))
+    except (ValueError, IndexError):
+        return None
+
+
+def postfach_rezept_bauen(ereignisse: list[dict], kontext: dict, pdf_nach: int | None = None) -> dict:
+    """Aufzeichnung des Postfach-Abrufs → Rezept. Der Klick nach „Nächster Klick = neueste Nachricht“ (oder, ohne
+    Markierung, der erste Klick auf einen Eintrag mit Datum) wird allgemein gemacht: nie über den Text der damaligen
+    Nachricht, sondern über ihre Position – die oberste ist die neueste. Der Klick vor dem Download lädt das PDF."""
+    ev, neueste_folgt = [], False
+    roh = ereignisse if pdf_nach is None else ereignisse[:pdf_nach]   # pdf_nach zählt die Rohliste (mit Markierungen)
+    for e in roh:
+        if e.get("art") == "markierung":
+            if e.get("was") == "nachricht":
+                neueste_folgt = True
+            continue
+        e = dict(e)
+        if e.get("art") == "klick" and neueste_folgt:
+            e["neueste"], neueste_folgt = True, False
+        ev.append(e)
+    k = next((i for i in range(len(ev) - 1, -1, -1) if ev[i].get("art") == "klick"), None)
+    if k is not None:
+        ev[k]["pdf"] = True
+        ev = ev[:k + 1]                                   # was danach kam, braucht der Abruf nicht
+    if not any(e.get("neueste") for e in ev):             # ohne Markierung: erster Klick auf einen Eintrag mit Datum
+        j = next((i for i, e in enumerate(ev) if e.get("art") == "klick" and not e.get("pdf")
+                  and DATUM_IM_TEXT.search(e.get("text") or "")), None)
+        if j is not None:
+            ev[j]["neueste"] = True
+    r = rezept_bauen(ev, kontext)
+    for s in r["schritte"]:
+        if s.get("neueste"):
+            s["kandidaten"] = [x for x in s.get("kandidaten") or [] if not x.startswith("text=")]
+            s["text"] = ""
+        if s.get("pdf"):
+            s["kandidaten"] = [x for x in s.get("kandidaten") or [] if not (x.startswith("text=") and DATUM_IM_TEXT.search(x))]
+            if DATUM_IM_TEXT.search(s.get("text") or ""):
+                s["text"] = ""
+    r.update(art="postfach", hat_pdf=any(s.get("pdf") for s in r["schritte"]),
+             hat_neueste=any(s.get("neueste") for s in r["schritte"]), hat_absenden=False, absenden_geraten=False)
+    return r
+
+
 def belege_zusammenfuegen(dateien: list[Path], ziel: Path) -> Path:
     """Mehrere Belege (PDF/Bild) zu einem PDF – für Portale, die nur eine Datei je Antrag annehmen."""
     import fitz
@@ -366,7 +433,8 @@ class MailCode:
                 if code:
                     von = _h(msg["From"])
                     adr = re.search(r"[\w.+-]+@([\w-]+\.)+\w+", von)
-                    out.append({"code": code, "von": adr.group(0) if adr else von, "zeit": zeit})
+                    out.append({"code": code, "von": adr.group(0) if adr else von, "zeit": zeit,
+                                "mid": str(msg["Message-ID"] or "").strip()})
             return out
         finally:
             m.logout()
@@ -386,11 +454,114 @@ class MailCode:
         return None
 
 
+# --------------------------------------------------------------------------- Mails verschieben / löschen
+def imap_utf7_dekodieren(s: str) -> str:
+    """IMAP-Ordnernamen (modifiziertes UTF-7, z. B. „Versicherungsvorg&AOQ-nge“) lesbar machen."""
+    import base64
+
+    def teil(m):
+        b = m.group(1)
+        if not b:
+            return "&"
+        b = b.replace(",", "/")
+        return base64.b64decode(b + "=" * (-len(b) % 4)).decode("utf-16-be")
+    return re.sub(r"&([A-Za-z0-9+,]*)-", teil, s)
+
+
+def imap_utf7_kodieren(s: str) -> str:
+    import base64
+    out, puffer = [], ""
+
+    def leeren():
+        nonlocal puffer
+        if puffer:
+            b = base64.b64encode(puffer.encode("utf-16-be")).decode().rstrip("=").replace("/", ",")
+            out.append(f"&{b}-")
+            puffer = ""
+    for ch in s:
+        if 0x20 <= ord(ch) <= 0x7e:
+            leeren()
+            out.append("&-" if ch == "&" else ch)
+        else:
+            puffer += ch
+    leeren()
+    return "".join(out)
+
+
+def imap_ordner(m, name: str = "", kennung: str = "") -> str | None:
+    """Ordner per Namen (letzter Pfadteil, ohne Groß-/Kleinschreibung, Umlaute erlaubt) oder IMAP-Kennung (\\Trash)."""
+    typ, daten = m.list()
+    for z in daten or []:
+        z = z.decode(errors="ignore") if isinstance(z, bytes) else str(z)
+        t = re.match(r'\((?P<f>[^)]*)\)\s+(?:"(?P<d>[^"]*)"|NIL)\s+(?P<n>.+)$', z)
+        if not t:
+            continue
+        roh = t.group("n").strip().strip('"')
+        if kennung and kennung.lower() in t.group("f").lower():
+            return roh
+        if name:
+            lesbar = imap_utf7_dekodieren(roh)
+            letzter = re.split(r"[/.]", lesbar)[-1] if t.group("d") else lesbar
+            if letzter.strip().lower() == name.strip().lower() or lesbar.strip().lower() == name.strip().lower():
+                return roh
+    return None
+
+
+def _per_message_id(core, mids: list[str], ziel_name: str = "", kennung: str = "") -> int:
+    from atlas.tools.mail import Mail
+    m = Mail(core.secrets, core.cfg)._imap()
+    try:
+        ziel = imap_ordner(m, ziel_name, kennung)
+        if not ziel and kennung == "\\Trash":
+            ziel = imap_ordner(m, "Deleted Messages") or imap_ordner(m, "Papierkorb") or imap_ordner(m, "Trash")
+        if not ziel:
+            raise ToolError(f"Mail-Ordner „{ziel_name or kennung}“ nicht gefunden")
+        m.select("INBOX")
+        n = 0
+        for mid in mids:
+            if not mid:
+                continue
+            typ, data = m.uid("SEARCH", None, "HEADER", "Message-ID", mid)
+            for uid in (data[0] or b"").split():
+                ok = False
+                for befehl in ("MOVE", "COPY"):
+                    try:
+                        t, _ = m.uid(befehl, uid, f'"{ziel}"')
+                    except Exception:
+                        continue
+                    if t == "OK":
+                        if befehl == "COPY":
+                            m.uid("STORE", uid, "+FLAGS", "(\\Deleted)")
+                        ok = True
+                        break
+                n += ok
+        try:
+            m.expunge()
+        except Exception:
+            pass
+        return n
+    finally:
+        try:
+            m.logout()
+        except Exception:
+            pass
+
+
+def mails_verschieben(core, mids: list[str], ziel: str) -> int:
+    """uniVersa-Benachrichtigungen nach „Versicherungsvorgänge“ (Ordner muss es geben)."""
+    return _per_message_id(core, mids, ziel_name=ziel)
+
+
+def mail_papierkorb(core, mid: str) -> int:
+    """Benutzte Code-Mail in den Papierkorb (wiederherstellbar) – Codes gelten nur einmal."""
+    return _per_message_id(core, [mid], kennung="\\Trash")
+
+
 # --------------------------------------------------------------------------- Browser
-def _browser(pw, sichtbar: bool, art: str = "webkit"):
+def _browser(pw, sichtbar: bool, art: str = "webkit", downloads: bool = False):
     """Standard: WebKit – die Browser-Technik von Safari, ohne dass Chrome installiert sein muss.
     Safari selbst lässt sich nicht fernsteuern, ohne dass es Hochladen und Anmeldecookies verliert."""
-    opt = dict(headless=not sichtbar, locale="de-DE", accept_downloads=False, viewport={"width": 1280, "height": 860})
+    opt = dict(headless=not sichtbar, locale="de-DE", accept_downloads=downloads, viewport={"width": 1280, "height": 860})
     versuche = {"webkit": [("webkit", {}), ("chromium", {})],
                 "chrome": [("chromium", {"channel": "chrome"}), ("webkit", {}), ("chromium", {})],
                 "chromium": [("chromium", {}), ("webkit", {})]}.get(art, [("webkit", {}), ("chromium", {})])
@@ -431,6 +602,8 @@ class PkvPortal:
         self.lernen_start = {"ereignis": threading.Event(), "fehler": None}
         self._ab = None                          # sichtbare Strecke der laufenden Einreichung
         self._letztes_bild = None
+        self._neu_seit = 0.0                     # neue Rechnung erfasst (für „sofort einreichen“)
+        self._pf_letzt = 0.0                     # letzter Blick ins Postfach (Mail)
 
     def _zeige(self, i: int, text: str = "") -> None:
         if getattr(self, "_ab", None) is not None:
@@ -459,6 +632,12 @@ class PkvPortal:
     def rezept(self) -> dict | None:
         try:
             return json.loads(REZEPT.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def postfach_rezept(self) -> dict | None:
+        try:
+            return json.loads(REZEPT_POSTFACH.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
 
@@ -511,7 +690,10 @@ class PkvPortal:
                 "eingelernt_am": (r or {}).get("eingelernt"), "schritte": len((r or {}).get("schritte", [])),
                 "zugang_im_schluesselbund": bool(benutzer and pw), "offen": self.kurz(),
                 "selbststaendig": self._befugnis()[0], "laeuft": self.laeuft or None,
-                "einreichungen": len(z.get("verlauf", [])), "letzte": (z.get("verlauf") or [None])[-1]}
+                "einreichungen": len(z.get("verlauf", [])), "letzte": (z.get("verlauf") or [None])[-1],
+                "sofort": bool(self.cfg.get("sofort")), "postfach_automatisch": bool(self.cfg.get("postfach")),
+                "postfach_eingelernt": bool((self.postfach_rezept() or {}).get("hat_pdf")),
+                "postfach_abrufe": len(z.get("postfach_pdfs", []))}
 
     # ------------------------------------------------------------ Befugnis
     def _befugnis(self) -> tuple[bool, str]:
@@ -629,6 +811,7 @@ class PkvPortal:
                                 if codes:
                                     info["code"], info["von"] = codes[0]["code"], codes[0]["von"]
                                     info["codes"].update(c["code"] for c in codes)
+                                    info.setdefault("mids", set()).update(c.get("mid") for c in codes if c.get("mid"))
                             except Exception:
                                 pass
                         t = text + (f" · Code aus deiner Mail: {info['code']}" if info["code"] else "")
@@ -692,6 +875,7 @@ class PkvPortal:
         finally:
             if vor:
                 shutil.rmtree(vor["ordner"], ignore_errors=True)
+            self.code_mail_loeschen(*info.get("mids", ()))
             self.lernen_start["ereignis"].set()
             self.laeuft = ""
 
@@ -879,6 +1063,7 @@ class PkvPortal:
                             raise Abbruch("Der Anmeldecode kam nicht per Mail an – das Portal hat vermutlich keinen Code "
                                           "verschickt. Bitte kurz im JARVIS-Fenster prüfen, ob die Anmeldung hängt.")
                         self._tippen(el, c["code"], 60, 120)
+                        self.code_mail_loeschen(c.get("mid"))
                         c = None
                     i += 1
                 if not abgesendet:
@@ -1049,6 +1234,558 @@ class PkvPortal:
         self.c.audit.log("pkv_portal", aktion="eingereicht", belege=len(belege), wie=wie, unsicher=unsicher)
         self.melden(text)
 
+    # ------------------------------------------------------------ Postfach: neue Nachricht → PDF in den Scan-Ordner
+    def postfach_mails(self) -> list[dict]:
+        """Benachrichtigungen „Sie haben eine neue Nachricht“ von uniVersa, die noch nicht abgerufen sind.
+        Gelesen werden nur Absender, Betreff, Datum und Message-ID – lokal, nichts geht an ein Modell."""
+        from atlas.tools.mail import Mail, _h
+        absender = str(self.cfg.get("postfach_absender") or "noreply@universa.de")
+        betreff = str(self.cfg.get("postfach_betreff") or "Sie haben eine neue Nachricht").lower()
+        z = self.bh.zustand()
+        pp = z.setdefault("pkv_portal", {})
+        if not pp.get("postfach_seit"):                  # beim Einschalten: die letzten 3 Tage mitnehmen
+            pp["postfach_seit"] = (datetime.now() - timedelta(days=3)).isoformat(timespec="seconds")
+            self.bh.speichern(z)
+        seit = datetime.fromisoformat(pp["postfach_seit"])
+        erledigt = set(pp.get("postfach_mails", []))
+        m = Mail(self.c.secrets, self.c.cfg)._imap()
+        out = []
+        try:
+            m.select("INBOX", readonly=True)
+            typ, data = m.uid("SEARCH", None, "SINCE", (seit - timedelta(days=1)).strftime("%d-%b-%Y"), "FROM", absender)
+            for uid in (data[0] or b"").split()[-20:]:
+                typ, d = m.uid("FETCH", uid, "(BODY.PEEK[HEADER.FIELDS (SUBJECT DATE MESSAGE-ID FROM)])")
+                raw = next((p[1] for p in d if isinstance(p, tuple)), None)
+                if not raw:
+                    continue
+                msg = email.message_from_bytes(raw, policy=email.policy.default)
+                if betreff not in _h(msg["Subject"]).lower():
+                    continue
+                try:
+                    zeit = parsedate_to_datetime(msg["Date"]).astimezone().replace(tzinfo=None)
+                except Exception:
+                    continue
+                mid = str(msg["Message-ID"] or f"{uid.decode()}-{zeit.isoformat()}").strip()
+                if zeit >= seit and mid not in erledigt:
+                    out.append({"id": mid, "zeit": zeit})
+        finally:
+            m.logout()
+        return sorted(out, key=lambda x: x["zeit"])
+
+    def postfach_pruefen(self) -> None:
+        if self.laeuft:
+            return
+        self.mails_verschieben()                          # Benachrichtigungen, deren Nachrichten fertig verarbeitet sind
+        r = self.postfach_rezept()
+        mails = self.postfach_mails()
+        if not mails:
+            return
+        if not r or not r.get("hat_pdf"):
+            self.melden("Im uniVersa-Kundenportal liegt eine neue Nachricht. Den Abruf als PDF muss ich einmal lernen – "
+                        "sag „Lerne den PKV-Postfach-Abruf“.", "pkv_postfach_ohne_rezept")
+            return
+        if not all(self.zugang()):
+            self.melden("Neue Nachricht im uniVersa-Portal – Zugangsdaten fehlen im Schlüsselbund ('jarvis setup universa').",
+                        "pkv_postfach_ohne_zugang")
+            return
+        self._postfach_abruf(r, mails)                    # ein Portalbesuch holt alle ungelesenen Nachrichten
+
+    def postfach_abrufen(self) -> dict:
+        """Von Hand („Hol die neuen Nachrichten aus dem uniVersa-Portal“): alle ungelesenen Nachrichten als PDF holen."""
+        if self.laeuft:
+            raise ToolError(f"Es läuft schon: {self.laeuft}")
+        r = self.postfach_rezept()
+        if not r or not r.get("hat_pdf"):
+            raise ToolError("Der Postfach-Abruf ist noch nicht eingelernt. Sag „Lerne den PKV-Postfach-Abruf“.")
+        _playwright()
+        mails = []
+        try:
+            mails = self.postfach_mails()
+        except Exception:
+            pass
+        threading.Thread(target=self._postfach_abruf, args=(r, mails), name="pkv_postfach", daemon=True).start()
+        return {"ok": True, "ergebnis": "Ich hole alle ungelesenen Nachrichten aus dem uniVersa-Portal – ich melde mich."}
+
+    @staticmethod
+    def dateinamen(nachrichten: list[dict], vorhanden: set[str]) -> list[str]:
+        """„JJJJ_MM_TT - PKV Bescheid.pdf“ – mehrere am selben Tag (in diesem Abruf oder schon im Scan-Ordner)
+        bekommen laufende Nummern: „… PKV Bescheid 1.pdf“, „… 2.pdf“."""
+        je_tag: dict[str, int] = {}
+        for n in nachrichten:
+            je_tag[f"{n['datum']:%Y_%m_%d}"] = je_tag.get(f"{n['datum']:%Y_%m_%d}", 0) + 1
+        zaehler: dict[str, int] = {}
+        namen = []
+        for n in nachrichten:
+            tag = f"{n['datum']:%Y_%m_%d}"
+            stamm = f"{tag} - PKV Bescheid"
+            schon = sum(1 for v in vorhanden if v.startswith(stamm))
+            if je_tag[tag] == 1 and not schon:
+                namen.append(f"{stamm}.pdf")
+                continue
+            k = zaehler.get(tag, schon) + 1
+            while f"{stamm} {k}.pdf" in vorhanden:
+                k += 1
+            zaehler[tag] = k
+            namen.append(f"{stamm} {k}.pdf")
+        return namen
+
+    def _postfach_abruf(self, r: dict, mails: list[dict]) -> None:
+        with self.lock:
+            self.laeuft = "PKV-Postfach"
+            ids = [m["id"] for m in mails if m.get("id")]
+            try:
+                import hashlib
+                ein = self.bh.eingang()
+                if not ein:
+                    raise Abbruch("Den Genius-Scan-Ordner finde ich nicht")
+                nachrichten = self._postfach_spielen(r)
+                z = self.bh.zustand()
+                pp = z.setdefault("pkv_portal", {})
+                bekannt = set(pp.get("postfach_pdfs", []))
+                neu = []
+                for n in nachrichten:
+                    h = hashlib.sha1(n["daten"]).hexdigest()
+                    if h not in bekannt:
+                        bekannt.add(h)
+                        neu.append({**n, "hash": h})
+                namen = self.dateinamen(neu, {x.name for x in ein.iterdir()})
+                abgelegt = []
+                for n, name in zip(neu, namen):
+                    ziel = ein / name
+                    tmp = ein / f".{name}.laden"           # erst vollständig schreiben, dann sichtbar machen
+                    tmp.write_bytes(n["daten"])
+                    tmp.rename(ziel)
+                    abgelegt.append(name)
+                    pp["postfach_pdfs"] = (pp.get("postfach_pdfs", []) + [n["hash"]])[-100:]
+                if ids:
+                    pp["postfach_mails"] = (pp.get("postfach_mails", []) + ids)[-100:]
+                    # Mail kommt nach „Versicherungsvorgänge“, sobald alle abgelegten PDFs verarbeitet sind
+                    pp.setdefault("postfach_verschieben", []).append(
+                        {"mails": ids, "dateien": abgelegt, "seit": datetime.now().isoformat(timespec="seconds")})
+                self.bh.speichern(z)
+                self.c.audit.log("pkv_portal", aktion="postfach_pdf", anzahl=len(abgelegt), dateien=abgelegt)
+                if abgelegt:
+                    self.melden(f"{len(abgelegt)} neue Nachricht{'en' if len(abgelegt) != 1 else ''} aus dem uniVersa-Portal "
+                                f"im Scan-Ordner abgelegt ({', '.join(abgelegt)}) – ich werte sie jetzt als PKV-Bescheid aus "
+                                f"(Excel, Ablage im PKV-Archiv). Danach kommt die Benachrichtigungs-Mail in „Versicherungsvorgänge“.")
+                else:
+                    self.melden("uniVersa meldet eine neue Nachricht, im Portal finde ich aber keine ungelesene, die noch "
+                                "nicht abgelegt ist. Bitte kurz im Portal nachsehen.", f"pkv_postfach_leer:{ids[:1]}")
+            except Abbruch as e:
+                self.c.audit.log("pkv_portal", aktion="postfach_abbruch", grund=str(e)[:200])
+                self.melden(f"Nachrichten aus dem uniVersa-Portal nicht abgerufen: {e}", f"pkv_postfach_fehler:{ids[:1]}")
+            except Exception as e:
+                self.c.audit.log("fehler", bereich="pkv_postfach", text=f"{type(e).__name__}: {e}"[:300])
+                self.melden(f"Nachrichten aus dem uniVersa-Portal nicht abgerufen (unerwarteter Fehler {type(e).__name__}).",
+                            f"pkv_postfach_fehler:{ids[:1]}")
+            finally:
+                self.laeuft = ""
+
+    def mails_verschieben(self) -> None:
+        """Sind alle abgerufenen PDFs verarbeitet (vom Beihilfe-Workflow aus dem Scan-Ordner abgelegt), kommt die
+        Benachrichtigungs-Mail in den Ordner „Versicherungsvorgänge“."""
+        z = self.bh.zustand()
+        pp = z.get("pkv_portal") or {}
+        offen = pp.get("postfach_verschieben") or []
+        if not offen:
+            return
+        ein = self.bh.eingang()
+        ziel = str(self.cfg.get("postfach_ordner") or "Versicherungsvorgänge")
+        rest = []
+        for e in offen:
+            noch_da = [d for d in e.get("dateien", []) if ein and (ein / d).exists()]
+            if noch_da:
+                rest.append(e)
+                continue
+            try:
+                n = mails_verschieben(self.c, e["mails"], ziel)
+                self.c.audit.log("pkv_portal", aktion="mail_verschoben", anzahl=n, ziel=ziel)
+            except Exception as ex:
+                self.c.audit.log("fehler", bereich="pkv_mail_verschieben", text=str(ex)[:200])
+                self.melden(f"Die uniVersa-Benachrichtigung konnte ich nicht nach „{ziel}“ verschieben: {ex}",
+                            f"pkv_mail_ordner:{ziel}")
+                rest.append(e)
+        if len(rest) != len(offen):
+            with self.bh.lock:
+                z = self.bh.zustand()
+                z.setdefault("pkv_portal", {})["postfach_verschieben"] = rest
+                self.bh.speichern(z)
+
+    LISTE_JS = r"""(sel) => {
+      const alle = [...document.querySelectorAll(sel)];          // i = Position unter ALLEN Treffern (wie locator.nth)
+      return alle.map((e, i) => [e, i]).filter(([e]) => e.offsetParent !== null && (e.innerText || '').trim()).map(([e, i]) => {
+        let w = 0; const tw = document.createTreeWalker(e, NodeFilter.SHOW_TEXT); let n;
+        while ((n = tw.nextNode())) { if (!n.textContent.trim() || !n.parentElement) continue;
+          w = Math.max(w, parseInt(getComputedStyle(n.parentElement).fontWeight) || 400); }
+        const zeile = e.closest('li,tr,[role=row],[role=listitem],article') || e;
+        return { i, w, text: (zeile.innerText || e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 200) };
+      });
+    }"""
+
+    @staticmethod
+    def zeilen_selektor(s: dict) -> str:
+        """Aus dem CSS-Pfad der eingelernten „neuesten Nachricht“ einen Selektor für ALLE Einträge der Liste machen."""
+        pfade = [k for k in s.get("kandidaten") or [] if " > " in k or ":nth-of-type" in k]
+        return re.sub(r":nth-of-type\(\d+\)", "", pfade[0]) if pfade else ""
+
+    @staticmethod
+    def ungelesen(zeilen: list[dict], erledigt: set[str]) -> list[dict]:
+        """Ungelesen = fett. Haben alle Einträge dasselbe Gewicht, lässt sich das nicht erkennen → nur der oberste."""
+        mit_datum = [z for z in zeilen if DATUM_IM_TEXT.search(z["text"])]
+        zeilen = mit_datum or zeilen                     # Überschriften wie „2026“ sind keine Nachrichten
+        if not zeilen:
+            return []
+        gewichte = {z["w"] for z in zeilen}
+        if len(gewichte) > 1:
+            kandidaten = [z for z in zeilen if z["w"] == max(gewichte)]
+        else:
+            kandidaten = zeilen[:1]
+        return [z for z in kandidaten if z["text"] not in erledigt]
+
+    def _postfach_spielen(self, r: dict) -> list[dict]:
+        """Eingelernten Abruf abspielen: anmelden (Code aus der Mail, nur lokal; die Code-Mail kommt danach in den
+        Papierkorb), Postfach, dann jede ungelesene Nachricht öffnen und als PDF laden – zurück zur Liste, nächste.
+        Es wird nichts gesendet oder bestätigt. Captchas löst JARVIS nicht."""
+        werte = {"benutzer": get_secret(SCHLUESSEL_BENUTZER), "heute": date.today().strftime("%d.%m.%Y")}
+        letzter_klick = datetime.now()
+        schritte = r["schritte"]
+        k_neu = next((i for i, s in enumerate(schritte) if s.get("neueste")), None)
+        if k_neu is None:
+            raise Abbruch("Im eingelernten Ablauf fehlt der Klick auf die Nachricht – bitte neu einlernen und vorher "
+                          "„Nächster Klick = neueste Nachricht“ tippen.")
+        sel = self.zeilen_selektor(schritte[k_neu])
+        ergebnisse: list[dict] = []
+        code_mails: list[str] = []
+        with _playwright()() as p:
+            ctx = _browser(p, bool(self.cfg.get("sichtbar", True)), self.cfg.get("browser", "webkit"), downloads=True)
+            pdfs: list = []
+
+            def antwort(resp):
+                try:
+                    if "application/pdf" in (resp.headers.get("content-type") or ""):
+                        pdfs.append(resp)
+                except Exception:
+                    pass
+            ctx.on("response", antwort)
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+
+            def schritt(i: int) -> int | bytes:
+                """Einen Schritt ausführen; gibt den nächsten Index zurück (oder beim PDF-Schritt die Daten)."""
+                nonlocal page, letzter_klick
+                s = schritte[i]
+                self._captcha(page)
+                el = self._finden(page, s, 10 if s.get("anmeldung") else 20)
+                if el is None and s["art"] == "mailcode":
+                    vorher = next((schritte[k] for k in range(i - 1, -1, -1) if schritte[k]["art"] == "klick"), None)
+                    knopf = self._finden(page, vorher, 3) if vorher else None
+                    if knopf is not None:
+                        letzter_klick = datetime.now()
+                        knopf.click()
+                        el = self._finden(page, s, 15)
+                if el is None:
+                    if s.get("anmeldung"):                # Sitzung noch gültig → Anmeldung überspringen
+                        j = next((k for k in range(i, len(schritte)) if not schritte[k].get("anmeldung")), len(schritte))
+                        if j < len(schritte) and self._finden(page, schritte[j], 8) is not None:
+                            return j
+                    self._fehlerbild(page)
+                    raise Abbruch(f"Schritt {i + 1} nicht gefunden („{s.get('label') or s.get('text') or s['art']}“) – "
+                                  f"das Portal hat sich vielleicht verändert. Bitte den Postfach-Abruf neu einlernen.")
+                self._menschlich()
+                art = s["art"]
+                if art == "klick" and s.get("pdf"):
+                    return self._pdf_laden(ctx, page, el, pdfs)
+                if art == "klick" and "ankreuzen" in s:
+                    el.check() if s["ankreuzen"] else el.uncheck()
+                elif art == "klick":
+                    letzter_klick = datetime.now()
+                    el.click()
+                    try:
+                        page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(1200)
+                    page = ctx.pages[-1]
+                elif art == "fuellen":
+                    wert = get_secret(SCHLUESSEL_PASSWORT) if s.get("wert") == "{{passwort}}" else einsetzen(s.get("wert"), werte)
+                    self._tippen(el, wert, 35, 90)
+                    wert = None
+                elif art == "waehlen":
+                    self._waehlen(el, s, werte)
+                elif art == "mailcode":
+                    c = MailCode(self.c).warten(letzter_klick, r.get("mail_absender", ""), int(self.cfg.get("code_warten_s", 180)))
+                    if not c:
+                        self._fehlerbild(page)
+                        raise Abbruch("Der Anmeldecode kam nicht per Mail an.")
+                    self._tippen(el, c["code"], 60, 120)
+                    if c.get("mid"):
+                        code_mails.append(c["mid"])
+                    c = None
+                return i + 1
+
+            try:
+                page.goto(r.get("start_url") or START_URL, wait_until="domcontentloaded")
+                i = 0
+                while i < k_neu:                           # anmelden und ins Postfach
+                    i = schritt(i)
+                liste_url = page.url
+                navigation = [j for j in range(k_neu) if not schritte[j].get("anmeldung") and schritte[j]["art"] == "klick"]
+
+                def zeilen_holen() -> list[dict]:
+                    """Einträge der Liste; sind keine sichtbar (z. B. Postfach wieder zugeklappt), den Weg ins Postfach
+                    nach der Anmeldung noch einmal gehen."""
+                    nonlocal page
+                    for versuch in range(2):
+                        ende = time.time() + 10
+                        while time.time() < ende:
+                            try:
+                                zeilen = page.evaluate(self.LISTE_JS, sel) if sel else []
+                            except Exception:
+                                zeilen = []
+                            if zeilen:
+                                return zeilen
+                            page.wait_for_timeout(700)
+                        if versuch == 0:
+                            for j in navigation:
+                                try:
+                                    schritt(j)
+                                except Abbruch:
+                                    pass
+                    return []
+
+                erledigt: set[str] = set()
+                for _runde in range(int(self.cfg.get("postfach_max", 25))):
+                    zeilen = zeilen_holen() if sel else []
+                    offen = self.ungelesen(zeilen, erledigt)
+                    if not offen:
+                        break
+                    z = offen[0]
+                    erledigt.add(z["text"])
+                    zeile = page.locator(sel).nth(z["i"]) if sel else self._finden(page, schritte[k_neu], 10)
+                    self.c.audit.log("pkv_portal", aktion="postfach_nachricht", nr=len(ergebnisse) + 1,
+                                     ungelesen=len(offen))
+                    daten = None
+                    if schritte[k_neu].get("pdf"):          # Klick auf die Nachricht liefert direkt das PDF
+                        daten = self._pdf_laden(ctx, page, zeile, pdfs)
+                    else:
+                        zeile.click()
+                        try:
+                            page.wait_for_load_state("domcontentloaded", timeout=15000)
+                        except Exception:
+                            pass
+                        page.wait_for_timeout(1500)
+                        page = ctx.pages[-1]
+                        i = k_neu + 1
+                        while i < len(schritte):
+                            x = schritt(i)
+                            if isinstance(x, bytes):
+                                daten = x
+                                break
+                            i = x
+                    if not daten:
+                        raise Abbruch("Beim letzten Schritt kam kein PDF heraus – bitte den Postfach-Abruf neu einlernen.")
+                    datum = datum_aus_text(z["text"]) or date.today()
+                    ergebnisse.append({"daten": daten, "datum": datum, "titel": z["text"][:80]})
+                    for pg in ctx.pages[1:]:               # PDF-Tabs schließen, zurück zur Liste
+                        try:
+                            pg.close()
+                        except Exception:
+                            pass
+                    page = ctx.pages[0]
+                    page.goto(liste_url, wait_until="domcontentloaded")
+                    page.wait_for_timeout(2500)
+                    if not sel:
+                        break                                  # ohne Listen-Selektor nur die oberste Nachricht
+                return ergebnisse
+            finally:
+                try:
+                    ctx.close()
+                except Exception:
+                    pass
+                for mid in code_mails:                     # Code-Mail nach Gebrauch löschen (Papierkorb)
+                    try:
+                        mail_papierkorb(self.c, mid)
+                    except Exception as e:
+                        self.c.audit.log("fehler", bereich="pkv_codemail", text=str(e)[:200])
+
+    @staticmethod
+    def _holen(ctx, url: str) -> bytes:
+        """Adresse mit der Anmeldung des Browserfensters abrufen (gleiche Cookies) – nur wenn wirklich ein PDF kommt."""
+        if not url or url.startswith(("javascript:", "about:", "blob:", "data:")):
+            return b""
+        try:
+            daten = ctx.request.get(url, timeout=30000).body()
+        except Exception:
+            return b""
+        return daten if daten.startswith(b"%PDF") else b""
+
+    def _pdf_laden(self, ctx, page, el, pdfs: list) -> bytes:
+        """PDF zum Klick holen – egal ob das Portal es als Download liefert, im Fenster/neuen Tab anzeigt oder der
+        Eintrag ein Link auf das Dokument ist. Der Klick passiert immer (damit die Nachricht als gelesen gilt)."""
+        vorher, seiten = len(pdfs), len(ctx.pages)
+        daten = b""
+        try:
+            href = el.evaluate("e => e.href || (e.closest('a') || {}).href || ''")
+        except Exception:
+            href = ""
+        daten = self._holen(ctx, href)
+        try:
+            with page.expect_download(timeout=12000) as dl:
+                el.click()
+            pfad = dl.value.path()
+            geladen = Path(pfad).read_bytes() if pfad else b""
+            if geladen.startswith(b"%PDF"):
+                daten = geladen
+        except Exception:
+            page.wait_for_timeout(3000)
+        if not daten:
+            for resp in reversed(pdfs[vorher:]):            # PDF im Fenster bzw. neuen Tab angezeigt
+                try:
+                    b = resp.body()
+                except Exception:
+                    b = b""
+                daten = b if b.startswith(b"%PDF") else self._holen(ctx, resp.url)
+                if daten:
+                    break
+        if not daten:
+            for pg in list(ctx.pages)[max(1, seiten - 1):] or list(ctx.pages)[-1:]:
+                daten = self._holen(ctx, pg.url)
+                if daten:
+                    break
+        if not daten.startswith(b"%PDF"):
+            self._fehlerbild(page)
+            raise Abbruch("Beim Herunterladen kam kein PDF heraus – bitte den Postfach-Abruf neu einlernen.")
+        return daten
+
+    def postfach_einlernen(self) -> dict:
+        if self.laeuft:
+            raise ToolError(f"Es läuft schon: {self.laeuft}")
+        if not all(self.zugang()):
+            raise ToolError("Zugangsdaten fehlen. Bitte einmal 'jarvis setup universa' im Terminal ausführen.")
+        _playwright()
+        self.lernen_stop.clear()
+        self.lernen_start = {"ereignis": threading.Event(), "fehler": None}
+        threading.Thread(target=self._postfach_lernen, name="pkv_postfach_lernen", daemon=True).start()
+        if not self.lernen_start["ereignis"].wait(45):
+            return {"ok": False, "hinweis": "Das Browserfenster startet ungewöhnlich langsam – ich melde mich, sobald es da ist."}
+        if self.lernen_start["fehler"]:
+            raise ToolError(f"Browserfenster ließ sich nicht öffnen: {self.lernen_start['fehler']}")
+        return {"ok": True, "hinweis": "Browserfenster ist offen. Melde dich an, öffne das Postfach, tippe unten rechts auf "
+                "„Nächster Klick = neueste Nachricht“, klicke die oberste Nachricht an und lade sie als PDF herunter. "
+                "Sobald das PDF da ist, bin ich fertig."}
+
+    def _postfach_lernen(self) -> None:
+        self.laeuft = "Einlernen Postfach"
+        ereignisse: list[dict] = []
+        start = datetime.now()
+        info = {"code": None, "codes": set(), "von": "", "fertig": False, "pdf_nach": None}
+        try:
+            with _playwright()() as p:
+                ctx = _browser(p, True, self.cfg.get("browser", "webkit"), downloads=True)
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                gesehen: set = set()
+
+                def melde(_src, obj):
+                    if not isinstance(obj, dict) or obj.get("id") in gesehen:
+                        return
+                    gesehen.add(obj.get("id"))
+                    if obj.get("art") == "markierung" and obj.get("was") == "fertig":
+                        info["fertig"] = True
+                        return
+                    ereignisse.append(obj)
+
+                def pdf_da(*_a):
+                    if info["pdf_nach"] is None:
+                        info["pdf_nach"] = len(ereignisse)
+
+                def antwort(resp):
+                    try:
+                        if "application/pdf" in (resp.headers.get("content-type") or ""):
+                            pdf_da()
+                    except Exception:
+                        pass
+                ctx.expose_binding("jvMelde", melde)
+                ctx.add_init_script("window.__jvModus = 'postfach';")
+                ctx.add_init_script(AUFZEICHNER_JS)
+                ctx.on("response", antwort)
+                for pg in ctx.pages:
+                    pg.on("download", pdf_da)
+                ctx.on("page", lambda pg: pg.on("download", pdf_da))
+                page.goto(self.cfg.get("start_url") or START_URL, wait_until="domcontentloaded")
+                self.lernen_start["ereignis"].set()
+                start_url = page.url
+                ende, letzter_mailblick = time.time() + 20 * 60, 0.0
+                while not info["fertig"] and time.time() < ende and not self.lernen_stop.is_set():
+                    try:
+                        if not ctx.pages:
+                            break
+                        page = ctx.pages[-1]
+                        if time.time() - letzter_mailblick > 10:
+                            letzter_mailblick = time.time()
+                            try:
+                                codes = MailCode(self.c).neue_codes(start)
+                                if codes:
+                                    info["code"], info["von"] = codes[0]["code"], codes[0]["von"]
+                                    info["codes"].update(c["code"] for c in codes)
+                                    info.setdefault("mids", set()).update(c.get("mid") for c in codes if c.get("mid"))
+                            except Exception:
+                                pass
+                        t = ("✓ PDF erkannt – fertig, ich schließe gleich." if info["pdf_nach"] is not None else
+                             "Anmelden → Postfach → oberste Nachricht → als PDF laden."
+                             + (f" Code aus deiner Mail: {info['code']}" if info["code"] else ""))
+                        page.evaluate("t => window.jvText && window.jvText(t)", t)
+                        if info["pdf_nach"] is not None:
+                            page.wait_for_timeout(2500)
+                            break
+                    except Exception:
+                        pass
+                    try:
+                        page.wait_for_timeout(500)
+                    except Exception:
+                        time.sleep(0.5)
+                try:
+                    ctx.close()
+                except Exception:
+                    pass
+            kontext = {"benutzer": get_secret(SCHLUESSEL_BENUTZER), "passwort": get_secret(SCHLUESSEL_PASSWORT),
+                       "mailcode": sorted(info["codes"]), "mail_absender": info["von"], "start_url": start_url,
+                       "belege": [], "summe": 0, "kind_name": ""}
+            if info["pdf_nach"] is None:
+                self.melden("Postfach-Abruf nicht eingelernt: Es wurde kein PDF heruntergeladen. Bitte noch einmal – "
+                            "bis zum Herunterladen der Nachricht als PDF.")
+                return
+            r = postfach_rezept_bauen(ereignisse, kontext, info["pdf_nach"])
+            ORDNER.mkdir(parents=True, exist_ok=True)
+            REZEPT_POSTFACH.write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
+            REZEPT_POSTFACH.chmod(0o600)
+            self.c.audit.log("pkv_portal", aktion="postfach_eingelernt", schritte=len(r["schritte"]), neueste=r["hat_neueste"])
+            hinweis = "" if r["hat_neueste"] else (" Achtung: Den Klick auf die neueste Nachricht habe ich nicht sicher erkannt – "
+                                                   "bitte beim nächsten Einlernen vorher „Nächster Klick = neueste Nachricht“ tippen.")
+            self.melden(f"PKV-Postfach-Abruf eingelernt ({len(r['schritte'])} Schritte). Kommt eine Mail „neue Nachricht“ von "
+                        f"uniVersa, hole ich sie selbst als PDF in den Scan-Ordner.{hinweis}")
+        except Exception as e:
+            self.c.audit.log("fehler", bereich="pkv_postfach_lernen", text=f"{type(e).__name__}: {e}"[:300])
+            self.lernen_start["fehler"] = f"{type(e).__name__}: {e}"[:300]
+            self.melden(f"Einlernen des Postfach-Abrufs abgebrochen: {e}")
+        finally:
+            self.code_mail_loeschen(*info.get("mids", ()))
+            self.lernen_start["ereignis"].set()
+            self.laeuft = ""
+
+    def code_mail_loeschen(self, *mids) -> None:
+        """Mail mit dem Anmeldecode nach Gebrauch in den Papierkorb (im Hintergrund – hält den Ablauf nicht auf)."""
+        mids = [m for m in mids if m]
+        if not mids:
+            return
+
+        def weg():
+            for mid in mids:
+                try:
+                    mail_papierkorb(self.c, mid)
+                    self.c.audit.log("pkv_portal", aktion="codemail_geloescht")
+                except Exception as e:
+                    self.c.audit.log("fehler", bereich="pkv_codemail", text=str(e)[:200])
+        threading.Thread(target=weg, daemon=True, name="pkv_codemail").start()
+
     def _vorschlagen(self) -> None:
         z = self.bh.zustand().get("pkv_portal", {})
         ok = [v for v in z.get("verlauf", []) if not v.get("unsicher")]
@@ -1058,9 +1795,27 @@ class PkvPortal:
                            "ohne Rückfrage und melde nur noch.", "pkv_befugnis_vorschlag")
 
     # ------------------------------------------------------------ Täglicher Lauf
+    def neue_rechnung(self) -> None:
+        """Vom Beihilfe-Workflow: eine Arztrechnung ist erfasst. Mit „sofort“ reicht JARVIS nach 3 Minuten
+        Sammelzeit (weitere Scans derselben Runde kommen in denselben Antrag) selbst ein."""
+        self._neu_seit = time.time()
+
     def faellig(self) -> None:
-        """Einmal täglich zur PKV-Zeit: mit Befugnis selbst einreichen, sonst Bescheid geben."""
-        if not self.rezept() or self.laeuft:
+        """Sofort nach neuen Rechnungen (Einstellung „sofort“) bzw. einmal täglich zur PKV-Zeit: mit Befugnis oder
+        „sofort“ selbst einreichen, sonst Bescheid geben."""
+        if self.laeuft:
+            return
+        if self.cfg.get("sofort") and self._neu_seit and time.time() - self._neu_seit >= int(self.cfg.get("sammeln_s", 180)):
+            self._neu_seit = 0.0
+            if not self.rezept():
+                self.melden("Neue Rechnung erfasst – die PKV-Einreichung ist aber noch nicht eingelernt. "
+                            "Sag einmal „Lerne die PKV-Einreichung“, danach stelle ich jeden Antrag selbst.", "pkv_sofort_ohne_rezept")
+                return
+            if self.offen():
+                self.c.audit.log("pkv_portal", aktion="sofort", grund="neue Rechnung, Einstellung pkv_portal.sofort")
+                self.einreichen(selbststaendig=True)
+                return
+        if not self.rezept():
             return
         offen = self.offen()
         if not offen:
@@ -1076,8 +1831,9 @@ class PkvPortal:
         pp["tageslauf"] = heute
         self.bh.speichern(z)
         erlaubt, rid = self._befugnis()
-        if erlaubt:
-            self.c.befugnisse.genutzt(rid)
+        if erlaubt or self.cfg.get("sofort"):
+            if erlaubt:
+                self.c.befugnisse.genutzt(rid)
             self.einreichen(selbststaendig=True)
         else:
             self.melden(f"PKV-Antrag bereit ({self.kurz()}). Sag „Reiche die PKV ein“, dann erledige ich das im Portal.",
@@ -1088,6 +1844,9 @@ class PkvPortal:
             try:
                 if getattr(self.c.proaktiv, "leader", False):
                     self.faellig()
+                    if self.cfg.get("postfach") and time.time() - self._pf_letzt >= int(self.cfg.get("postfach_min", 5)) * 60:
+                        self._pf_letzt = time.time()
+                        self.postfach_pruefen()
             except Exception as e:
                 self.c.audit.log("fehler", bereich="pkv_portal", text=str(e)[:300])
 
@@ -1107,6 +1866,14 @@ def tools(core) -> list[Tool]:
              "PKV-Einreichung im uniVersa-Kundenportal einlernen: öffnet ein Browserfenster, Richard reicht einen "
              "offenen Antrag einmal selbst ein, JARVIS zeichnet die Schritte auf (ohne Passwort).",
              "beihilfe.verarbeiten", w.einlernen),
+        Tool("pkv_postfach_einlernen",
+             "Abruf neuer Nachrichten aus dem uniVersa-Kundenportal einlernen: Browserfenster, Richard meldet sich an, "
+             "öffnet die oberste Nachricht und lädt sie als PDF – JARVIS zeichnet die Schritte auf (ohne Passwort). Später ruft er so alle ungelesenen Nachrichten ab.",
+             "beihilfe.verarbeiten", w.postfach_einlernen),
+        Tool("pkv_postfach_abrufen",
+             "Alle ungelesenen Nachrichten aus dem uniVersa-Kundenportal als PDF holen und als „JJJJ_MM_TT - PKV Bescheid“ "
+             "(mehrere am Tag mit laufender Nummer) in den Genius-Scan-Ordner legen (werden dann als PKV-Bescheid ausgewertet).",
+             "beihilfe.verarbeiten", w.postfach_abrufen),
         Tool("pkv_einreichen",
              "Offene Arztrechnungen bei der PKV (uniVersa) einreichen: JARVIS meldet sich im Kundenportal an "
              "(Code aus der Mail), lädt alle offenen Rechnungen in einem Antrag hoch und sendet ab.",

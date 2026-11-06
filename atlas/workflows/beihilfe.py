@@ -568,6 +568,10 @@ class Beihilfe:
             bericht += (f" Bitte prüfen: {', '.join(r['probleme'])}. Sag mir einfach die richtigen Angaben, "
                         f"z. B. „Rechnung {nr}: Betrag … Euro, Zahlungstermin …“.")
         self.melden(bericht)
+        try:                                           # PKV sofort einreichen (Einstellung pkv_portal.sofort)
+            self.c.pkv.neue_rechnung()
+        except Exception:
+            pass
         return bericht
 
     def _ablegen(self, quelle: Path, ordner: Path | None, name: str) -> Path:
@@ -607,7 +611,13 @@ class Beihilfe:
         self.melden(bericht)
         return bericht
 
-    def bescheid(self, f: Path, text: str, art: str, z: dict) -> str | None:
+    TOLERANZ = 0.10      # € – Rechnungsbetrag im Bescheid weicht durch Rundung/Lesefehler um Cent ab (z. B. 178,05 statt 178,04)
+
+    @classmethod
+    def _gleich(cls, a, b, toleranz: float = 0.005) -> bool:
+        return a is not None and b is not None and abs(a - b) <= toleranz
+
+    def bescheid(self, f: Path, text: str, art: str, z: dict, ablegen: bool = True) -> str | None:
         if art == "beihilfe":
             b = P.beihilfebescheid(text)
             ordner, bez = self.pfad("beihilfe_archiv"), "Beihilfebescheid"
@@ -616,19 +626,20 @@ class Beihilfe:
             ordner, bez = self.pfad("pkv_archiv"), "Erstattung PKV"
         dm = re.match(r"^(\d{4})[_-](\d{2})[_-](\d{2})", f.name)     # Datum im Namen hat Vorrang
         eingang = date(*map(int, dm.groups())) if dm else date.fromtimestamp(f.stat().st_mtime)
-        ziel = self._ablegen(f, ordner, f"{eingang:%Y_%m_%d} - {bez}{f.suffix.lower()}")
+        ziel = self._ablegen(f, ordner, f"{eingang:%Y_%m_%d} - {bez}{f.suffix.lower()}") if ablegen else f
         ordner_name = "Beihilfe/PKV › Beihilfearchiv" if art == "beihilfe" else "Beihilfe/PKV › PKV-Archiv"
 
         zeilen = self.excel_zeilen()
-        benutzt, aend, zugeordnet, offen, bereits = set(), [], [], [], []
+        benutzt, aend, zugeordnet, offen, bereits, abweichung = set(), [], [], [], [], []
+        doppelt_eingereicht: list[str] = []
         zahl = lambda v: v if isinstance(v, (int, float)) else None
 
         def schon(spalte_ok, spalte_betrag, bl, nur_kind=None):
             """Ist dieser Beleg schon eingetragen (Häkchen gesetzt, gleicher Erstattungsbetrag)?"""
             for x in zeilen:
-                if (x["zeile"] not in benutzt and x[spalte_ok] and x["betrag"] is not None
-                        and abs(x["betrag"] - bl["betrag"]) < 0.01 and (nur_kind is None or x["kind"] == nur_kind)
-                        and zahl(x[spalte_betrag]) is not None and abs(x[spalte_betrag] - bl["erstattung"]) < 0.01):
+                if (x["zeile"] not in benutzt and x[spalte_ok] and self._gleich(x["betrag"], bl["betrag"], self.TOLERANZ)
+                        and (nur_kind is None or x["kind"] == nur_kind)
+                        and self._gleich(zahl(x[spalte_betrag]), bl["erstattung"])):
                     benutzt.add(x["zeile"])
                     return f"{x['kind']} {x['nr']}"
             return None
@@ -636,10 +647,14 @@ class Beihilfe:
             if art == "beihilfe":
                 if bl["person"] not in ("K", "?"):
                     continue                          # eigene/Partner-Belege gehören nicht in diese Tabelle
-                kand = [x for x in zeilen if x["zeile"] not in benutzt and x["kind"] and not x["bh_bescheid"]
-                        and x["betrag"] is not None and abs(x["betrag"] - bl["betrag"]) < 0.01]
+                offen_z = [x for x in zeilen if x["zeile"] not in benutzt and x["kind"] and not x["bh_bescheid"]]
+                kand = [x for x in offen_z if self._gleich(x["betrag"], bl["betrag"])]
                 genau = [x for x in kand if x["datum"] == bl["datum"]]
                 kand = genau or [x for x in kand if x["datum"] and bl["datum"] and abs((x["datum"] - bl["datum"]).days) <= 3]
+                if not kand:                          # Cent-Abweichung: nur bei gleichem Datum
+                    kand = [x for x in offen_z if x["datum"] == bl["datum"] and self._gleich(x["betrag"], bl["betrag"], self.TOLERANZ)]
+                    if kand:
+                        abweichung.append(f"{kand[0]['kind']} {kand[0]['nr']}: Rechnung {euro(kand[0]['betrag'])}, laut Bescheid {euro(bl['betrag'])}")
                 if not kand:
                     s_ = schon("bh_bescheid", "bh_erstattung", bl)
                     (bereits.append(s_) if s_ else offen.append(f"{tag(bl['datum'])} {euro(bl['betrag'])}"))
@@ -652,10 +667,16 @@ class Beihilfe:
                 zugeordnet.append(f"{x['kind']} {x['nr']}: {euro(bl['erstattung'])}")
             else:
                 if bl["duplikat"]:
+                    doppelt_eingereicht.append(f"{(self.kinder().get(bl['person']) or {}).get('tabelle') or bl['person']} {euro(bl['betrag'])}")
                     continue
                 kind = (self.kinder().get(bl["person"]) or {}).get("tabelle")
-                kand = [x for x in zeilen if x["zeile"] not in benutzt and x["kind"] == kind and not x["pkv_bescheid"]
-                        and x["betrag"] is not None and abs(x["betrag"] - bl["betrag"]) < 0.01]
+                offen_z = [x for x in zeilen if x["zeile"] not in benutzt and x["kind"] == kind and not x["pkv_bescheid"]]
+                kand = [x for x in offen_z if self._gleich(x["betrag"], bl["betrag"])]
+                if not kand:                          # Cent-Abweichung (Rundung/Lesefehler): nächstliegender Betrag
+                    kand = sorted([x for x in offen_z if self._gleich(x["betrag"], bl["betrag"], self.TOLERANZ)],
+                                  key=lambda x: abs(x["betrag"] - bl["betrag"]))[:1]
+                    if kand:
+                        abweichung.append(f"{kand[0]['kind']} {kand[0]['nr']}: Rechnung {euro(kand[0]['betrag'])}, laut Bescheid {euro(bl['betrag'])}")
                 if not kand:
                     s_ = schon("pkv_bescheid", "pkv_erstattung", bl, kind)
                     (bereits.append(s_) if s_ else offen.append(f"{kind or bl['person']} {euro(bl['betrag'])}"))
@@ -673,14 +694,42 @@ class Beihilfe:
                    + (f"In Excel eingetragen: {'; '.join(zugeordnet)}. " if zugeordnet else "")
                    + (f"Bereits eingetragen, nichts zu ändern: {'; '.join(bereits)}. " if bereits else "")
                    + (f"Nicht zuordenbar: {'; '.join(offen)} – bitte prüfen. " if offen else "")
+                   + (f"Laut PKV schon früher eingereicht (Duplikat, keine Erstattung, nichts einzutragen): "
+                      f"{'; '.join(doppelt_eingereicht)}. " if doppelt_eingereicht else "")
+                   + (f"Kleine Betragsabweichung, trotzdem zugeordnet: {'; '.join(abweichung)} – ggf. Rechnungsbetrag prüfen. "
+                      if abweichung else "")
                    + ("Die Beträge konnte ich nicht auslesen – bitte prüfen. " if not b["belege"] else "")
-                   + f"Abgelegt in {ordner_name} als „{ziel.name}“.")
+                   + (f"Abgelegt in {ordner_name} als „{ziel.name}“." if ablegen else f"Neu ausgewertet: „{ziel.name}“."))
         if bereits and not zugeordnet and not offen:
             bericht += " Vermutlich ist das eine zweite Kopie eines schon verarbeiteten Bescheids."
         if art == "beihilfe" and not b.get("sicher"):
             bericht += " Achtung: Die Beträge ergeben nicht die Bescheidsumme – bitte kontrollieren."
         self.melden(bericht)
         return bericht
+
+    def bescheid_neu_auswerten(self, datei: str) -> dict:
+        """Abgelegten Beihilfebescheid bzw. PKV-Erstattung aus dem Archiv noch einmal auswerten und Excel nachtragen
+        (z. B. nach einer Korrektur der Zuordnung). Die Datei bleibt, wo sie ist; schon Eingetragenes wird erkannt."""
+        treffer = []
+        for art, schluessel in (("pkv", "pkv_archiv"), ("beihilfe", "beihilfe_archiv")):
+            ordner = self.pfad(schluessel)
+            if ordner and ordner.exists():
+                treffer += [(art, p) for p in ordner.iterdir() if p.is_file() and datei.lower() in p.name.lower()]
+        genau = [(a, p) for a, p in treffer if p.stem.lower() == datei.lower().removesuffix(".pdf")]
+        treffer = genau or treffer
+        if not treffer:
+            raise ToolError(f"Im Beihilfe- und PKV-Archiv finde ich keine Datei „{datei}“.")
+        if len(treffer) > 1:
+            raise ToolError("Mehrere Dateien passen: " + ", ".join(p.name for _, p in treffer[:8]) + " – bitte genauer.")
+        art, f = treffer[0]
+        from atlas.archiv.indexer import aus_icloud_laden
+        aus_icloud_laden(f, 60)
+        text = "\n".join(t for _, t in extract(f, ocr=True))      # nur lokal
+        with self.lock:
+            z = self.zustand()
+            bericht = self.bescheid(f, text, art, z, ablegen=False)
+            self.speichern(z)
+        return {"ergebnis": bericht}
 
     # ------------------------------------------------------------ Erinnerungen → Excel
     def erinnerungen_abgleichen(self, z: dict) -> list[str]:
@@ -945,6 +994,11 @@ def tools(core) -> list[Tool]:
              "Zahlungstermin in Excel korrigieren und offene Erinnerungen mit richtigen Angaben neu anlegen.",
              "beihilfe.schreiben", w.neu_einlesen, {"rechnungsnummer": S("Rechnungsnummer")},
              ["rechnungsnummer"], label=lambda a: f"Rechnung {a.get('rechnungsnummer')} neu einlesen"),
+        Tool("beihilfe_bescheid_neu_auswerten",
+             "Einen abgelegten Beihilfebescheid oder eine PKV-Erstattung (Leistungsabrechnung) aus dem Archiv noch einmal "
+             "auswerten und fehlende Einträge in der Excel Lebensfinanzplanung nachtragen. Auswertung nur lokal.",
+             "beihilfe.schreiben", w.bescheid_neu_auswerten, {"datei": S("Dateiname oder Teil davon, z. B. '2026_11_06 - Erstattung PKV 2'")},
+             ["datei"], label=lambda a: f"Bescheid „{a.get('datei')}“ neu auswerten"),
         Tool("beihilfe_eintrag_entfernen",
              "Einen falschen oder doppelten Eintrag zurücknehmen: Excel-Zeile leeren und die zugehörigen "
              "Erinnerungen löschen. Nur auf ausdrücklichen Wunsch.",

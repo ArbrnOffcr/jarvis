@@ -10,6 +10,7 @@ Dazu: Themenübersicht (viele Treffer, nach Ordnern gruppiert, mit Zeitachse) un
 import re
 import sqlite3
 import threading
+import time
 import unicodedata
 from pathlib import Path
 
@@ -330,6 +331,13 @@ class LocalSearch:
         return geaendert
 
     # ---------- Steckbriefe ----------
+    def steckbrief_offen_anzahl(self) -> int:
+        return self.db.execute("""
+            SELECT COUNT(*) FROM docs d LEFT JOIN steckbriefe s ON s.doc=d.id
+            WHERE d.quelle='archiv' AND (s.doc IS NULL OR s.mtime != d.mtime)
+              AND (SELECT COALESCE(SUM(LENGTH(c.text)), 0) FROM chunks c
+                   WHERE c.doc=d.id AND c.lebt=1 AND c.text NOT LIKE 'Datei:%') >= 200""").fetchone()[0]
+
     def steckbrief_offen(self, grenze: int = 20, aelteste: bool = False) -> list[tuple[str, str, float]]:
         """Archiv-Dokumente mit lesbarem Inhalt, aber ohne (aktuellen) Steckbrief – neueste zuerst
         (aelteste=True: von hinten – so arbeitet ein zweiter Mac mit, ohne dem ersten in die Quere zu kommen)."""
@@ -675,6 +683,9 @@ class LocalSearch:
             "(SELECT 1 FROM chunks c WHERE c.doc=docs.id AND c.lebt=1))")}
 
     def stats(self) -> dict:
+        hit = getattr(self, "_stats_zeit", 0.0)
+        if hasattr(self, "_stats") and time.monotonic() - hit < 30:
+            return self._stats
         try:
             d = self.db.execute("SELECT COUNT(*) FROM docs WHERE quelle='archiv'").fetchone()[0]
             c = self.db.execute("SELECT COUNT(*) FROM chunks WHERE lebt=1").fetchone()[0]
@@ -682,6 +693,7 @@ class LocalSearch:
             sb = self.db.execute("SELECT COUNT(*) FROM steckbriefe").fetchone()[0]
             q = dict(self.db.execute("SELECT quelle, COUNT(*) FROM docs WHERE quelle != 'archiv' GROUP BY quelle"))
             self._stats = {"dokumente": d, "abschnitte": c, "ohne_inhalt": f, "steckbriefe": sb, "quellen": q}
+            self._stats_zeit = time.monotonic()
         except Exception:                      # Index wird gerade geschrieben – letzten Stand zeigen
             pass
         return getattr(self, "_stats", {"dokumente": 0, "abschnitte": 0})
