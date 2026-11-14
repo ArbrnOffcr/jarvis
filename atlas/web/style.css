@@ -2134,3 +2134,7 @@ tspan.pf-krit{fill:var(--pf-krit)} tspan.pf-warn{fill:var(--pf-warn)} tspan.pf-n
 /* Versionsanzeige */
 #jv-version{position:fixed;left:12px;bottom:6px;z-index:5;font:500 9px var(--mono);letter-spacing:.14em;color:var(--ink2);opacity:.5;pointer-events:auto;user-select:text}
 body.rein #jv-version{opacity:.3}
+
+/* Zeitbilanz einer Antwort */
+.msg .bilanz{margin-top:4px;font:500 9.5px var(--mono);letter-spacing:.06em;color:var(--muted)}
+body.rein .chat .msg .bilanz{display:none}

@@ -41,9 +41,30 @@ const STATES = {
   off:   { label: "OFFLINE",             speed: 0.05, energy: 0.0,  color: [90, 127, 142] },
 };
 let coreState = "off", level = 0;
-function setState(s) {
-  coreState = s; $("state").textContent = STATES[s].label;
+// Zustandszeile mit laufender Uhr: Bei „denkt nach“/„führe aus“ zählt sie mit, damit sichtbar ist, was JARVIS gerade
+// tut und wie lange schon. text = genauere Bezeichnung der Phase (z. B. „ERKENNE SPRACHE“).
+const ZEIT = { seit: 0, text: "", timer: 0 };
+const BILANZ = { fazit: "", tFazit: 0 };          // Zeiten der letzten gesprochenen Anfrage (weiter unten gefüllt)
+function stateZeigen() {
+  const s = coreState, basis = ZEIT.text || STATES[s].label;
+  // Läuft eine Anfrage, zählt die Uhr durchgehend ab deinem Satzende (bzw. ab dem Absenden) – nicht je Phase neu.
+  const ab = $("send")?.disabled && BILANZ.tStart ? (BILANZ.stimme && BILANZ.tEnde ? BILANZ.tEnde : BILANZ.tStart) : ZEIT.seit;
+  const lauf = (s === "think" || s === "tool") ? ` · ${((performance.now() - ab) / 1000).toFixed(1).replace(".", ",")} s` : "";
+  $("state").textContent = basis + lauf;
+}
+function setState(s, text = "") {
+  if (s !== coreState || text !== ZEIT.text) ZEIT.seit = performance.now();
+  coreState = s; ZEIT.text = text;
+  clearInterval(ZEIT.timer);
+  if (s === "think" || s === "tool") ZEIT.timer = setInterval(stateZeigen, 100);
+  stateZeigen();
   window.jarvis3d?.setState(s);
+}
+// Ruhe nur, wenn wirklich nichts mehr läuft: solange eine Anfrage bearbeitet wird (Senden gesperrt), zeigt die Zeile
+// weiter „denkt nach“ – sonst stand dort nach der kurzen Überbrückung („Einen Moment.“) schon wieder BEREIT.
+function ruhe() {
+  if ($("send")?.disabled) { if (coreState !== "think" && coreState !== "tool") setState(BILANZ.phaseArt || "think", BILANZ.phase || ""); return; }
+  setState("idle", BILANZ.fazit && Date.now() - BILANZ.tFazit < 20000 ? `BEREIT · ${BILANZ.fazit}` : "");
 }
 window.atlasCore = { setState, setLevel: (v) => { level = Math.max(0, Math.min(1, v)); window.jarvis3d?.setLevel(level); } };
 
@@ -330,7 +351,9 @@ function handle(ev) {
       if (coreState !== "think" && !play.src) setState("think");     // während JARVIS spricht: Sprechen zeigen
       break;
     case "tool":
-      setState("tool");
+      BILANZ.phase = ("FÜHRE AUS · " + String(ev.text || ev.name || "").split("(")[0].trim().slice(0, 26)).toUpperCase();
+      BILANZ.phaseArt = "tool";
+      setState("tool", BILANZ.phase);
       window.jarvis3d?.tool(ev.name); try { AV.inst?.werkzeug?.(ev.name); } catch (e) {} sfx("tick");
       if (current) addLine(current, "tool", `⚙ ${ev.text}`);
       break;
@@ -338,7 +361,9 @@ function handle(ev) {
       setState("ask"); ask(ev);
       break;
     case "done": {
-      setState("idle");
+      $("send").disabled = false;                  // Anfrage ist fertig → Ruhezustand darf gezeigt werden
+      BILANZ.phase = ""; BILANZ.phaseArt = "";
+      ruhe();
       if (current) {
         const r = current.querySelector(".route");
         if (r) r.textContent += ` · ${ev.tokens_in}↑ ${ev.tokens_out}↓` +
@@ -781,17 +806,23 @@ function onAudioEvent(ev) {
     case "wake":
       ttsStop(); chime(true); setState("listen"); break;
     case "processing":
-      $("micbtn").classList.remove("rec"); $("micbtn").classList.add("busy"); setState("think"); break;
+      $("micbtn").classList.remove("rec"); $("micbtn").classList.add("busy");
+      BILANZ.tEnde = performance.now(); BILANZ.sStt = null; BILANZ.tTon = 0; BILANZ.tWort = 0;
+      setState("think", "ERKENNE SPRACHE"); break;
     case "transcript":
       $("micbtn").classList.remove("busy"); V.hoert = false;
-      if (ev.text && $("send").disabled) { V.wartend = ev.text; V.turnLang = sprachVon(ev.text); }   // läuft noch: gleich danach
+      BILANZ.sStt = ev.s_stt;
+      if (ev.text && $("send").disabled) { V.wartend = ev.text; V.turnLang = sprachVon(ev.text); ruhe(); }   // läuft noch: gleich danach
       else if (ev.text) { V.turnLang = ev.lang === "en" && sprachVon(ev.text) === "en" ? "en" : "de"; sendText(ev.text, true); }
-      else setState("idle");
+      else {                                       // nichts erkannt: sagen statt stumm auf BEREIT springen
+        if ($("send").disabled) ruhe();
+        else { setState("idle", "NICHT VERSTANDEN"); setTimeout(() => { if (coreState === "idle" && ZEIT.text === "NICHT VERSTANDEN") ruhe(); }, 2500); }
+      }
       scheduleMicClose(); break;
     case "cancel":
       $("micbtn").classList.remove("busy", "rec");
-      if (V.hoert) { V.hoert = false; setState("idle"); scheduleMicClose(); break; }   // Gespräch leise beenden
-      chime(false); setState("idle"); scheduleMicClose(); break;
+      if (V.hoert) { V.hoert = false; ruhe(); scheduleMicClose(); break; }   // Gespräch leise beenden
+      chime(false); ruhe(); scheduleMicClose(); break;
     case "bargein":
       window.dazwischen?.(); break;
     case "error":
@@ -860,7 +891,8 @@ function ohnePfade(s) {
 // Gestreamte Stimme: der Kern liefert rohes PCM (24 kHz) – abgespielt wird ab dem ersten Stück
 function ttsSay(text, opt = {}) {
   const t = ohnePfade(text).trim(); if (!t || t.length < 2) return;
-  const job = { chunks: [], done: false, wake: null, ctrl: new AbortController(), rate: 24000, aus: false, ab: opt.ab || null };
+  const job = { chunks: [], done: false, wake: null, ctrl: new AbortController(), rate: 24000, aus: false, ab: opt.ab || null,
+    fueller: !!opt.fueller };
   const weck = () => { const w = job.wake; job.wake = null; if (w) w(); };
   fetch("/tts/stream", { method: "POST", signal: job.ctrl.signal,
     headers: { "content-type": "application/json", ...(TOKEN ? { "x-atlas-token": TOKEN } : {}) },
@@ -911,7 +943,13 @@ async function ttsRun() {
       q.start(t); t += b.duration;
       play.quellen.add(q); play.src = q;
       q.onended = () => { play.quellen.delete(q); if (!play.quellen.size) play.src = null; };
-      if (coreState !== "speak") { setState("speak"); window.sprichtGerade?.(); }
+      if (!job.fueller && coreState !== "speak") setState("speak");   // Überbrückung: Phase und Uhr bleiben stehen
+      if (!job.gemeldet) {                       // je Sprechauftrag einmal
+        job.gemeldet = true;
+        // Während der kurzen Überbrückung nicht auf Dazwischenreden lauschen: ihr eigenes Echo oder ein Geräusch
+        // brach sonst die laufende Anfrage ab.
+        if (!job.fueller) { window.sprichtGerade?.(); try { window.ersterTon?.(); } catch (e) {} }
+      }
     };
     const zusammen = (arr) => { const n = arr.reduce((a, x) => a + x.length, 0), m = new Float32Array(n); let o = 0; for (const x of arr) { m.set(x, o); o += x.length; } return m; };
     while (!job.aus && play.ctx) {
@@ -933,7 +971,7 @@ async function ttsRun() {
     const i = play.queue.indexOf(job); if (i >= 0) play.queue.splice(i, 1);
   }
   play.running = false;
-  if (coreState === "speak") setState("idle");
+  if (coreState === "speak") ruhe();
   window.fertigGesprochen?.();
 }
 function ttsStop() {
@@ -1285,7 +1323,7 @@ function markiere() {
 }
 new MutationObserver(markiere).observe(chat, { childList: true, subtree: true, characterData: true });
 const _setStateR = setState;
-setState = function (s) { _setStateR(s); if (s !== "idle") chat.classList.remove("ruhig"); else markiere();
+setState = function (s, ...mehr) { _setStateR(s, ...mehr); if (s !== "idle") chat.classList.remove("ruhig"); else markiere();
   $("rh-dot").classList.toggle("on", s !== "off"); };
 window.atlasCore.setState = setState;
 
@@ -1341,7 +1379,7 @@ const _handleFill = handle;
 handle = function (ev) {
   if (ev.type === "tool" && V.turnSpeak && !V.gesagt && !V.fuellt) {
     V.fuellt = true; V.gesagt = true;
-    ttsSay(UEBERBRUECKUNG[Math.floor(Math.random() * UEBERBRUECKUNG.length)]);
+    ttsSay(UEBERBRUECKUNG[Math.floor(Math.random() * UEBERBRUECKUNG.length)], { fueller: true });
   }
   if (ev.type === "done" || ev.type === "error") V.fuellt = false;
   _handleFill(ev);
@@ -6178,7 +6216,7 @@ async function avatarSetzen(person) {
   }
 }
 const _setStateAvatar = setState;
-setState = function (s) { _setStateAvatar(s); avZustand(); };
+setState = function (s, ...mehr) { _setStateAvatar(s, ...mehr); avZustand(); };
 // Stilles Mitlesen: Kommt eine Antwort nur als Text (ohne Stimme), bewegt MOSAIK trotzdem den Mund, als läse er sie vor
 const LESEN = { puffer: "", schlange: [], bis: 0, timer: null };
 const lesenAktiv = () => performance.now() < LESEN.bis;
@@ -7546,3 +7584,67 @@ document.addEventListener("click", async (e) => {
   } catch (err) { toast(err.message); }
   speicherAufbauen($("einst-vb")).catch(() => {});
 }, true);
+
+
+// =====================================================================
+//  REAKTIONSZEIT SICHTBAR: was hat JARVIS verstanden, was tut er gerade, wie lange hat es gedauert
+// =====================================================================
+const sek = (x) => String(Math.round(x * 10) / 10).replace(".", ",") + " s";
+window.ersterTon = function () {                 // erster Ton der eigentlichen Antwort (nicht der Überbrückung)
+  if (BILANZ.tTon || !BILANZ.tStart) return;
+  BILANZ.tTon = performance.now();
+  bilanzZeigen();
+};
+function bilanzZeigen() {
+  const el = BILANZ.el; if (!el || !el.isConnected) return;
+  let z = el.querySelector(".bilanz");
+  if (!z) { z = document.createElement("div"); z.className = "bilanz"; el.appendChild(z); }
+  const teile = [];
+  if (BILANZ.sStt != null && BILANZ.stimme) teile.push(`Erkennung ${sek(BILANZ.sStt)}`);
+  if (BILANZ.tWort) teile.push(`erstes Wort ${sek((BILANZ.tWort - BILANZ.tStart) / 1000)}`);
+  if (BILANZ.tTon) teile.push(`erster Ton ${sek((BILANZ.tTon - BILANZ.tStart) / 1000)}`);
+  if (BILANZ.done) {
+    const d = BILANZ.done;
+    if (d.s_modell != null) teile.push(`Modell ${sek(d.s_modell)}`);
+    if (d.s_werkzeuge) teile.push(`Werkzeuge ${sek(d.s_werkzeuge)}` +
+      ((d.werkzeug_zeiten || []).length ? " (" + d.werkzeug_zeiten.map(([n, x]) => `${n} ${sek(x)}`).join(", ") + ")" : ""));
+    teile.push(`gesamt ${sek(d.s_gesamt)}`);
+  }
+  // „vom Satzende“: ab dem Moment, in dem JARVIS dein Satzende erkannt hat, bis er hörbar antwortet
+  const ab = BILANZ.stimme && BILANZ.tEnde ? BILANZ.tEnde : BILANZ.tStart;
+  const bis = BILANZ.tTon || BILANZ.tWort;
+  if (bis && ab) {
+    BILANZ.fazit = `ANTWORT NACH ${sek((bis - ab) / 1000).toUpperCase()}`; BILANZ.tFazit = Date.now();
+    teile.unshift(`${BILANZ.stimme ? "vom Satzende bis zur Antwort" : "bis zur Antwort"} ${sek((bis - ab) / 1000)}`);
+    if (coreState === "idle") ruhe();
+  }
+  z.textContent = "⏱ " + teile.join(" · ");
+}
+const _sendZeit = sendText;
+sendText = function (text, viaVoice = false) {
+  const vorher = chat.lastElementChild;
+  BILANZ.tStart = performance.now(); BILANZ.stimme = !!viaVoice; BILANZ.done = null; BILANZ.el = null; BILANZ.phase = ""; BILANZ.phaseArt = "";
+  if (!viaVoice) { BILANZ.tEnde = 0; BILANZ.sStt = null; }
+  BILANZ.tWort = 0; BILANZ.tTon = 0;
+  const r = _sendZeit(text, viaVoice);
+  const el = chat.lastElementChild;
+  if (viaVoice && el && el !== vorher && el.classList.contains("user") && BILANZ.sStt != null)
+    el.querySelector(".who").textContent = `DU · GESPROCHEN · ERKANNT IN ${sek(BILANZ.sStt).toUpperCase()}`;
+  return r;
+};
+const _handleZeit = handle;
+handle = function (ev) {
+  if (ev.type === "phase") {                      // Zwischenstände des Kerns: Modell arbeitet / Datenschutz fasst lokal zusammen
+    if (ev.name === "schleier") { BILANZ.phase = "DATENSCHUTZ · LOKALE KURZFASSUNG"; BILANZ.phaseArt = "tool"; setState("tool", BILANZ.phase); }
+    else if (ev.name === "modell" && ev.schritt > 1) { BILANZ.phase = "WERTET ERGEBNISSE AUS"; BILANZ.phaseArt = "think"; if (coreState !== "speak") setState("think", BILANZ.phase); }
+    return;
+  }
+  if (ev.type === "tool_ende") {
+    if (current) { const z = [...current.querySelectorAll(".tool")].pop(); if (z && !/\d s$/.test(z.textContent)) z.textContent += ` · ${sek(ev.s)}`; }
+    return;
+  }
+  if (ev.type === "delta" && !BILANZ.tWort && ev.text && ev.text.trim()) BILANZ.tWort = performance.now();
+  _handleZeit(ev);
+  if (ev.type === "route") BILANZ.el = current;
+  if (ev.type === "done") { BILANZ.done = ev; bilanzZeigen(); }
+};

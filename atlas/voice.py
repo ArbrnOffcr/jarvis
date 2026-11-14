@@ -39,7 +39,10 @@ DEFAULTS = {"stimme_de": "", "stimme_en": "", "modell": "eleven_flash_v2_5",
             # Gespräch: nach jeder gesprochenen Antwort so viele Sekunden weiter zuhören (0 = aus)
             "gespraech_sek": 6,
             # Dazwischenreden stoppt JARVIS; Lautstärkeschwelle (höher = unempfindlicher gegen eigenes Echo)
-            "unterbrechen": True, "unterbrechen_schwelle": 1400}
+            "unterbrechen": True, "unterbrechen_schwelle": 1400,
+            # Satzende: so lange Stille nach dem Sprechen gilt als „fertig“ (kürzer = schnellere Antwort, aber
+            # Denkpausen schneiden eher ab); Vorab-Erkennung beginnt schon nach der kurzen Pause
+            "satzende_s": 0.55, "vorab_pause_s": 0.28}
 
 DE_WORDS = set("der die das und ist nicht ich du wir sie ein eine mit für auf zu den dem im es "
                "auch noch wie bitte danke heute morgen termin habe hast wird werden".split())
@@ -47,14 +50,26 @@ EN_WORDS = set("the and is are not you we they a an with for on to of in it this
                "please thanks today tomorrow have has will would".split())
 
 
+_SETTINGS_CACHE: list = [0.0, None]
+
+
 def settings() -> dict:
-    return {**DEFAULTS, **(read_private_json(SETTINGS, {}) or {})}     # neue Einstellungen gelten auch für alte Dateien
+    """Spracheinstellungen – 3 s zwischengespeichert: Der Mikrofonstrom fragt sie bei jedem Audiopaket ab (etwa
+    zehnmal pro Sekunde); ohne Zwischenspeicher wurde dabei jedes Mal eine Datei aus iCloud gelesen und eine Kopie
+    geschrieben – mitten in der Schleife, die auch Antworten und Audio ausliefert."""
+    jetzt = time.monotonic()
+    if _SETTINGS_CACHE[1] is None or jetzt - _SETTINGS_CACHE[0] > 3:
+        _SETTINGS_CACHE[1] = {**DEFAULTS, **(read_private_json(SETTINGS, {}) or {})}   # neue Einstellungen gelten auch für alte Dateien
+        _SETTINGS_CACHE[0] = jetzt
+    return dict(_SETTINGS_CACHE[1])
 
 
 def save_settings(**kw) -> dict:
+    _SETTINGS_CACHE[1] = None
     cur = settings()
     cur.update({k: v for k, v in kw.items() if k in DEFAULTS})
     write_private_json(SETTINGS, cur)
+    _SETTINGS_CACHE[1] = None
     return cur
 
 
@@ -323,6 +338,8 @@ class Speaker:
 class Transcriber:
     def __init__(self):
         self.lock = threading.Lock()
+        self.schnell_aus = False            # Schnellweg nach einem Fehler abgeschaltet (Grund in schnell_fehler)
+        self.schnell_fehler = ""
 
     def transcribe(self, pcm: np.ndarray, sprache: str | None = None, vorher: str = "") -> dict:
         from atlas.plattform import whisper     # Mac: mlx-whisper, Windows: faster-whisper (lädt beim ersten Mal ~1,6 GB)
@@ -335,19 +352,40 @@ class Transcriber:
         erlaubt = list(settings().get("erkennung_sprachen") or ["de", "en"])
         if zusatzsprache():
             erlaubt.append(zusatzsprache())
+        modell, weg = settings()["whisper"], "standard"
         with self.lock:
-            r = whisper(audio, settings()["whisper"],
-                                       condition_on_previous_text=False, **extra)
-            erkannt = r.get("language") or sprache or "de"
-            if not sprache and erkannt not in erlaubt:
-                # Kurze Sätze erkennt Whisper gern als falsche Sprache – und schreibt sie dann auch in dieser
-                # Sprache (oder übersetzt). Darauf antwortet das Modell dann in der fremden Sprache.
-                extra["language"] = "de"
-                r = whisper(audio, settings()["whisper"],
-                                           condition_on_previous_text=False, **extra)
+            r = None
+            if not self.schnell_aus:
+                # Schnellweg: ein Durchgang, keine Wiederholungen – siehe plattform.whisper_schnell
+                try:
+                    from atlas.plattform import whisper_schnell
+                    r = whisper_schnell(audio, modell, sprache, vorher[-120:])
+                    erkannt = (r or {}).get("language") or sprache or "de"
+                    if r is not None and not sprache and erkannt not in erlaubt:
+                        r = whisper_schnell(audio, modell, "de", vorher[-120:])     # falsche Sprache geraten → Deutsch
+                    if r is not None:
+                        weg = "schnell"
+                        if r["kein_sprechen"] > 0.6 and r["guete"] < -1.0:          # nur Rauschen
+                            r = {**r, "text": ""}
+                        elif r["wiederholung"] > 2.4:                               # Endlosschleife → Standardweg
+                            r = None
+                except Exception as e:
+                    self.schnell_aus = True                # z. B. andere mlx-whisper-Version: Standardweg behalten
+                    self.schnell_fehler = f"{type(e).__name__}: {e}"[:200]
+                    r = None
+            if r is None:
+                weg = "standard"
+                # temperature=0: keine bis zu fünf Wiederholungen bei undeutlichen Aufnahmen (je ~1 s)
+                r = whisper(audio, modell, condition_on_previous_text=False, temperature=0.0, **extra)
+                erkannt = r.get("language") or sprache or "de"
+                if not sprache and erkannt not in erlaubt:
+                    # Kurze Sätze erkennt Whisper gern als falsche Sprache – und schreibt sie dann auch in dieser
+                    # Sprache (oder übersetzt). Darauf antwortet das Modell dann in der fremden Sprache.
+                    extra["language"] = "de"
+                    r = whisper(audio, modell, condition_on_previous_text=False, temperature=0.0, **extra)
         lang = r.get("language") or "de"
         return {"text": (r.get("text") or "").strip(), "lang": lang if lang in erlaubt else "de",
-                "erkannt": erkannt}
+                "erkannt": erkannt, "weg": weg}
 
 
 _STT_POOL = None
@@ -369,11 +407,12 @@ class VoiceSession:
     Schneller durch Vorab-Erkennung: Sobald du beim Sprechen kurz absetzt, wird das bisher Gesagte
     schon im Hintergrund erkannt. Am Ende muss nur noch das letzte Stück erkannt werden.
     Modi: idle | wake (selbst erkanntes Ende) | ptt (Taste) | monitor (JARVIS spricht: auf Dazwischenreden achten)."""
-    SILENCE_END = 0.6      # Sekunden Stille nach Sprache = Ende (kürzer = schnellere Antwort)
+    SILENCE_END = 0.55     # Sekunden Stille nach Sprache = Ende (Einstellung satzende_s)
     NO_SPEECH = 4.0        # nach Weckwort so lange auf Sprache warten
     MAX_LEN = 20.0
-    PAUSE_SCHNITT = 0.32   # kurze Sprechpause → bisheriges Stück vorab erkennen
-    MIN_STUECK = 1.2       # … wenn es mindestens so viel Sprache enthält
+    PAUSE_SCHNITT = 0.28   # kurze Sprechpause → bisheriges Stück vorab erkennen (Einstellung vorab_pause_s)
+    MIN_STUECK = 0.6       # … wenn es mindestens so viel Sprache enthält: auch kurze Sätze sind dann beim
+    #                        Satzende schon (fast) fertig erkannt
 
     def __init__(self, wake: bool, transcriber: "Transcriber | None" = None):
         self.mode = "idle"
@@ -383,6 +422,13 @@ class VoiceSession:
         self.wake_label = ""
         self.pending = np.zeros(0, dtype=np.int16)
         self.tr = transcriber
+        try:
+            st = settings()
+            self.SILENCE_END = min(1.5, max(0.35, float(st.get("satzende_s", self.SILENCE_END))))
+            self.PAUSE_SCHNITT = min(self.SILENCE_END - 0.1, max(0.2, float(st.get("vorab_pause_s", self.PAUSE_SCHNITT))))
+        except Exception:
+            pass
+        self.weg = ""                       # Erkennungsweg der letzten Aufnahme (schnell/standard)
         if wake:
             self._init_wake()
         self.noise = 300.0                  # gleitender Grundpegel
@@ -445,6 +491,7 @@ class VoiceSession:
             if not tr:
                 return None
             r = tr.transcribe(audio, self.sprache if texte is self.texte else None, " ".join(texte))
+            self.weg = r.get("weg", "")
             if r["text"] and not HALLUZINATION.search(r["text"]):
                 texte.append(r["text"])
                 if texte is self.texte:
@@ -539,7 +586,7 @@ class VoiceSession:
             if HALLUZINATION.search(r["text"]):
                 r = {**r, "text": ""}
             self._reset_counters()
-            return {**r, "s_audio": round(dauer, 2), "stuecke": 1}
+            return {**r, "s_audio": round(dauer, 2), "stuecke": 1, "vorab": 0}
         try:
             for f in stuecke:
                 f.result(timeout=30)
@@ -553,7 +600,7 @@ class VoiceSession:
             out = self.tr.transcribe(voll)
         n = len(stuecke) + 1
         self._reset_counters()
-        return {**out, "s_audio": round(dauer, 2), "stuecke": n}
+        return {**out, "weg": out.get("weg") or self.weg, "s_audio": round(dauer, 2), "stuecke": n, "vorab": len(stuecke)}
 
     def take(self) -> np.ndarray:
         audio = np.concatenate(self.buf) if self.buf else np.zeros(0, dtype=np.int16)

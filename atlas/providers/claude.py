@@ -136,6 +136,11 @@ class ClaudeProvider(Provider):
                                  (t_in, final.usage.output_tokens),
                                  pause=final.stop_reason == "pause_turn", quellen=quellen))
 
+    def vorab_aufruf(self, call) -> dict:
+        """Ein von JARVIS selbst vorab ausgeführter Werkzeugaufruf – im Verlauf wie ein Aufruf des Modells."""
+        return {"role": "assistant", "content": [{"type": "tool_use", "id": call.id, "name": call.name,
+                                                  "input": call.args}]}
+
     def tool_results(self, results):
         return [{"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": call.id, "content": out}

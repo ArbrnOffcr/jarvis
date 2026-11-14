@@ -34,18 +34,38 @@ def morgens(d: date, stunde: int = 9) -> datetime:
     return t if t > datetime.now() else datetime.now() + timedelta(hours=1)
 
 
-def lokal_json(lokal, system: str, prompt: str, max_tokens: int = 600) -> dict | None:
-    """Das lokale Modell antwortet mit JSON (Inhalte verlassen den Mac nicht)."""
+class Abgebrochen(Exception):
+    """Hintergrundauftrag ans lokale Modell abgebrochen, weil der Nutzer JARVIS gerade braucht."""
+
+
+def lokal_json(lokal, system: str, prompt: str, max_tokens: int = 600, abbruch=None) -> dict | None:
+    """Das lokale Modell antwortet mit JSON (Inhalte verlassen den Mac nicht).
+    abbruch: Funktion, die True liefert, sobald der Auftrag weichen soll – dann wird die laufende Erzeugung beendet
+    (die Verbindung zu Ollama schließt, das Modell hört auf zu rechnen) und Abgebrochen ausgelöst."""
     if not lokal or not lokal.available():
         return None
+    strom = None
     try:
         model = lokal.resolve_model()
-        out = "".join(e[1] for e in lokal.step(model, system, [{"role": "user", "content": prompt}],
-                                                [], max_tokens) if e[0] == "text")
-        m = re.search(r"\{.*\}", out, re.S)
+        strom = lokal.step(model, system, [{"role": "user", "content": prompt}], [], max_tokens)
+        teile = []
+        for e in strom:
+            if e[0] == "text":
+                teile.append(e[1])
+            if abbruch is not None and abbruch():
+                raise Abgebrochen()
+        m = re.search(r"\{.*\}", "".join(teile), re.S)
         return json.loads(m.group(0)) if m else None
+    except Abgebrochen:
+        raise
     except Exception:
         return None
+    finally:
+        try:
+            if strom is not None:
+                strom.close()
+        except Exception:
+            pass
 
 
 # ------------------------------------------------------------------ sensible Inhalte

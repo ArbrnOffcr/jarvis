@@ -389,6 +389,31 @@ def funktionsliste_pdf_bereit() -> Path | None:
         return pdf
 
 
+def klon_angleichen(klon: Path) -> str:
+    """Den lokalen Klon der Freundesversion auf den Stand von GitHub heben, bevor neu exportiert wird.
+    Nötig, wenn zuletzt der ANDERE Mac veröffentlicht hat – sonst lehnt GitHub das Hochladen ab („the remote
+    contains work that you do not have locally“). Der exportierte Code wird ohnehin neu erzeugt; nur die
+    Sperrliste ist echter Inhalt: Wurde sie hier geändert und noch nicht hochgeladen, bleibt die hiesige Fassung,
+    sonst gilt die von GitHub. Rückgabe: "" (nichts zu tun/kein Netz), "gleich" oder "angeglichen"."""
+    g = ["git", "-C", str(klon)]
+    if _run([*g, "remote", "get-url", "origin"]).returncode:
+        return ""
+    if _netz([*g, "fetch", "-q", "origin", "main"], timeout=120).returncode:
+        return ""
+    fern = _run([*g, "rev-parse", "origin/main"]).stdout.strip()
+    hier = _run([*g, "rev-parse", "HEAD"]).stdout.strip()
+    if not fern or fern == hier:
+        return "gleich"
+    if _run([*g, "merge-base", "--is-ancestor", "origin/main", "HEAD"]).returncode == 0:
+        return "gleich"                               # hier nur neuere, noch nicht hochgeladene Stände
+    hier_geaendert = (_run([*g, "diff", "--quiet", "HEAD", "--", "sperrliste.json"]).returncode != 0
+                      or _run([*g, "diff", "--quiet", "origin/main...HEAD", "--", "sperrliste.json"]).returncode != 0)
+    _run([*g, "reset", "-q", "--soft", "origin/main"])
+    if not hier_geaendert:
+        _run([*g, "checkout", "-q", "origin/main", "--", "sperrliste.json"])
+    return "angeglichen"
+
+
 def veroeffentlichen() -> None:
     if not shutil.which("gh"):
         console.print("[red]GitHub-CLI (gh) fehlt[/] – 'brew install gh' und 'gh auth login'.")
@@ -417,6 +442,8 @@ def veroeffentlichen() -> None:
             klon.mkdir(parents=True)
             _run(["git", "-C", str(klon), "init", "-q", "-b", "main"])
     console.print(f"→ Freundesversion vorbereiten ({repo}) …")
+    if klon_angleichen(klon) == "angeglichen":
+        console.print("  (GitHub war weiter als dieser Mac – vermutlich hat zuletzt der andere Mac veröffentlicht; angeglichen)")
     with tempfile.TemporaryDirectory() as tmp:
         code = Path(tmp) / "code"
         exportieren(code, cfg)

@@ -42,7 +42,7 @@ MUSTER = [   # (Art, Regex, Gruppe mit dem zu ersetzenden Teil)
                            r"\s+\d{1,4}\s?[a-zA-Z]?\b(?:,?\s*\d{5}\s+[A-ZÄÖÜ][\wäöüß\-]+)?"), 0),
     ("TELEFON", re.compile(r"(?<![\d.,])(?:\+49|0049|0)\s?[1-9]\d{1,4}[\s/\-]?\d{3,}(?:[\s\-]?\d{1,6})?(?!\d|[.,]\d)"), 0),
 ]
-PLATZHALTER = re.compile(r"\[(NAME|IBAN|EMAIL|STEUERID|STEUERNR|VERSNR|RVNR|NUMMER|GEBDATUM|ADRESSE|TELEFON)_(\d+)\]")
+PLATZHALTER = re.compile(r"\[(DOK|NAME|IBAN|EMAIL|STEUERID|STEUERNR|VERSNR|RVNR|NUMMER|GEBDATUM|ADRESSE|TELEFON)_(\d+)\]")
 
 
 class Schleier:
@@ -139,6 +139,71 @@ ZUSAMMENFASSUNG_SYSTEM = (
     "Geburtsdaten. Höchstens 8 Zeilen. Keine Einleitung.")
 
 
+# Felder eines Suchtreffers, die das Dokument nur bezeichnen (Pfad, Name) – alles andere ist Inhalt
+TREFFER_ORT = ("pfad", "name", "ordner", "titel")
+TREFFER_NEUTRAL = {"datum", "seite", "relevanz", "quelle", "verwandt"}
+
+
+def treffer_einzeln(inhalt: str, schleier: "Schleier", stat: dict) -> str | None:
+    """Suchergebnisse Treffer für Treffer datensparsam machen – ohne das lokale Modell und damit ohne Wartezeit.
+    Je Treffer (Eintrag mit „pfad“): Jedes Inhaltsfeld (Auszug, Worum, Beträge …), das Sensibles enthält, bleibt
+    auf dem Mac. Verrät schon der Name/Pfad Sensibles, bekommt Claude statt des Pfads nur einen Platzhalter
+    [DOK_n] – damit kann er das Dokument zeigen oder lesen lassen (JARVIS setzt den echten Pfad lokal ein), ohne
+    den Namen zu kennen. Rückgabe None → lokale Kurzfassung wie bisher: kein Suchergebnis, danach noch Sensibles
+    übrig, oder mehr als die Hälfte der Treffer ist schon dem Namen nach sensibel (dann geht es in der Frage um
+    genau solche Dokumente, und Claude könnte sie ohne Kurzfassung nicht unterscheiden)."""
+    import json
+    if not inhalt.lstrip().startswith("{"):
+        return None
+    try:
+        daten = json.loads(inhalt)
+    except ValueError:
+        return None
+    gefunden, verdeckt = [0], [0]
+
+    def gang(x):
+        if isinstance(x, list):
+            return [gang(y) for y in x]
+        if not isinstance(x, dict):
+            return x
+        if not isinstance(x.get("pfad"), str):
+            return {k: gang(v) for k, v in x.items()}
+        gefunden[0] += 1
+        neu, weg = {}, set()
+        ort = " ".join(str(x.get(k) or "") for k in TREFFER_ORT)
+        ort_arten = sensibel_arten(ort)
+        for k, v in x.items():
+            if k in TREFFER_ORT:
+                if not ort_arten:
+                    neu[k] = v
+                elif k == "pfad":
+                    neu[k] = schleier._ph("DOK", v)
+                continue
+            if k in TREFFER_NEUTRAL and not isinstance(v, (dict, list, str)):
+                neu[k] = v
+                continue
+            arten = sensibel_arten(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False, default=str))
+            if arten:
+                weg.update(arten)
+            else:
+                neu[k] = v
+        if ort_arten:
+            verdeckt[0] += 1
+            neu["art"] = "geschütztes Dokument (Name bleibt auf dem Mac)"
+        if weg or ort_arten:
+            zurueck[0] += 1
+            neu["hinweis"] = ("Geschützte Angaben dieses Treffers bleiben auf dem Mac. Für Einzelheiten datei_lesen "
+                              "mit diesem pfad aufrufen (wird lokal zusammengefasst); zum Zeigen datei_zeigen.")
+        return neu
+    zurueck = [0]
+    out = json.dumps(gang(daten), ensure_ascii=False, default=str)
+    if not gefunden[0] or verdeckt[0] * 2 > gefunden[0] or sensibel_arten(out):
+        return None
+    if zurueck[0]:
+        stat["felder_zurueck"] = stat.get("felder_zurueck", 0) + zurueck[0]
+    return out
+
+
 class GeschuetzterAnbieter:
     """Umhüllt den Claude-Anbieter: maskiert alles Ausgehende, übersetzt alles Eingehende zurück."""
 
@@ -176,6 +241,11 @@ class GeschuetzterAnbieter:
         kurz = ""
         if lokal and lokal.available():
             try:
+                # sichtbar machen, warum es dauert: das lokale Modell fasst Sensibles erst zusammen (nur die Art geht raus)
+                self.c.broadcast({"type": "phase", "name": "schleier", "arten": arten})
+            except Exception:
+                pass
+            try:
                 model = lokal.resolve_model()
                 kurz = "".join(e[1] for e in lokal.step(
                     model, ZUSAMMENFASSUNG_SYSTEM,
@@ -212,7 +282,9 @@ class GeschuetzterAnbieter:
                         w = namen.get(b.get("tool_use_id"), "")
                         arten = sensibel_arten(b["content"]) if w not in OHNE_ZUSAMMENFASSUNG and len(b["content"]) > 120 else []
                         if arten:
-                            b = {**b, "content": self._kurzfassung(w, b["content"], frage, arten, stat)}
+                            einzeln = treffer_einzeln(b["content"], self.schleier, stat)
+                            b = {**b, "content": einzeln if einzeln is not None
+                                 else self._kurzfassung(w, b["content"], frage, arten, stat)}
                     neu.append(b)
                 m = {**m, "content": neu}
             out.append(m)
@@ -252,7 +324,8 @@ class GeschuetzterAnbieter:
             self.c.audit.log("datenschutz", ziel="claude", zeichen=zeichen,
                              ersetzt={k: v for k, v in stat.items() if k.isupper()},
                              lokal_zusammengefasst=stat.get("lokal_zusammengefasst", 0),
-                             zurueckgehalten=stat.get("zurueckgehalten", 0))
+                             zurueckgehalten=stat.get("zurueckgehalten", 0),
+                             **({"felder_zurueck": stat["felder_zurueck"]} if stat.get("felder_zurueck") else {}))
         except Exception:
             pass
 
@@ -298,7 +371,8 @@ def bericht(audit_dateien: list, tag: str) -> dict:
          "elevenlabs": {"ausgaben": 0, "zeichen": 0, "geloescht": 0, "mac_stimme_sensibel": 0}}
     for f in audit_dateien:
         try:
-            zeilen = open(f, encoding="utf-8").read().splitlines()
+            with open(f, encoding="utf-8") as fh:
+                zeilen = fh.read().splitlines()
         except OSError:
             continue
         for z in zeilen:

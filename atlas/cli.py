@@ -7,6 +7,9 @@
   jarvis berechtigungen   Zugriff auf Kalender, Erinnerungen, Notizen, Kontakte, Mail prüfen
   jarvis index [pause|weiter|neu]   Stand des Archiv-Index (inkl. Steckbriefe und weiterer Quellen)
   jarvis suchtest     Goldfragen: findet die Suche die erwarteten Dokumente?
+                      (merken "Frage" "Datei" · vorschlaege · uebernehmen alle|Nr · verwerfen Nr)
+  jarvis iphone-app [installieren|link]   eigene iPhone-App (ohne App Store) bauen, aufspielen, verbinden
+  jarvis reaktionszeit [Tage]       gemessene Zeiten: Spracherkennung, erstes Wort, Werkzeuge (nur Zeiten)
   jarvis steckbriefe [2|8|fertig|stop]   Steckbriefe jetzt erzeugen (auch tagsüber) oder stoppen
   jarvis datenschutz [JJJJ-MM-TT]   Was ging an Claude und ElevenLabs? (nur Zähler)
   jarvis dashboard [fenster|autostart an|autostart aus]   HUD-Oberfläche öffnen (Safari)
@@ -470,22 +473,74 @@ def steckbriefe(args: list[str]) -> None:
                   "Gespräche haben Vorrang; stoppen: jarvis steckbriefe stop")
 
 
-def suchtest() -> None:
-    """Goldfragen: findet JARVIS die erwarteten Dokumente? Fragen in ATLAS-Privat/goldfragen.json ergänzen."""
+def suchtest(args: list[str] | None = None) -> None:
+    """Goldfragen: findet JARVIS die erwarteten Dokumente?
+    jarvis suchtest                              Test laufen lassen (mit Gegenprobe schnelle ↔ vollständige Suche)
+    jarvis suchtest merken "Frage" "Dateiname"   eigene Frage aufnehmen (Teil des Dateinamens/Pfads genügt)
+    jarvis suchtest vorschlaege                  aus dem Alltag vorgemerkte Fragen ansehen
+    jarvis suchtest uebernehmen alle|1 3 5       vorgemerkte Fragen in den Test übernehmen
+    jarvis suchtest verwerfen alle|2 4           vorgemerkte Fragen streichen"""
+    args = args or []
+    kopf = {"x-atlas-token": core_token()}
     try:
-        r = httpx.get(f"{BASE}/index/suchtest", headers={"x-atlas-token": core_token()}, timeout=600).json()
+        if args[:1] == ["merken"]:
+            if len(args) < 3:
+                console.print('Aufruf: jarvis suchtest merken "Frage" "Teil des Dateinamens"')
+                return
+            r = httpx.post(f"{BASE}/index/suchtest/merken", headers=kopf, json={"frage": args[1], "erwartet": args[2]},
+                           timeout=30).json()
+            console.print(f"[green]✓ aufgenommen[/] – der Test hat jetzt {r.get('anzahl')} Fragen.")
+            return
+        if args[:1] == ["vorschlaege"]:
+            v = httpx.get(f"{BASE}/index/suchtest/vorschlaege", headers=kopf, timeout=30).json().get("fragen", [])
+            if not v:
+                console.print("Noch nichts vorgemerkt. JARVIS merkt eine Frage vor, sobald er dir nach einer Suche ein Dokument zeigt.")
+                return
+            t = Table(title="◢ VORGEMERKTE FRAGEN ◣", border_style="cyan")
+            t.add_column("Nr", justify="right"); t.add_column("Frage"); t.add_column("gezeigtes Dokument"); t.add_column("am")
+            for i, x in enumerate(v, 1):
+                t.add_row(str(i), x["frage"][:60], x["erwartet"][-60:], x.get("am", ""))
+            console.print(t)
+            console.print("War das gezeigte Dokument das richtige? → jarvis suchtest uebernehmen alle  (oder Nummern); "
+                          "sonst: jarvis suchtest verwerfen 2 4")
+            return
+        if args[:1] in (["uebernehmen"], ["verwerfen"]):
+            nummern = None if args[1:2] in ([], ["alle"]) else [int(x) for x in args[1:] if x.isdigit()]
+            r = httpx.post(f"{BASE}/index/suchtest/uebernehmen", headers=kopf,
+                           json={"nummern": nummern, "verwerfen": args[0] == "verwerfen"}, timeout=30).json()
+            console.print(f"[green]✓[/] übernommen: {r.get('uebernommen')}, verworfen: {r.get('verworfen')}, "
+                          f"noch vorgemerkt: {r.get('offen')}")
+            return
+        r = httpx.get(f"{BASE}/index/suchtest", headers=kopf, timeout=900).json()
     except httpx.HTTPError as e:
         _kern_fehler(e)
         return
+    gegen = r.get("abweichend") is not None
     t = Table(title="◢ SUCHTEST ◣", border_style="cyan")
     t.add_column("Frage"); t.add_column("Platz", justify="right"); t.add_column("ms", justify="right")
+    if gegen:
+        t.add_column("vollständig: Platz", justify="right"); t.add_column("ms", justify="right"); t.add_column("gleich")
     for z in r.get("fragen", []):
         platz = z["rang"]
-        t.add_row(z["frage"][:60], f"[green]{platz}[/]" if platz == 1 else f"[yellow]{platz}[/]" if platz else "[red]–[/]",
-                  str(z["ms"]))
+        zeile = [z["frage"][:60], f"[green]{platz}[/]" if platz == 1 else f"[yellow]{platz}[/]" if platz else "[red]–[/]",
+                 str(z["ms"])]
+        if gegen:
+            zeile += [str(z.get("rang_vollstaendig") or "–"), str(z.get("ms_vollstaendig", "")),
+                      "[green]ja[/]" if z.get("gleich") else "[red]nein[/]"]
+        t.add_row(*zeile)
     console.print(t)
     console.print(f"Treffer auf Platz 1: {r.get('treffer_1')}/{r.get('anzahl')} · unter den ersten 5: "
                   f"{r.get('treffer_5')}/{r.get('anzahl')} · MRR {r.get('mrr')}")
+    v = r.get("vorauswahl") or {}
+    if gegen:
+        console.print(f"Schnelle Vorauswahl: Treue {v.get('treue')}, {v.get('kandidaten')} Kandidaten, {v.get('mb')} MB – "
+                      f"abweichende Fragen: {r.get('abweichend')}/{r.get('anzahl')}")
+    elif v.get("aus"):
+        console.print(f"[yellow]Schnelle Vorauswahl ist aus:[/] {v['aus']}")
+    else:
+        console.print("Schnelle Vorauswahl noch nicht bereit (wird beim ersten Suchen aufgebaut) – Test später wiederholen.")
+    if r.get("vorschlaege"):
+        console.print(f"{r['vorschlaege']} Fragen aus dem Alltag sind vorgemerkt → jarvis suchtest vorschlaege")
 
 
 def update() -> None:
@@ -939,6 +994,12 @@ def main() -> None:
     elif cmd in ("sperren", "entsperren", "sperrliste", "mindestversion", "version-sperren", "version-entsperren"):
         from atlas import lizenz
         lizenz.verwalten([cmd, *args[1:]])
+    elif cmd == "reaktionszeit":
+        from atlas import reaktionszeit
+        reaktionszeit.befehl(args[1:])
+    elif cmd == "iphone-app":
+        from atlas import iphone_app
+        iphone_app.befehl(args[1:], core_token())
     elif cmd == "iphone":
         from atlas import iphone
         iphone.einrichten(core_token())
@@ -964,7 +1025,7 @@ def main() -> None:
     elif cmd == "dienst":
         dienst(args[1] if len(args) > 1 else "")
     elif cmd == "suchtest":
-        suchtest()
+        suchtest(args[1:])
     elif cmd == "datenschutz":
         datenschutz(args[1] if len(args) > 1 else "")
     elif cmd == "neustart":                  # Kurzform von „jarvis dienst neustart“

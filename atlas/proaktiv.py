@@ -154,6 +154,13 @@ class Proaktiv:
             werbung = ""
         if werbung:
             text = (text or "").rstrip() + "\n\n" + werbung
+        try:                                     # eigene iPhone-App (kostenlose Apple-ID) läuft nach 7 Tagen ab
+            from atlas import iphone_app
+            ip = iphone_app.erinnerung()
+        except Exception:
+            ip = ""
+        if ip:
+            text = (text or "").rstrip() + "\n\n" + ip
         from atlas.stab import ohne_marken
         data = {"text": ohne_marken(text), "text_marken": text, "vortrag": vortrag,
                 "zeit": datetime.now().isoformat(timespec="minutes"), "geraet": HOST}

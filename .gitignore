@@ -14,3 +14,8 @@ Daten/
 *.egg-info/
 # nie versionieren (AEGIS)
 .aegis/
+
+# iPhone-App: erzeugt aus ios/project.yml
+ios/JARVIS.xcodeproj/
+ios/project.yml
+ios/JARVIS/Info.plist

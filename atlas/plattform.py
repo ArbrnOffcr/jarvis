@@ -139,6 +139,53 @@ def whisper_entladen() -> bool:
     return True
 
 
+_WHISPER_PFAD: dict = {}
+
+
+def whisper_pfad(modell: str) -> str:
+    """Liegt das Modell schon auf der Platte, den lokalen Ordner nehmen – sonst fragt jedes Laden erst bei
+    Hugging Face nach („Fetching 4 files“), das kostet Zeit und braucht Netz."""
+    if modell in _WHISPER_PFAD:
+        return _WHISPER_PFAD[modell]
+    pfad = modell
+    try:
+        if not Path(modell).exists():
+            from huggingface_hub import snapshot_download
+            pfad = snapshot_download(repo_id=modell, local_files_only=True)
+    except Exception:
+        pfad = modell                              # noch nicht geladen: beim ersten Mal wie bisher aus dem Netz
+    _WHISPER_PFAD[modell] = pfad
+    return pfad
+
+
+def whisper_schnell(audio, modell: str, sprache: str | None = None, vorher: str = "") -> dict | None:
+    """Kurze Aufnahmen (bis 28 s) in EINEM Durchgang erkennen: Sprache bestimmen und Text schreiben teilen sich
+    denselben Rechenschritt, und es gibt keine Wiederholungen mit höherer „Temperatur“ (bisher bis zu sechs
+    Durchgänge bei undeutlichen oder sehr kurzen Aufnahmen). Rückgabe wie whisper() plus Gütewerte – oder None,
+    wenn dieser Weg hier nicht geht (dann nimmt der Aufrufer den Standardweg)."""
+    import time
+    if WINDOWS or len(audio) > 28 * 16000:
+        return None
+    import mlx.core as mx
+    from mlx_whisper.audio import N_FRAMES, N_SAMPLES, log_mel_spectrogram, pad_or_trim
+    from mlx_whisper.decoding import DecodingOptions, decode
+    from mlx_whisper.transcribe import ModelHolder
+    _WHISPER_ZEIT[0] = time.time()
+    try:
+        model = ModelHolder.get_model(whisper_pfad(modell), mx.float16)
+        mel = log_mel_spectrogram(audio, n_mels=model.dims.n_mels, padding=N_SAMPLES)
+        stueck = pad_or_trim(mel, N_FRAMES, axis=-2).astype(mx.float16)
+        opt = dict(task="transcribe", language=sprache or None, temperature=0.0, without_timestamps=True, fp16=True)
+        if vorher:
+            opt["prompt"] = vorher
+        r = decode(model, stueck, DecodingOptions(**opt))
+        return {"text": r.text or "", "language": r.language, "segments": [],
+                "kein_sprechen": float(r.no_speech_prob), "guete": float(r.avg_logprob),
+                "wiederholung": float(r.compression_ratio)}
+    finally:
+        _WHISPER_ZEIT[0] = time.time()
+
+
 def whisper(audio, modell: str, **optionen) -> dict:
     """Spracherkennung. Mac: mlx-whisper (Apple-Chip). Windows: faster-whisper (CPU, int8).
     Rückgabe wie mlx_whisper: {"text", "language", "segments": [{"start", "end", "text"}]}."""
@@ -147,7 +194,7 @@ def whisper(audio, modell: str, **optionen) -> dict:
     if not WINDOWS:
         import mlx_whisper
         try:
-            return mlx_whisper.transcribe(audio, path_or_hf_repo=modell, **optionen)
+            return mlx_whisper.transcribe(audio, path_or_hf_repo=whisper_pfad(modell), **optionen)
         finally:
             _WHISPER_ZEIT[0] = time.time()
     from faster_whisper import WhisperModel

@@ -109,6 +109,25 @@ SIGNALE = [
 IMMER_FN = None      # liefert Gruppen, die gerade immer dabei sein sollen (z. B. in der Notfallbegleitung)
 
 
+# Klare Dokumentsuche („Zeig mir die Rechnung für den Zaun“): JARVIS sucht sofort selbst im Archiv und gibt dem
+# Modell das Ergebnis gleich mit – das spart eine ganze Runde Nachdenken, bevor überhaupt gesucht wird.
+_DOK_VERB = r"\b(zeig\w*|öffne\w*|such\w*|find\w*|hol\w*|gib mir|brauche|hast du|haben wir|wo (?:ist|liegt|steht|sind|finde ich|habe ich))\b"
+_DOK_DING = (r"\b(\w*rechnung\w*|\w*vertrag\w*|\w*bescheid\w*|dokument\w*|schreiben|brief|unterlagen?|\w*nachweis\w*|"
+             r"\w*bescheinigung\w*|\w*bestätigung\w*|police|urkunde\w*|\w*zeugnis\w*|quittung\w*|beleg\w*|angebot\w*|"
+             r"kündigung\w*|\w*abrechnung\w*|pdf|scan|protokoll\w*|gutachten|formular\w*|antrag|\w*mitteilung\w*)\b")
+_DOK_NICHT = (r"\b(e-?mails?|mail\w*|nachricht\w*|termin\w*|kalender\w*|erinner\w*|ableg\w*|abzulegen|verschieb\w*|lösch\w*|"
+              r"schreib\w*|erstell\w*|entw[ue]rf\w*|verfass\w*|internet|web|google\w*|post|scan-?ordner|alle[sn]?|überblick|übersicht)\b")
+_DOK_RE = (re.compile(_DOK_VERB, re.I), re.compile(_DOK_DING, re.I), re.compile(_DOK_NICHT, re.I))
+
+
+def dokumentsuche(text: str) -> bool:
+    """Fragt der Satz eindeutig nach EINEM Dokument aus dem Archiv? (Dann lohnt die Suche vorab.)"""
+    t = (text or "").strip()
+    if not 8 <= len(t) <= 220:
+        return False
+    return bool(_DOK_RE[0].search(t) and _DOK_RE[1].search(t) and not _DOK_RE[2].search(t))
+
+
 def gruppen_fuer(text: str) -> set[str]:
     t = (text or "").lower()
     g: set[str] = set()

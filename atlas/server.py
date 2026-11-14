@@ -379,6 +379,7 @@ class Session:
         self.antworten: dict[str, asyncio.Future] = {}   # offene Rückfragen
         self.task: asyncio.Task | None = None  # laufende Antwort (abbrechbar)
         self.fremd: list[str] = []   # Quellen fremder Inhalte in diesem Durchlauf (Mail, Dokument, Web …)
+        self.zeiten: list = []       # (Werkzeug, Sekunden) der laufenden Antwort
 
 
 MAX_STEPS = 8
@@ -404,6 +405,22 @@ async def _ask(ws: WebSocket, text: str) -> bool:
         s.antworten.pop(cid, None)
 
 
+def _suchzeiten(c, name: str) -> dict:
+    """Bei Suchwerkzeugen: Dauer je Abschnitt (Name, Stichwort, Einbetten, Vektoren …) fürs Protokoll – nur Zeiten."""
+    if name not in ("archiv_suchen", "wissen_suchen", "archiv_thema"):
+        return {}
+    try:
+        z = dict(getattr(c.archiv.search, "letzte_zeiten", None) or {})
+        g = c.archiv.search.grob.stand()
+        if g.get("treue") is not None:
+            z["treue"] = g["treue"]
+        if g.get("aus"):
+            z["vorauswahl_aus"] = g["aus"]
+        return {"teile": z} if z else {}
+    except Exception:
+        return {}
+
+
 async def _run_tool(ws: WebSocket, call) -> str:
     """Ein Werkzeug ausführen – mit Rechteprüfung, Befugnissen, Fremdinhalt-Schutz, Rückfrage und Protokoll."""
     c = get_core()
@@ -425,6 +442,7 @@ async def _run_tool(ws: WebSocket, call) -> str:
             return "Vom Nutzer abgelehnt. Nicht erneut versuchen, sondern nachfragen."
     await ws.send_json({"type": "tool", "name": call.name, "text": what})
     result = None
+    t_wz = time.monotonic()
     try:
         result = await asyncio.to_thread(tool.func, **call.args)
         out = json.dumps(result, ensure_ascii=False, default=str)
@@ -441,7 +459,24 @@ async def _run_tool(ws: WebSocket, call) -> str:
                 stufe=lvl.name, **({"befugnis": rid} if rid else {}), **({"fremd": sorted(set(fremd))} if fremd else {}),
                 **({"rueckgaengig": rk} if rk else {}),
                 args={k: (v if len(str(v)) < 80 else str(v)[:80] + "…")
-                      for k, v in call.args.items()}, **({} if ok else {"fehler": out[:300]}))
+                      for k, v in call.args.items()}, **({} if ok else {"fehler": out[:300]}),
+                s=round(time.monotonic() - t_wz, 2), **_suchzeiten(c, call.name))
+    try:                                           # Suchtest lernt mit: Frage → gezeigtes Dokument (nur vorgemerkt, lokal)
+        if ok and s is not None and call.name in ("archiv_suchen", "wissen_suchen"):
+            s.suchfrage = str(call.args.get("frage") or "")
+        elif ok and s is not None and call.name == "datei_zeigen" and getattr(s, "suchfrage", ""):
+            from atlas.archiv.wissen import gold_vorschlag
+            await asyncio.to_thread(gold_vorschlag, s.suchfrage, str((result or {}).get("datei") or call.args.get("pfad") or ""))
+            s.suchfrage = ""
+    except Exception:
+        pass
+    try:                                           # Dauer je Werkzeug: für die Anzeige und die Zeitbilanz der Antwort
+        dauer = round(time.monotonic() - t_wz, 2)
+        if s is not None:
+            s.zeiten.append((call.name, dauer))
+        await ws.send_json({"type": "tool_ende", "name": call.name, "s": dauer, "ok": ok})
+    except Exception:
+        pass
     if ok and rid:
         c.befugnisse.genutzt(rid)
     if ok and lvl == Level.MELDEN:
@@ -463,10 +498,13 @@ async def _chat(ws: WebSocket, s: Session, text: str, stimme: bool = False, quel
                 dokumente: list | None = None):
     c = get_core()
     c.chats_aktiv += 1                 # während eines Gesprächs wird nicht aktualisiert
+    c.sparmodus.nutzer(600)            # Antwort läuft: Hintergrundarbeit auf der GPU weicht
     try:
         await _chat_inner(ws, s, text, stimme, quelle, dokumente or [])
     finally:
         c.chats_aktiv -= 1
+        c.sparmodus.nutzer_bis = 0.0
+        c.sparmodus.nutzer()           # danach noch kurz Vorrang – meist folgt gleich die nächste Frage
 
 
 DOK_FRAGE = ("Was ist das für ein Dokument? Fasse kurz zusammen: worum es geht, was von mir verlangt "
@@ -477,7 +515,9 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
                       dok_ids: list | None = None):
     c = get_core()
     s.fremd = []                                  # Fremdinhalt-Markierung gilt je Auftrag
+    s.zeiten = []
     t0 = time.monotonic(); t_erst = None          # Messung: bis zum ersten Wort / gesamt
+    s_modell = 0.0                                # reine Modellzeit (alle Schritte), ohne Werkzeuge
     lokal, claude = c.providers["lokal"], c.providers["claude"]
     local_ok = await asyncio.to_thread(lokal.available)
     cloud_ok = claude.available()
@@ -504,6 +544,11 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
     cls = c.router.classify(text)
     if cls["sensitive"] or cls["forbidden"]:
         s.sensitive = True
+    # „aktueller Mietvertrag“ ist keine Rechercheaufgabe: Dokumentsuche bleibt beim schnellen Modell mit wenigen Werkzeugen
+    if (d.target == "claude" and s.mode == "auto" and d.reason.startswith("komplex (") and not d.ask_cloud
+            and cls["complex_words"] and all(w.startswith("aktuell") for w in cls["complex_words"])
+            and len(text) < c.cfg["router"]["complex_min_chars"] and werkzeugwahl.dokumentsuche(text)):
+        d.alias, d.reason = c.cfg["router"].get("tool_model", "haiku"), "Werkzeug-Aufgabe (Dokumentsuche)"
     if doks and dok_lokal:
         if not local_ok:
             await ws.send_json({"type": "error", "text": "Das lokale Modell ist nicht erreichbar – "
@@ -612,6 +657,23 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
     work = [*s.messages, {"role": "user", "content": text + anhang}]
     reply, t_in, t_out = "", 0, 0
     unterbrochen = False
+    # Vorab-Suche: bei klarer Dokumentsuche sucht JARVIS sofort selbst und gibt dem Modell das Ergebnis gleich mit
+    # (über denselben Weg wie jeder Werkzeugaufruf – Rechte, Protokoll, Fremdinhalt-Schutz und Datenschutz-Schleier gelten).
+    vorab_suche = False
+    try:
+        if (d.target == "claude" and not doks and marken is None and c.archiv and c.cfg.get("vorab_suche", True)
+                and getattr(provider, "vorab_aufruf", None) and any(t.name == "archiv_suchen" for t in tools)
+                and werkzeugwahl.dokumentsuche(text)):
+            from atlas.providers.base import ToolCall
+            vcall = ToolCall(f"toolu_vorab{int(time.time() * 1000)}", "archiv_suchen", {"frage": text[:300], "anzahl": 6})
+            vout = await _run_tool(ws, vcall)
+            if vout.startswith("{"):
+                work += [provider.vorab_aufruf(vcall), *provider.tool_results([(vcall, vout)])]
+                vorab_suche = True
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        c.audit.log("fehler", bereich="vorab_suche", text=str(e)[:200])
 
     async def ausgeben(stuecke):
         nonlocal reply, t_erst
@@ -624,7 +686,9 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
             reply += wert
             await ws.send_json({"type": "delta", "text": wert})
     try:
-        for _ in range(MAX_STEPS):
+        for schritt in range(MAX_STEPS):
+            await ws.send_json({"type": "phase", "name": "modell", "schritt": schritt + 1})
+            t_m = time.monotonic()
             it = provider.step(model, system, list(work), tools, max_tokens)
             result = None
             while True:
@@ -635,6 +699,7 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
                     await ausgeben(marken.feed(ev[1]) if marken else [("text", ev[1])])
                 else:
                     result = ev[1]
+            s_modell += time.monotonic() - t_m
             if marken:
                 await ausgeben(marken.ende())
             t_in += result.usage[0]
@@ -700,13 +765,18 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
     c.audit.add_usage(key, t_in, t_out)
     gesamt = time.monotonic() - t0
     cache = getattr(provider, "last_cache", None) if d.target == "claude" else None
+    s_wz = round(sum(x for _, x in s.zeiten), 2)
     c.audit.log("chat", ziel=d.target, modell=model, grund=d.reason,
                 tokens_in=t_in, tokens_out=t_out, s_erstes_wort=round(t_erst or gesamt, 2),
-                s_gesamt=round(gesamt, 2), cache=cache, stimme=stimme,
+                s_gesamt=round(gesamt, 2), s_modell=round(s_modell, 2), s_werkzeuge=s_wz,
+                werkzeug_zeiten={n: x for n, x in s.zeiten[-12:]}, cache=cache, stimme=stimme,
+                **({"vorab_suche": True} if vorab_suche else {}),
                 werkzeuge=len(tools), **({"unterbrochen": True} if unterbrochen else {}))
     await ws.send_json({"type": "done", "target": d.target, "model": model, "unterbrochen": unterbrochen,
                         "tokens_in": t_in, "tokens_out": t_out,
-                        "s_erst": round(t_erst or gesamt, 2), "s_gesamt": round(gesamt, 2)})
+                        "s_erst": round(t_erst or gesamt, 2), "s_gesamt": round(gesamt, 2),
+                        "s_modell": round(s_modell, 2), "s_werkzeuge": s_wz,
+                        "werkzeug_zeiten": [[n, x] for n, x in s.zeiten[-12:]]})
 
 
 async def _summarize(messages: list[dict]) -> None:
@@ -765,6 +835,26 @@ def index_suchtest(_: None = Depends(auth)):
     if not c.archiv:
         raise HTTPException(404, "kein DATENARCHIV")
     return suchtest(c.archiv.search, read_private_json, write_private_json)
+
+
+@app.get("/index/suchtest/vorschlaege")
+def index_suchtest_vorschlaege(_: None = Depends(auth)):
+    from atlas.archiv.wissen import GOLD_VORSCHLAG
+    return read_private_json(GOLD_VORSCHLAG, None) or {"fragen": []}
+
+
+@app.post("/index/suchtest/merken")
+def index_suchtest_merken(body: dict, _: None = Depends(auth)):
+    from atlas.archiv.wissen import gold_merken
+    if not (body.get("frage") or "").strip() or not (body.get("erwartet") or "").strip():
+        raise HTTPException(400, "frage und erwartet angeben")
+    return gold_merken(body["frage"], body["erwartet"], read_private_json, write_private_json)
+
+
+@app.post("/index/suchtest/uebernehmen")
+def index_suchtest_uebernehmen(body: dict, _: None = Depends(auth)):
+    from atlas.archiv.wissen import gold_uebernehmen
+    return gold_uebernehmen(body.get("nummern"), read_private_json, write_private_json, bool(body.get("verwerfen")))
 
 
 @app.post("/index/{aktion}")
@@ -2351,7 +2441,13 @@ async def audio_ws(ws: WebSocket, token: str = "", wake: int = 0):
                         "label": vs.wake_label})
 
     def vorwaermen():
-        """Während du sprichst: Verbindungen zu Claude und ElevenLabs aufbauen."""
+        """Während du sprichst: Verbindungen zu Claude und ElevenLabs aufbauen; Hintergrundarbeit weicht."""
+        c.sparmodus.nutzer()
+        try:
+            if c.archiv:
+                c.archiv.search.vorauswahl_bereiten()     # Suchtabelle laden, falls sie freigegeben war
+        except Exception:
+            pass
         try:
             c.providers["claude"].vorwaermen()
             c.speaker.vorwaermen()
@@ -2359,7 +2455,8 @@ async def audio_ws(ws: WebSocket, token: str = "", wake: int = 0):
             pass
 
     async def finish():
-        await ws.send_json({"type": "processing"})
+        c.sparmodus.nutzer()
+        await ws.send_json({"type": "processing", "s_audio": round(vs.n / voice.RATE, 1)})
         if vs.n < voice.RATE * 0.3:
             vs.take()
             await ws.send_json({"type": "cancel"})
@@ -2368,12 +2465,19 @@ async def audio_ws(ws: WebSocket, token: str = "", wake: int = 0):
         try:
             r = await asyncio.to_thread(vs.abschliessen)
             s_stt = round(time.monotonic() - t0, 2)
-            await ws.send_json({"type": "transcript", "text": r["text"], "lang": r["lang"], "s_stt": s_stt})
+            await ws.send_json({"type": "transcript", "text": r["text"], "lang": r["lang"], "s_stt": s_stt,
+                                "s_audio": r["s_audio"]})
+            tr = c.transcriber
             c.audit.log("sprache", s_audio=r["s_audio"], s_erkennung=s_stt, stuecke=r["stuecke"],
-                        lang=r.get("lang"), erkannt=r.get("erkannt"))       # erkannte Sprache – nie der Inhalt
+                        vorab=r.get("vorab"), weg=r.get("weg"), lang=r.get("lang"), erkannt=r.get("erkannt"),
+                        **({"schnellweg_fehler": tr.schnell_fehler} if getattr(tr, "schnell_fehler", "") else {}))
+            #           ↑ erkannte Sprache und Zeiten – nie der Inhalt
         except Exception as e:
             vs.take()
-            await ws.send_json({"type": "error", "text": f"Spracherkennung: {e}"[:200]})
+            try:
+                await ws.send_json({"type": "error", "text": f"Spracherkennung: {e}"[:200]})
+            except Exception:
+                pass                                   # Fenster schon zu – nichts mehr zu melden
 
     try:
         while True:
@@ -2387,6 +2491,7 @@ async def audio_ws(ws: WebSocket, token: str = "", wake: int = 0):
                     vorwaermen()
                     await ws.send_json({"type": "wake"})
                 elif ev == "bargein":
+                    c.sparmodus.nutzer()
                     c.audit.log("unterbrochen")
                     await ws.send_json({"type": "bargein"})
                 elif ev == "cancel":
@@ -2464,6 +2569,8 @@ async def ws_endpoint(ws: WebSocket, token: str = ""):
         except WebSocketDisconnect:
             return
     c.audit.log("sitzung_start")
+    if c.archiv:                                   # Suchtabelle laden, falls der Sparmodus sie freigegeben hatte
+        threading.Thread(target=c.archiv.search.vorauswahl_bereiten, daemon=True).start()
     c.loop = asyncio.get_running_loop()
     c.ws_clients.add(ws)
     c.sparmodus.verbunden(ws)
@@ -2596,6 +2703,8 @@ def run():
         ("Aktualisierung", c.update.start),
         ("iMessage", lambda: c.nachrichten.start(c.proaktiv.stop)),
         ("Sparmodus", lambda: c.sparmodus.start(c.proaktiv.stop)),
+        ("Suchvorauswahl", lambda: c.archiv and threading.Thread(
+            target=c.archiv.search.vorauswahl_bereiten, daemon=True).start()),
         ("Spracherkennung vorwärmen", lambda: not c.sparmodus.aktiv and
             threading.Thread(target=_whisper_vorwaermen, daemon=True).start()),
         ("Werbefilter", lambda: c.werbung.start(c.proaktiv.stop)),

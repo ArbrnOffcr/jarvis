@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 04.11.2026 · Version 0.37.4
+Stand: 14.11.2026 · Version 0.41.1
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -24,6 +24,15 @@ Bedeutung der Zeichen:
 | Gesprächsmodus: nach jeder Antwort 6 s weiter zuhören | ✅ | Knopf GESPRÄCH: AN / OHNE STOPP / AUS |
 | Unterbrechen: Dazwischenreden oder Leertaste stoppt JARVIS | ✅ | Bei Lautsprechern evtl. Echo → OHNE STOPP |
 | Sprachausgabe mit ElevenLabs-Stimme, gestreamt | ⚙️ | Ohne Schlüssel: Mac-Stimme; mit Schlüssel: Standardstimme oder eigene Auswahl |
+| Schnelle Spracherkennung: kurze Sätze (bis 28 s) werden in einem einzigen Durchgang erkannt statt in bis zu sieben; das Modell bleibt geladen und wird ohne Netzabfrage gestartet | ✅ | nur Mac; klappt der schnelle Weg nicht, nimmt JARVIS von selbst den bisherigen (steht im Protokoll: weg, schnellweg_fehler) |
+| Schnelleres Satzende: JARVIS wertet 0,55 s nach deinem letzten Wort aus (vorher länger) | ⚙️ | Schneidet er dich ab: Einstellungen-Datei voice.json → satzende_s (z. B. 0,8), vorab_pause_s |
+| Statuszeile sagt, was gerade passiert, mit laufender Uhr: ERKENNE SPRACHE → DENKT → FÜHRE AUS · Werkzeug → DATENSCHUTZ · LOKALE KURZFASSUNG → WERTET ERGEBNISSE AUS → SPRICHT; „BEREIT“ erscheint erst, wenn die Anfrage wirklich fertig ist; bei unverständlichem Ton „NICHT VERSTANDEN“ | ✅ | |
+| Zeitbilanz unter jeder Antwort: vom Satzende bis zur Antwort, Erkennung, erstes Wort, erster Ton, Modell, Werkzeuge (mit Dauer je Werkzeug), gesamt; über deinem Satz „GESPROCHEN · ERKANNT IN x S“ | ✅ | |
+| Reaktionszeit auswerten: typische und langsame Zeiten für Spracherkennung, erstes Wort und Werkzeuge aus dem lokalen Protokoll | ✅ | `jarvis reaktionszeit [Tage]` – nur Zeiten, keine Inhalte |
+| Archivsuche misst sich selbst: Dauer je Abschnitt (Name, Stichwort, Einbetten, Vektoren, Steckbriefe) steht im Protokoll | ✅ | Anzeige in `jarvis reaktionszeit` |
+| Schnelle Bedeutungssuche: statt bei jeder Suche alle Textstücke vollständig zu vergleichen (bei 665 000 Stücken 4,6 s), wählt eine kleine Tabelle im Arbeitsspeicher die besten Kandidaten vor; nur diese werden exakt nachgerechnet | ✅ | baut sich im Hintergrund auf und prüft sich selbst (Treue ≥ 99,5 %, sonst bleibt die vollständige Suche aktiv); gut 300 MB Arbeitsspeicher, solange die App läuft |
+| Vorab-Suche: bei klarer Dokumentsuche („Zeig mir den Mietvertrag“) sucht JARVIS sofort selbst und gibt dem Modell das Ergebnis gleich mit – eine Runde Nachdenken weniger; solche Fragen bleiben beim schnellen Modell | ✅ | gleicher Weg wie jeder Werkzeugaufruf (Rechte, Protokoll, Datenschutz-Schleier); abschalten in config.yaml (vorab_suche: false) |
+| Wochenplan fragt Kalender, Erinnerungen, Fristen, Excel, Post und Kontakte gleichzeitig ab statt nacheinander | ✅ | Dauer je Quelle in `jarvis reaktionszeit` |
 | Deutsch und Englisch (Antwort in der Sprache der Frage) | ✅ | |
 | Eigene Mac-App mit Dauer-Mikrofon, Fenster frei verschiebbar | ✅ | `jarvis app` |
 | Reduzierte Ansicht (nur Kern und Untertitel) und Dashboard-Ansicht | ✅ | Untertitel scrollbar |
@@ -37,6 +46,7 @@ Bedeutung der Zeichen:
 | Fotos/Scans vom iPhone („Ablage → Dokument/Kontakt vom iPhone“) | ✅ | Continuity Camera |
 | Unterwegs per Telegram-Bot (Text, Fotos, PDFs, Briefing) | ⚙️ | ⚙ Einstellungen → Verbindungen → Telegram |
 | iPhone-Web-App auf dem Home-Bildschirm (Sprechen, Untertitel, Karte, Player) | ⚙️ | Tailscale auf Mac und iPhone, dann ⚙ Einstellungen → iPhone → IPHONE VERBINDEN; „VERBINDUNG PRÜFEN“ zeigt, woran es hakt (Anmeldung, MagicDNS, HTTPS, Serve-Freigabe) und wie es zu beheben ist; Tailscale-Befehle funktionieren auch aus dem Hintergrunddienst (Mac-App von Tailscale) |
+| Eigene iPhone-App ohne App Store (kostenlose Apple-ID): native Hülle um die JARVIS-Oberfläche, verbindet sich über Tailscale mit dem Mac, Mikrofon nur für den eigenen Mac, Zugangsschlüssel im iPhone-Schlüsselbund, fremde Links öffnen in Safari; Verbinden per QR-Code; neu verbinden: drei Finger lange drücken | ⚙️ | `jarvis iphone-app` (Xcode-Projekt, Anleitung), `jarvis iphone-app link` (QR), `jarvis iphone-app installieren` (bauen + aufspielen); läuft mit kostenloser Apple-ID 7 Tage – das Morgenbriefing erinnert am letzten Tag; braucht Xcode und XcodeGen (wird über Homebrew nachinstalliert) |
 | Siri: „Hey Siri, frag Jarvis“ – Antwort wird vorgelesen | ⚙️ | Kurzbefehl aus ⚙ Einstellungen → iPhone; Bestätigungspflichtiges nur am Mac |
 | Schnellknöpfe: TAGESLAGE, POSTEINGANG, WOCHE PLANEN, FRISTEN, VERGESSEN? | ✅ | |
 | Telefonnotiz per ⌥⌘N | ✅ | Aufnahme → Zusammenfassung → Aufgaben |
@@ -110,7 +120,7 @@ Bedeutung der Zeichen:
 | Index heilt sich selbst: nicht lesbare Dokumente (iCloud-Platzhalter, gesperrte Dateien) werden aus iCloud geladen und erneut versucht; Name und Ablageort sind immer im Index | ✅ | bis 400 je Lauf, höchstens 6 Versuche; Stand unter `jarvis index` |
 | Steckbrief je Dokument: das lokale Modell fasst jedes lesbare Dokument zusammen (Art, worum es geht, Absender, Beteiligte, Datum, Beträge, Fristen, Aktenzeichen, Orte, Schlagworte, Vorgang) – die Suche findet so nach Bedeutung, auch ohne gleiche Wörter | ✅ | entsteht im Hintergrund (Gespräche haben Vorrang), nur lokal; keine Steckbriefe für Verschlusssachen, bei Gesundheitsdokumenten nur die Art |
 | Eine Suche über alles: Dokumente, Mails (Posteingang + Gesendet, 12 Monate), Termine (1 Jahr zurück, ½ Jahr voraus), Gedächtnis, Vorgänge und frühere Gespräche – „Was war da mit …?“, „Wann hatte ich …?“; „Alles zum Thema X“ zeigt Mails, Termine und Gespräche als eigene Gruppen | ✅ | Index der Mails/Termine nur lokal je Benutzer; iMessage bleibt außen vor |
-| Suchtest mit Goldfragen: misst, ob JARVIS die erwarteten Dokumente findet (Platz 1, unter den ersten 5) | ✅ | `jarvis suchtest`; eigene Fragen in ATLAS-Privat/goldfragen.json ergänzen |
+| Suchtest mit Goldfragen: misst, ob JARVIS die erwarteten Dokumente findet (Platz 1, unter den ersten 5), mit Gegenprobe schnelle ↔ vollständige Suche je Frage; Fragen aus dem Alltag merkt JARVIS vor, sobald er dir nach einer Suche ein Dokument zeigt | ✅ | `jarvis suchtest`; `jarvis suchtest vorschlaege` / `uebernehmen alle` / `verwerfen 2 4`; eigene Frage: `jarvis suchtest merken "Frage" "Dateiname"`; alles nur lokal in ATLAS-Privat |
 | Ordner auflisten, Datei lesen | ✅ | |
 | Datei im JARVIS-Fenster zeigen (mit Lupe) | ✅ | Klick auf den Pfad öffnet den Finder |
 | Datei in ihrer App öffnen | ✅ | |
@@ -258,6 +268,7 @@ Bedeutung der Zeichen:
 | Sensible Themen (Gesundheit, Finanzen, Steuer …) bleiben lokal | ✅ | sonst Rückfrage vor der Cloud |
 | Datenschutz-Schleier vor JEDEM Claude-Aufruf: Namen (Familie, Kinder, Nachname), Anschriften, IBAN, Steuer-ID/-nummer, Versicherungs-, Renten-, Kunden-, Vertrags-, Personalnummern, Aktenzeichen, Geburtsdaten, Telefonnummern und E-Mail-Adressen sieht Claude nur als Platzhalter ([NAME_1] …); Antworten und Werkzeugaufrufe setzt JARVIS lokal wieder zusammen | ✅ | weitere Namen in config.yaml unter datenschutz → namen; Zuordnung nur im Arbeitsspeicher |
 | Sensibles nach Inhalt: Werkzeugergebnisse mit Gesundheits-, Konto-, Ausweis-, Steuer-ID- oder Bezügedaten fasst das lokale Modell zuerst zusammen – Claude bekommt nur die Kurzfassung (ohne Diagnosen, Nummern, Einzelposten); ist das lokale Modell weg, bleibt der Inhalt zurück | ✅ | gilt auch für Morgenbriefing, Telegram, Stab und Projektbeobachtung |
+| Suchtreffer ohne Wartezeit entschärft: Bei Archiv- und Wissenssuche bleibt je Treffer nur das sensible Feld (z. B. Auszug mit IBAN) auf dem Mac, statt das ganze Ergebnis vom lokalen Modell zusammenfassen zu lassen (vorher 25–45 s je Suche); sensible Dateinamen sieht Claude nur als Platzhalter | ✅ | Claude sieht dadurch nie mehr als vorher; Einzelheiten weiter nur über lokales Lesen |
 | Gesundheitsdokumente nie im Wortlaut: Suchtreffer aus Arzt-, Beihilfe- und PKV-Unterlagen zeigen Claude nur die Art; Lesen wird lokal zusammengefasst | ✅ | |
 | Gedächtnis für Claude nur als Themenliste – Inhalte holt er bei Bedarf gezielt | ✅ | das lokale Modell sieht weiter alles |
 | ElevenLabs: sensible Antworten mit der Mac-Stimme; IBAN, Nummern und Anschriften werden nie vorgelesen („siehe Bildschirm“); jede Ausgabe wird sofort aus dem ElevenLabs-Verlauf gelöscht | ✅ | API-Schlüssel braucht Schreibrecht für den Verlauf |
@@ -396,7 +407,8 @@ Bedeutung der Zeichen:
 | Rückfragen (Beheben, Hinnehmen, Notbremse, Notfall beenden, Wächtermodus, Projekt anlegen …) als eigener JARVIS-Dialog – funktioniert in der Mac-App, im Browser und auf dem iPhone | ✅ | Enter bestätigt, Esc bricht ab |
 | Läuft als Hintergrunddienst mit Autostart – auch bei geschlossenem Fenster arbeiten Telegram, Siri, Scan-Ordner, Briefing, Fristen, Mail-Wache, NUKI-Abendkontrolle und Updates weiter | ✅ | |
 | JARVIS-App beendet = Mac frei: keine Steckbriefe (auch kein manueller Lauf – er pausiert und geht beim nächsten Öffnen weiter), kein Archivindex, keine Mail-/Terminsuche; geladene Modelle sind nach etwa 30 Sekunden entladen, GPU und Arbeitsspeicher gehören deinen anderen Programmen. Weiter läuft nur Leichtes (Telegram, Scan-Ordner, Briefing, Fristen, NUKI, Updates); braucht ein Scan kurz das lokale Modell, ist es 20 Sekunden danach wieder entladen | ✅ | Hintergrundarbeit läuft, solange die App offen oder minimiert ist – für die Steckbriefe-Aufholphase die App nachts einfach minimiert laufen lassen |
-| Sparmodus: Ist das JARVIS-Fenster zu oder verborgen, gibt JARVIS Arbeitsspeicher frei – lokales Sprachmodell und Suchmodell werden gut eine Minute nach Gebrauch entladen (bei offenem Fenster 30 Minuten), nach dem Schließen nach 2 Minuten sofort; die Spracherkennung (ca. 1,5–2 GB) lädt erst beim Öffnen und wird beim Schließen freigegeben. Im Ruhezustand bleibt nur der Kern (wenige hundert MB) | ✅ | ⚙ Einstellungen → Verbindungen → „Arbeitsspeicher (Sparmodus)“: zeigt, was geladen ist, Knopf „Speicher jetzt freigeben“; abschalten in config.yaml (sparmodus → aktiv: false) |
+| Sparmodus: Ist die JARVIS-App beendet, gibt JARVIS Arbeitsspeicher frei – lokales Sprachmodell, Suchmodell und Spracherkennung (ca. 1,5–2 GB) werden entladen, im Ruhezustand bleibt nur der Kern (wenige hundert MB). Solange die App läuft (auch verborgen oder im Hintergrund), bleiben die Modelle geladen, damit JARVIS sofort reagiert | ✅ | ⚙ Einstellungen → Verbindungen → „Arbeitsspeicher (Sparmodus)“: zeigt, was geladen ist, Knopf „Speicher jetzt freigeben“; abschalten in config.yaml (sparmodus → aktiv: false) |
+| Vorrang für dich: Sobald du sprichst oder schreibst, ruhen Steckbriefe, Index und andere schwere Hintergrundarbeiten (laufende Steckbriefe werden sofort abgebrochen) und gehen erst 2 Minuten nach deiner letzten Anfrage weiter | ✅ | Dauer in config.yaml (sparmodus → vorrang_s) |
 | Steckbriefe fürs Archiv entstehen nur nachts (22–7 Uhr) oder wenn der Mac 10 Minuten unbenutzt ist – sobald du wieder am Mac sitzt, hört JARVIS nach dem laufenden Dokument auf; neue Scans und Briefe wertet er weiterhin sofort aus | ✅ | Stand (fertig/offen, läuft/pausiert) unter ⚙ Einstellungen → Verbindungen → „Arbeitsspeicher“; config.yaml: wissen → steckbriefe_zeit: immer, nacht_von, nacht_bis, leerlauf_min |
 | Steckbriefe manuell starten: „Jetzt erzeugen“ – bis fertig, 2 oder 8 Stunden – arbeitet auch tagsüber (Gespräche haben Vorrang, am Netzteil bleibt der Mac wach); auf dem zweiten Mac gestartet, hilft er gleichzeitig mit und arbeitet von den ältesten Dokumenten her; Stoppen jederzeit; Meldung, wenn alle fertig sind | ✅ | ⚙ Einstellungen → Verbindungen → „Arbeitsspeicher“ oder `jarvis steckbriefe [2\|8\|fertig\|stop]`; währenddessen ist das lokale Modell (ca. 6–7 GB) dauerhaft geladen |
 | Nachts wach halten: Sind noch Steckbriefe offen und hängt der Mac am Netzteil, verhindert JARVIS zwischen 22 und 7 Uhr den Ruhezustand (Bildschirm darf ausgehen) – bis die Arbeit getan ist; im Akkubetrieb, tagsüber oder zugeklappt nie | ✅ | MacBook nachts aufgeklappt am Netzteil lassen; abschalten in config.yaml: wissen → wach_halten: false |
@@ -406,6 +418,7 @@ Bedeutung der Zeichen:
 | Schnelle Antworten | ✅ | Werkzeuge nach Bedarf, 1-h-Prompt-Cache, Vorwärmen |
 | Lokales Sprachmodell (Ollama) für Privates und offline | ⚙️ | ca. 6–7 GB Download und Arbeitsspeicher (nur bei Gebrauch geladen) |
 | Weitergabe: Installations-DMG mit grafischem Assistenten (Mac) und Windows-Installationspaket | ✅ | `jarvis paket` / `jarvis veroeffentlichen` |
+| Veröffentlichen von beiden Macs: hat zuletzt der andere Mac veröffentlicht, gleicht JARVIS den lokalen Stand vor dem Hochladen selbst mit GitHub ab (Sperrliste bleibt erhalten) | ✅ | `jarvis veroeffentlichen` |
 | Veröffentlichen übersteht GitHub-Aussetzer: prüft vorab die Verbindung, wiederholt Hochladen und Release bei Netzfehlern und holt einen früher fehlgeschlagenen Upload beim nächsten Aufruf nach | ✅ | einfach erneut `jarvis veroeffentlichen` |
 | Weitergegebene Installationen nutzen nur die eigenen Schlüssel des Empfängers | ✅ | Datenschutz-Scan blockiert jeden Schlüssel im Paket |
 | Weitergegebene Installation aus der Ferne deaktivieren (einzeln, alle, zu alte Versionen) | ✅ | `jarvis sperren <Kennung>`; Kennung steht beim Empfänger unter ⚙ Einstellungen |

@@ -36,6 +36,8 @@ class Sparmodus:
         self.sichtbar: dict = {}                  # WebSocket → Fenster sichtbar?
         self._zu_seit: float | None = time.time()
         self._entladen = False
+        self.nutzer_bis = 0.0                     # bis dahin spricht/schreibt der Nutzer mit JARVIS → Vorrang
+        self.vorrang_s = float(cfg.get("vorrang_s", 120))
         self.url = (core.cfg.get("local") or {}).get("url", "http://127.0.0.1:11434").rstrip("/")
         _INSTANZ = self
 
@@ -47,9 +49,21 @@ class Sparmodus:
         """Läuft die JARVIS-App (oder die Web-App) – auch minimiert? Ohne App ist JARVIS für dich „aus“."""
         return bool(self.c.ws_clients)
 
+    def nutzer(self, sekunden: float | None = None) -> None:
+        """Der Nutzer spricht oder schreibt gerade mit JARVIS (Weckwort, Taste, Frage, Antwort läuft): Hintergrund-
+        arbeit auf der GPU (Steckbriefe, Index, Mail-/Terminsuche) pausiert so lange – sonst teilen sich
+        Spracherkennung und lokales Modell den Chip und jede Antwort dauert ein Vielfaches."""
+        self.nutzer_bis = max(self.nutzer_bis, time.time() + (self.vorrang_s if sekunden is None else sekunden))
+
+    def nutzer_aktiv(self) -> bool:
+        return time.time() < self.nutzer_bis
+
     def schwere_arbeit_erlaubt(self) -> bool:
         """Rechenintensives im Hintergrund (Steckbriefe, Archivindex, Mail-/Terminsuche mit dem lokalen Modell bzw.
-        Suchmodell) nur, solange die JARVIS-App läuft. Ist sie beendet, gehören GPU und Speicher dir."""
+        Suchmodell) nur, solange die JARVIS-App läuft und der Nutzer nicht gerade mit JARVIS spricht.
+        Ist die App beendet, gehören GPU und Speicher dir."""
+        if self.nutzer_aktiv():
+            return False
         return not self.aktiv or self.app_laeuft()
 
     def melden(self, ws, sichtbar: bool) -> None:
@@ -64,7 +78,7 @@ class Sparmodus:
 
     def getrennt(self, ws) -> None:
         self.sichtbar.pop(ws, None)
-        if not self.fenster_offen() and self._zu_seit is None:
+        if not self.app_laeuft() and self._zu_seit is None:
             self._zu_seit = time.time()
 
     def _geoeffnet(self) -> None:
@@ -73,7 +87,9 @@ class Sparmodus:
             threading.Thread(target=whisper_vorwaermen, args=(self.c,), daemon=True, name="whisper-vorwaermen").start()
 
     def keep_alive(self, standard: str) -> str:
-        if not self.aktiv or self.fenster_offen():
+        """App läuft (auch im Hintergrund): Modelle bleiben geladen – sonst kostet jede Frage erst das Laden.
+        App beendet: nach Gebrauch sofort freigeben."""
+        if not self.aktiv or self.app_laeuft():
             return standard
         return self.ka_zu
 
@@ -91,7 +107,7 @@ class Sparmodus:
             time.sleep(10)
 
     def pruefen(self) -> None:
-        if not self.aktiv or self.fenster_offen():
+        if not self.aktiv or self.app_laeuft():   # App läuft (auch verdeckt/minimiert): alles bleibt warm
             self._zu_seit = None
             return
         if self._zu_seit is None:
@@ -123,6 +139,11 @@ class Sparmodus:
         from atlas import plattform
         if plattform.whisper_entladen():
             weg.append("Spracherkennung")
+        try:                                           # Vorauswahl der Archivsuche (gut 300 MB) – lädt beim Öffnen neu
+            if self.c.archiv and self.c.archiv.search.grob.freigeben():
+                weg.append("Suchvorauswahl")
+        except Exception:
+            pass
         if weg:
             self.c.audit.log("sparmodus", aktion="entladen", was=", ".join(weg))
         return weg

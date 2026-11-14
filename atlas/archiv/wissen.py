@@ -117,6 +117,9 @@ class Wissen:
             s = getattr(ws, "_atlas_session", None)
             if s and s.task and not s.task.done():
                 return True
+        sp = getattr(self.c, "sparmodus", None)
+        if sp is not None and getattr(sp, "nutzer_aktiv", None) and sp.nutzer_aktiv() is True:
+            return True                              # Nutzer spricht/schreibt gerade mit JARVIS
         return bool(self.c.archiv and self.c.archiv.pause.is_set())
 
     def steckbriefe_erlaubt(self) -> tuple[bool, str]:
@@ -124,6 +127,8 @@ class Wissen:
         mindestens 10 Minuten unbenutzt ist – tagsüber bleibt der Arbeitsspeicher frei.
         config.yaml: wissen → steckbriefe_zeit: nachts_oder_leerlauf | immer, nacht_von, nacht_bis, leerlauf_min."""
         sp = getattr(getattr(self, "c", None), "sparmodus", None)
+        if sp is not None and getattr(sp, "nutzer_aktiv", None) and sp.nutzer_aktiv() is True:
+            return False, "Gespräch läuft – JARVIS hat Vorrang"
         if sp is not None and not sp.schwere_arbeit_erlaubt():
             return False, "JARVIS-App beendet"           # dann gehören GPU und Speicher dir
         if self.manuell_aktiv():
@@ -202,7 +207,7 @@ class Wissen:
         return n
 
     def steckbriefe_erstellen(self, grenze: int = 10, stop=None) -> int:
-        from atlas.hilfen import lokal_json, vs_kennzeichnung
+        from atlas.hilfen import Abgebrochen, lokal_json, vs_kennzeichnung
         s = self.search
         lokal = self.c.providers.get("lokal")
         if not s or not lokal or not lokal.available():
@@ -216,9 +221,13 @@ class Wissen:
             if vs_kennzeichnung(text):                    # Verschlusssache: kein Steckbrief, nie auswerten
                 daten, st = {"vs": True}, ""
             else:
-                daten = steckbrief_pruefen(lokal_json(
-                    lokal, STECKBRIEF_SYSTEM,
-                    f"Datei: {pfad}\n\nText (Anfang):\n{text}\n\nJSON-Felder: {FELDER}", 700))
+                try:                                  # spricht der Nutzer JARVIS an: laufenden Steckbrief abbrechen
+                    daten = steckbrief_pruefen(lokal_json(
+                        lokal, STECKBRIEF_SYSTEM,
+                        f"Datei: {pfad}\n\nText (Anfang):\n{text}\n\nJSON-Felder: {FELDER}", 700,
+                        abbruch=self._beschaeftigt))
+                except Abgebrochen:
+                    break                             # nichts speichern – das Dokument kommt später wieder dran
                 if not daten:
                     self.stand["steckbriefe_fehler"] += 1
                     daten, st = {"fehlgeschlagen": True}, ""     # nicht endlos wiederholen; bei Änderung neu
@@ -460,21 +469,80 @@ GOLD_START = {"fragen": [
 
 
 def suchtest(search, read_json, write_json) -> dict:
-    """Jede Goldfrage suchen: an welcher Stelle steht das erwartete Dokument? (Treffer@1, @5, MRR)"""
+    """Jede Goldfrage suchen: an welcher Stelle steht das erwartete Dokument? (Treffer@1, @5, MRR)
+    Zusätzlich je Frage der Vergleich schnelle Vorauswahl ↔ vollständige Suche: gleiche ersten fünf Treffer?"""
     from atlas.archiv.search import norm
     g = read_json(GOLD, None)
     if not g:
         g = GOLD_START
         write_json(GOLD, g)
-    zeilen, rr = [], []
+    zeilen, rr, abweichend = [], [], 0
+    schnell_aktiv = bool(getattr(search, "grob", None) and search.grob.stand().get("aktiv"))
     for f in g.get("fragen", []):
         t0 = time.time()
         res = search.search(f["frage"], k=10, begriffe=f.get("begriffe"), quellen=["archiv"])
+        ms = int((time.time() - t0) * 1000)
         rang = next((i + 1 for i, r in enumerate(res) if norm(f["erwartet"]) in norm(r["pfad"])), None)
         rr.append(1 / rang if rang else 0)
-        zeilen.append({"frage": f["frage"], "rang": rang, "ms": int((time.time() - t0) * 1000),
-                       "erster": res[0]["pfad"].rsplit("/", 1)[-1] if res else ""})
+        z = {"frage": f["frage"], "rang": rang, "ms": ms, "erster": res[0]["pfad"].rsplit("/", 1)[-1] if res else ""}
+        if schnell_aktiv:                              # Gegenprobe: dieselbe Frage vollständig
+            search.grob_sperre = True
+            try:
+                t1 = time.time()
+                voll = search.search(f["frage"], k=10, begriffe=f.get("begriffe"), quellen=["archiv"])
+                z["ms_vollstaendig"] = int((time.time() - t1) * 1000)
+            finally:
+                search.grob_sperre = False
+            z["gleich"] = [r["pfad"] for r in res[:5]] == [r["pfad"] for r in voll[:5]]
+            z["rang_vollstaendig"] = next((i + 1 for i, r in enumerate(voll) if norm(f["erwartet"]) in norm(r["pfad"])), None)
+            abweichend += not z["gleich"]
+        zeilen.append(z)
     n = len(zeilen) or 1
     return {"fragen": zeilen, "treffer_1": sum(1 for z in zeilen if z["rang"] == 1),
             "treffer_5": sum(1 for z in zeilen if z["rang"] and z["rang"] <= 5), "anzahl": len(zeilen),
-            "mrr": round(sum(rr) / n, 3)}
+            "mrr": round(sum(rr) / n, 3), "vorauswahl": search.grob.stand() if getattr(search, "grob", None) else {},
+            "abweichend": abweichend if schnell_aktiv else None,
+            "vorschlaege": len((read_json(GOLD_VORSCHLAG, None) or {}).get("fragen", []))}
+
+
+# Goldfragen aus dem Alltag: Zeigt JARVIS nach einer Suche ein Dokument, ist das ein Kandidat „Frage → Dokument“.
+# Er wird nur vorgemerkt (lokal, in ATLAS-Privat) – in den Test kommt er erst, wenn Richard ihn übernimmt.
+GOLD_VORSCHLAG = "goldfragen_vorschlaege.json"
+
+
+def gold_vorschlag(frage: str, pfad: str, read_json=None, write_json=None) -> bool:
+    from atlas.paths import read_private_json, write_private_json
+    read_json, write_json = read_json or read_private_json, write_json or write_private_json
+    frage, name = (frage or "").strip(), (pfad or "").strip("/")
+    if len(frage) < 6 or not name:
+        return False
+    erwartet = name.rsplit(".", 1)[0][-90:] if "/" not in name else "/".join(name.rsplit(".", 1)[0].split("/")[-2:])[-90:]
+    v = read_json(GOLD_VORSCHLAG, None) or {"fragen": []}
+    gold = read_json(GOLD, None) or {"fragen": []}
+    if any(x["frage"].lower() == frage.lower() for x in v["fragen"] + gold.get("fragen", [])):
+        return False
+    v["fragen"] = (v["fragen"] + [{"frage": frage[:200], "erwartet": erwartet, "am": f"{date.today():%Y-%m-%d}"}])[-200:]
+    write_json(GOLD_VORSCHLAG, v)
+    return True
+
+
+def gold_merken(frage: str, erwartet: str, read_json, write_json) -> dict:
+    g = read_json(GOLD, None) or dict(GOLD_START)
+    g["fragen"] = [x for x in g.get("fragen", []) if x["frage"].lower() != frage.strip().lower()]
+    g["fragen"].append({"frage": frage.strip(), "erwartet": erwartet.strip()})
+    write_json(GOLD, g)
+    return {"anzahl": len(g["fragen"])}
+
+
+def gold_uebernehmen(nummern: list[int] | None, read_json, write_json, verwerfen: bool = False) -> dict:
+    """Vorgemerkte Fragen in den Test übernehmen (nummern=None: alle) oder verwerfen."""
+    v = read_json(GOLD_VORSCHLAG, None) or {"fragen": []}
+    wahl = [x for i, x in enumerate(v["fragen"], 1) if nummern is None or i in nummern]
+    rest = [x for i, x in enumerate(v["fragen"], 1) if not (nummern is None or i in nummern)]
+    n = 0
+    if not verwerfen:
+        for x in wahl:
+            n = gold_merken(x["frage"], x["erwartet"], read_json, write_json)["anzahl"]
+    write_json(GOLD_VORSCHLAG, {"fragen": rest})
+    return {"uebernommen": 0 if verwerfen else len(wahl), "verworfen": len(wahl) if verwerfen else 0,
+            "offen": len(rest), "anzahl": n}

@@ -183,6 +183,8 @@ class LocalSearch:
         folder.mkdir(parents=True, exist_ok=True)
         self.shared, self.embedder, self.model = shared, embedder, model
         self.vec_path = folder / "vektoren.f16"
+        from atlas.archiv.grob import Grob
+        self.grob = Grob(folder)                      # schnelle Vorauswahl für die Bedeutungssuche
         self.lock = threading.Lock()
         self.db = _SichereDB(sqlite3.connect(folder / "suche.sqlite", check_same_thread=False))
         self.db.executescript("""
@@ -231,6 +233,7 @@ class LocalSearch:
                                   "DELETE FROM fts_sb;"
                                   "INSERT INTO fts(fts) VALUES('delete-all');")
             self.vec_path.unlink(missing_ok=True)
+            self.grob.verwerfen()
             self.dim = 0
             self._set("modell", self.model)
             self.db.commit()
@@ -242,6 +245,35 @@ class LocalSearch:
     def _matrix(self):
         n = self._rows()
         return (np.memmap(self.vec_path, dtype=np.float16, mode="r", shape=(n, self.dim)), n) if n else (None, 0)
+
+    def _beste(self, mm, n: int, q, je_block: int) -> list[tuple[float, int]]:
+        """Die ähnlichsten Textstücke (Wert, Zeile), bestes zuerst. Mit Vorauswahl (grob.py) in Bruchteilen einer
+        Sekunde; steht sie noch nicht bereit, vollständig wie bisher – und sie wird im Hintergrund aufgebaut."""
+        if getattr(self, "grob_sperre", False):        # Suchtest: Gegenprobe ohne Vorauswahl
+            pass
+        elif self.grob.nutzbar(n):
+            best = self.grob.beste(mm, q, max(je_block * 8, 2000))
+            if best is not None:
+                self.letzter_weg = "vorauswahl"
+                if n - self.grob.n > 2000:             # genug Neues: kleine Tabelle im Hintergrund ergänzen
+                    self.grob.sicherstellen(mm, n, self.dim)
+                return best
+        else:
+            self.grob.sicherstellen(mm, n, self.dim)
+        self.letzter_weg = "vollständig"
+        best: list[tuple[float, int]] = []
+        for s in range(0, n, 50_000):
+            part = np.asarray(mm[s:s + 50_000], dtype=np.float32) @ q
+            idx = np.argpartition(-part, min(je_block, len(part) - 1))[:je_block]
+            best += [(float(part[i]), s + int(i)) for i in idx]
+        best.sort(reverse=True)
+        return best
+
+    def vorauswahl_bereiten(self) -> None:
+        """Beim Start bzw. Öffnen der App: kleine Tabelle laden, damit schon die erste Suche schnell ist."""
+        mm, n = self._matrix()
+        if n:
+            self.grob.sicherstellen(mm, n, self.dim)
 
     # ---------- Abgleich mit dem gemeinsamen Index ----------
     def sync(self) -> int:
@@ -440,9 +472,18 @@ class LocalSearch:
     def _treffer_roh(self, frage: str, begriffe: list[str], tief: int = 60) -> dict:
         """Ränge je Dokument aus den drei Schichten: {doc: {"name": r, "wort": r, "sinn": r, "row": bestes Stück}}."""
         docs: dict[str, dict] = {}
+        import time as _t
+        z, t0 = {}, _t.monotonic()
+
+        def marke(name):
+            nonlocal t0
+            z[name] = round(z.get(name, 0) + _t.monotonic() - t0, 2)
+            t0 = _t.monotonic()
+        self.letzte_zeiten = z                         # nur Dauer je Abschnitt (für „jarvis reaktionszeit“)
         # 1) Name & Ordner
         for rang, (did, _) in enumerate(self._nach_name(self._gewichte or begriffe, tief)):
             docs.setdefault(did, {})["name"] = rang
+        marke("name")
         # 2) Stichwörter im Inhalt (Originalwörter + Wortanfänge)
         roh = [w for w in re.findall(r"[\wäöüÄÖÜß]{3,}", nfc(frage)) if norm(w) not in STOPP]
         eigene = [b for b, g in (self._gewichte or [(x, 1.0) for x in begriffe]) if g >= 0.8]   # keine Synonyme
@@ -461,17 +502,17 @@ class LocalSearch:
                         d.setdefault("row", row)
             except sqlite3.OperationalError:
                 pass
+        marke("stichwort")
         # 3) Bedeutung
         mm, n = self._matrix()
         q = None
         if n:
             q = self.embedder.embed([" ".join([frage, *begriffe[:8]])])[0].astype(np.float32)
-            best: list[tuple[float, int]] = []
-            for s in range(0, n, 50_000):
-                part = np.asarray(mm[s:s + 50_000], dtype=np.float32) @ q
-                idx = np.argpartition(-part, min(tief * 3, len(part) - 1))[:tief * 3]
-                best += [(float(part[i]), s + int(i)) for i in idx]
-            best.sort(reverse=True)
+            marke("einbetten")
+            best = self._beste(mm, n, q, tief * 3)
+            marke("vektoren")
+            z["stuecke"] = int(n)
+            z["weg"] = getattr(self, "letzter_weg", "")
             rang = 0
             for _, row in best:
                 r = self.db.execute("SELECT doc FROM chunks WHERE row=? AND lebt=1", (row,)).fetchone()
@@ -483,6 +524,7 @@ class LocalSearch:
                     d.setdefault("row", row)
                 if rang >= tief:
                     break
+        marke("zuordnen")
         # 4) Kern: Steckbriefe (Kurzfassung je Dokument) – nach Bedeutung und Stichwort
         ids, mat = self._steckbrief_matrix()
         if q is not None and mat is not None:
@@ -498,6 +540,7 @@ class LocalSearch:
                     d["kern"] = min(d.get("kern", 10**6), rang)
             except sqlite3.OperationalError:
                 pass
+        marke("steckbriefe")
         return docs
 
     def search(self, frage: str, k: int = 8, ordner: str = "", begriffe: list[str] | None = None,
@@ -642,12 +685,7 @@ class LocalSearch:
             return []
         q = np.asarray(mm[rows], dtype=np.float32).mean(axis=0)
         q /= (np.linalg.norm(q) or 1.0)
-        best: list[tuple[float, int]] = []
-        for s in range(0, n, 50_000):
-            part = np.asarray(mm[s:s + 50_000], dtype=np.float32) @ q
-            idx = np.argpartition(-part, min(400, len(part) - 1))[:400]
-            best += [(float(part[i]), s + int(i)) for i in idx]
-        best.sort(reverse=True)
+        best = self._beste(mm, n, q, 400)
         out, gesehen = [], set(ids)
         for sc, row in best:
             r = self.db.execute("SELECT c.doc, d.pfad, c.seite, c.text FROM chunks c JOIN docs d ON d.id=c.doc "
