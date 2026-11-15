@@ -39,10 +39,13 @@ GRUPPEN = {
     "projekte": ["projekt", "beobachtung_", "recherche_jetzt"],
     "sicherheit": ["sicherheitsaudit", "audit_bericht", "sicherheit_", "datenschutz_"],
     "briefing": ["briefing_"],
+    "quellen": ["quellen_"],
 }
 
 # Wortanfänge → Gruppen
 SIGNALE = [
+    (r"quelle|links?\b|safari|browser|webseite|internetseite|\burls?\b|artikel öffnen|seiten? öffnen|"
+     r"(öffne|mach) (die|alle) seiten|tabs?\b", ["quellen"]),
     (r"befugnis|darfst du|ohne (mich|rückfrage)|autopilot|was hast du .*(gemacht|getan|erledigt)|warum hast du|"
      r"rückgängig|mach das .*zurück|nimm das zurück|rechenschaft|notbremse|fokus|konzentrier|ruhe für|nicht stören|"
      r"was liegt an|stapel|entscheidungen", ["autopilot"]),

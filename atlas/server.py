@@ -151,6 +151,9 @@ class Core:
         self.timer = _timer.Timer(self)
         self.musik = _musik.Musik(self)
         self.tools.update({t.name: t for t in _karte.tools(self) + _timer.tools(self) + _musik.tools(self)})
+        from atlas.tools import quellen as _quellen     # Recherche-Quellen auf Zuruf in Safari öffnen
+        self.quellen = _quellen.Quellen(self)
+        self.tools.update({t.name: t for t in _quellen.tools(self)})
         # Standort: Wetter dort, wo ich bin – und an heutigen Reisezielen (> 50 km)
         from atlas.standort import Standort
         from atlas.tools import wetter as _wetter_mod
@@ -660,6 +663,7 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
     # Vorab-Suche: bei klarer Dokumentsuche sucht JARVIS sofort selbst und gibt dem Modell das Ergebnis gleich mit
     # (über denselben Weg wie jeder Werkzeugaufruf – Rechte, Protokoll, Fremdinhalt-Schutz und Datenschutz-Schleier gelten).
     vorab_suche = False
+    quellen_gemerkt = False                       # erste Websuche dieser Antwort ersetzt die gemerkten Quellen
     try:
         if (d.target == "claude" and not doks and marken is None and c.archiv and c.cfg.get("vorab_suche", True)
                 and getattr(provider, "vorab_aufruf", None) and any(t.name == "archiv_suchen" for t in tools)
@@ -705,7 +709,9 @@ async def _chat_inner(ws: WebSocket, s: Session, text: str, stimme: bool = False
             t_in += result.usage[0]
             t_out += result.usage[1]
             if result.quellen:
-                await ws.send_json({"type": "quellen", "quellen": result.quellen})
+                liste = c.quellen.merken(result.quellen, neu=not quellen_gemerkt)
+                quellen_gemerkt = True
+                await ws.send_json({"type": "quellen", "quellen": liste})
             if result.pause:                     # lange Websuche: einfach fortsetzen
                 work.append(result.assistant_msg)
                 continue

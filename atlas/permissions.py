@@ -38,6 +38,7 @@ DEFAULT_POLICY = {
     "wetter.lesen": Level.FREI,
     "anzeige": Level.FREI,
     "web.lesen": Level.FREI,
+    "web.oeffnen": Level.FREI,             # Recherche-Quellen in Safari öffnen – nur Adressen aus der Quellenliste
     "beihilfe.lesen": Level.FREI,
     "nachrichten.senden": Level.BESTAETIGEN,  # iMessage/SMS nur nach Bestätigung
     "musik": Level.FREI,

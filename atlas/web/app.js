@@ -1071,7 +1071,7 @@ function linkSafe(url) { try { const u = new URL(url); return /^https?:$/.test(u
 function renderQuellen(el, quellen) {
   const seen = new Set();
   el.innerHTML = (quellen || []).filter((q) => q.url && !seen.has(q.url) && seen.add(q.url) && linkSafe(q.url))
-    .slice(0, 8).map((q) => `<a href="${esc(linkSafe(q.url))}" target="_blank" rel="noopener" title="${esc(q.url)}">↗ ${esc(q.titel || new URL(q.url).hostname)}</a>`).join("");
+    .slice(0, 8).map((q) => `<a href="${esc(linkSafe(q.url))}" target="_blank" rel="noopener" title="${esc(q.url)}">${q.nr ? `<b>${q.nr}</b> ` : ""}↗ ${esc(q.titel || new URL(q.url).hostname)}</a>`).join("");
 }
 
 function chartSVG(d) {

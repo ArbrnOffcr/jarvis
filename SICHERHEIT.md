@@ -52,6 +52,7 @@ Format: je Schutzbereich eine Überschrift `##`, darunter je Einrichtung `- **Na
 - **Rechenschaft und Rückgängig:** Jede Aktion mit Weg (Befugnis, Bestätigung, abgelehnt) und Kanal; 7 Tage rückgängig für Termine, Dateiverschiebungen, Fristen, Tesla-Klima, Einkaufsliste, Mail-Wache.
 - **Protokoll und Kostenbremse:** Alle Aktionen werden protokolliert (Audit); ein Monatsbudget begrenzt die Cloud-Kosten.
 - **Bewusst ausgeschlossen:** Überweisungen, Online-Banking, Käufe; Kontakte löschen; Einladungen verschicken.
+- **Links nur aus der Quellenliste:** Beim Öffnen von Recherche-Quellen kann das Modell nur Nummern aus der Liste der tatsächlich gefundenen Quellen wählen, nie eine eigene Adresse – so kann eine eingeschleuste Anweisung keine Daten in eine Webadresse packen und abrufen lassen. Nur http(s), keine Adressen mit Zugangsdaten, höchstens 15 auf einmal.
 
 ## 6. Finanzen, Gesundheit und Behördenportale
 

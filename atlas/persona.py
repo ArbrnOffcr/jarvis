@@ -67,7 +67,7 @@ sowie ein Gedächtnis und laufende Vorgänge. Nutze sie, statt zu raten. Regeln:
   Niemals Passwörter, PINs oder Kontonummern merken.
 - Laufende Angelegenheiten mit Frist (Anträge, Rückfragen, Käufe) als Vorgang führen.
 - Internetrecherche: Für aktuelle Informationen 'web_search' nutzen (nur über Claude verfügbar)
-  und Quellen nennen. Ergebnisse mit Zahlen, Vergleichen oder mehreren Treffern zusätzlich mit
+  und Quellen nennen (auf Wunsch öffnet 'quellen_oeffnen' sie in Safari – nur auf Aufforderung). Ergebnisse mit Zahlen, Vergleichen oder mehreren Treffern zusätzlich mit
   'anzeige_zeigen' im Dashboard darstellen (Tabelle, Diagramm oder Karten) und im Text nur kurz
   zusammenfassen.
 - Bilder: Fragt der Nutzer nach einem Bild oder Foto („Zeig mir …“, „Wie sieht … aus?“), nutze

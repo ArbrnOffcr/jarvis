@@ -1,6 +1,6 @@
 # JARVIS – Funktionsliste
 
-Stand: 14.11.2026 · Version 0.41.1
+Stand: 15.11.2026 · Version 0.42.0
 Diese Liste wird bei jeder Änderung an JARVIS mitgepflegt. JARVIS liest sie selbst, wenn du ihn fragst: „Was kannst du?“
 
 Bedeutung der Zeichen:
@@ -164,6 +164,7 @@ Bedeutung der Zeichen:
 | Funktion | Stand | Hinweis |
 |---|---|---|
 | Internetrecherche mit Quellenangabe | ✅ | nur über Claude, nicht lokal |
+| Quellen einer Recherche auf Zuruf in Safari öffnen – im Hintergrund, Safari kommt nicht nach vorn: „Öffne die Quellen“ (die in der Antwort genannten), „Öffne Quelle 2 und 4“, „Öffne alle Links“ (höchstens 15); Quellen im Dashboard nummeriert | ✅ | gilt bis zur nächsten Recherche, auch nach Fragen über Telegram/Siri (öffnet dann auf dem Mac); Windows: Standardbrowser |
 | Tabellen, Diagramme und Karten im Dashboard | ✅ | |
 | Fotos aus Google Bilder | ⚙️ | Serper-Schlüssel; sonst Wikimedia |
 | YouTube-Videos eingebettet (stumm starten, Ton, Pause, nächstes) | ⚙️ | YouTube-Schlüssel |

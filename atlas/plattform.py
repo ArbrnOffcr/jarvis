@@ -53,6 +53,21 @@ def oeffnen(pfad: str | Path) -> None:
         subprocess.run(["open", str(pfad)], timeout=15)
 
 
+def url_oeffnen(url: str, hintergrund: bool = True) -> None:
+    """Webadresse im Browser öffnen. Mac: Safari, mit hintergrund=True ohne dass Safari nach vorn kommt.
+    Windows: Standardbrowser (dort lässt sich „im Hintergrund“ nicht erzwingen)."""
+    if WINDOWS:
+        import webbrowser
+        webbrowser.open(url, new=2, autoraise=not hintergrund)
+        return
+    args = ["open", *(["-g"] if hintergrund else []), "-a", "Safari", url]
+    r = subprocess.run(args, capture_output=True, text=True, timeout=15)
+    if r.returncode:                                  # Safari fehlt o. ä.: Standardbrowser
+        r = subprocess.run(["open", *(["-g"] if hintergrund else []), url], capture_output=True, text=True, timeout=15)
+        if r.returncode:
+            raise OSError((r.stderr or "open fehlgeschlagen").strip()[:160])
+
+
 def im_ordner_zeigen(pfad: str | Path) -> None:
     """Explorer/Finder öffnen und die Datei markieren."""
     if WINDOWS:

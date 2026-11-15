@@ -61,6 +61,7 @@ def run(core, text: str, history: list[dict] | None = None, *,
     work = [*(history or []), {"role": "user", "content": text}]
     reply, t_in, t_out = "", 0, 0
     fremd: list[str] = []                     # Quellen fremder Inhalte in diesem Durchlauf
+    quellen_gemerkt = False
     for _ in range(MAX_STEPS):
         result = None
         for ev in provider.step(model, system, list(work), tools, max_tokens):
@@ -70,6 +71,9 @@ def run(core, text: str, history: list[dict] | None = None, *,
                 result = ev[1]
         t_in += result.usage[0]
         t_out += result.usage[1]
+        if result.quellen and hasattr(c, "quellen"):        # auch über Telegram/Siri: „Öffne die Quellen“ geht danach
+            c.quellen.merken(result.quellen, neu=not quellen_gemerkt)
+            quellen_gemerkt = True
         if result.pause:
             work.append(result.assistant_msg)
             continue

@@ -122,11 +122,25 @@ class ClaudeProvider(Provider):
         calls = [ToolCall(b.id, b.name, dict(b.input))
                  for b in final.content if b.type == "tool_use"]
         content = [b.model_dump(exclude_none=True) for b in final.content]
-        quellen = []
+        quellen, zitiert = [], []
+        for b in final.content:                       # Quellen, die die Antwort tatsächlich zitiert – in dieser Reihenfolge
+            if b.type == "text":
+                for z in getattr(b, "citations", None) or []:
+                    u = getattr(z, "url", None)
+                    if u and u not in zitiert:
+                        zitiert.append(u)
         for b in final.content:
             if b.type == "web_search_tool_result" and isinstance(b.content, list):
-                quellen += [{"titel": r.title, "url": r.url} for r in b.content
-                            if getattr(r, "url", None)]
+                quellen += [{"titel": r.title, "url": r.url, **({"zitiert": True} if r.url in zitiert else {})}
+                            for r in b.content if getattr(r, "url", None)]
+        bekannt = {q["url"] for q in quellen}
+        for b in final.content:                       # zitiert, aber aus einer früheren Suche dieser Antwort
+            if b.type == "text":
+                for z in getattr(b, "citations", None) or []:
+                    u = getattr(z, "url", None)
+                    if u and u not in bekannt:
+                        bekannt.add(u)
+                        quellen.append({"titel": getattr(z, "title", "") or u, "url": u, "zitiert": True})
         u = final.usage                # Cache: Lesen kostet 10 %, Schreiben 125 % des Eingabepreises
         gelesen = getattr(u, "cache_read_input_tokens", 0) or 0
         geschrieben = getattr(u, "cache_creation_input_tokens", 0) or 0
